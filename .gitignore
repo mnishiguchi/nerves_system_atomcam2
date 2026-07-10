@@ -11,3 +11,7 @@
 *.tar
 *.tar.gz
 *.zip
+
+# Local build/debug logs
+/tmp/log/*.log
+/tmp/log/*.dump

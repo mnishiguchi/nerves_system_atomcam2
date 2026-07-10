@@ -1,0 +1,10 @@
+## VM arguments for the AtomCam2 Nerves release.
+
+## Keep distributed Erlang bound to localhost on the device.
+## Remote access should go through nerves_ssh/IEx, not raw EPMD.
+-name <%= @release.name %>@127.0.0.1
+-setcookie <%= @release.options[:cookie] %>
+-kernel inet_dist_use_interface {127,0,0,1}
+
+## Start without an interactive shell on boot.
+-noshell

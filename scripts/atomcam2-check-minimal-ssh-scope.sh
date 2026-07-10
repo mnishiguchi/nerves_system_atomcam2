@@ -7,10 +7,13 @@ failures=0
 grep_files() {
   find "$repo_dir" \
     -path '*/.git' -prune -o \
+    -path '*/.nerves' -prune -o \
     -path '*/vendor' -prune -o \
     -path '*/target' -prune -o \
     -path '*/_build' -prune -o \
     -path '*/deps' -prune -o \
+    -name '*.log' -prune -o \
+    -name '*.dump' -prune -o \
     -type f -print | \
       xargs grep -Il "$1" 2>/dev/null || true
 }

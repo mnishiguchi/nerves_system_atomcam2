@@ -5,13 +5,17 @@ if [ -f /etc/atomcam2.env ]; then
   . /etc/atomcam2.env
 fi
 
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
 report_file="${ATOMCAM2_NETWORK_REPORT:-/media/mmc/atomcam2-network.env}"
 
 {
   echo "hostname=$(hostname 2>/dev/null || true)"
   echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
-  echo "ip_addr=$(ip addr show wlan0 2>/dev/null | sed -n 's/^[[:space:]]*inet \([^[:space:]]*\).*/\1/p' | head -n 1)"
-  echo "route_default=$(ip route 2>/dev/null | grep '^default ' | head -n 1)"
+  echo "ip_addr=$(ip addr show wlan0 2>/dev/null | sed -n 's/^[[:space:]]*inet \([^[:space:]]*\).*/\1/p' | sed -n '1p')"
+  echo "route_default=$(ip route 2>/dev/null | sed -n '/^default /{p;q;}')"
 } > "$report_file" 2>/dev/null || true
 
 cat "$report_file" 2>/dev/null || true

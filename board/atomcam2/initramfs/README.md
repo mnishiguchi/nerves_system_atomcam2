@@ -21,3 +21,13 @@ Deferred from the first loop:
 - on-device update unpacking
 - rootfs size validation
 - vendor recovery paths
+
+## Kernel support required
+
+The initramfs handoff depends on these kernel capabilities being built in, not as modules:
+
+- MMC block device support
+- VFAT and required NLS tables for the SD-card boot partition
+- SquashFS with XZ support for `rootfs_hack.squashfs`
+- loop block device support because the squashfs image is mounted from a file
+- devtmpfs, procfs, and sysfs

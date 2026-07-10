@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sat, 11 Jul 2026 08:10:00 +0900
+Subject: [PATCH] libnl: add ILA compat header for older kernel headers
+
+This system intentionally stages Linux 3.10 kernel headers. libnl 3.12.0
+builds an ILA nexthop helper that includes <linux/ila.h>, but that UAPI
+header did not exist in the older header set.
+
+libnl already prefers its private linux header directory before staged
+kernel headers, so provide the minimal ILA attribute definitions needed by
+nh_encap_ila.c there.
+---
+ include/linux-private/linux/ila.h | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+ create mode 100644 include/linux-private/linux/ila.h
+
+diff --git a/include/linux-private/linux/ila.h b/include/linux-private/linux/ila.h
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/include/linux-private/linux/ila.h
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: LGPL-2.1-only */
++/* Minimal ILA UAPI subset for builds against older Linux kernel headers. */
++
++#ifndef _LINUX_ILA_H
++#define _LINUX_ILA_H
++
++enum {
++	ILA_ATTR_UNSPEC,
++	ILA_ATTR_LOCATOR,
++	ILA_ATTR_IDENTIFIER,
++	ILA_ATTR_LOCATOR_MATCH,
++	ILA_ATTR_IFINDEX,
++	ILA_ATTR_DIR,
++	ILA_ATTR_PAD,
++	ILA_ATTR_CSUM_MODE,
++	ILA_ATTR_IDENT_TYPE,
++	ILA_ATTR_HOOK_TYPE,
++	__ILA_ATTR_MAX,
++};
++
++#define ILA_ATTR_MAX (__ILA_ATTR_MAX - 1)
++#endif
+-- 
+2.47.0

@@ -18,19 +18,47 @@ Options:
 USAGE
 }
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --mount) mount_dir="${2:-}"; shift 2 ;;
-    --output) output_root="${2:-}"; shift 2 ;;
-    -h|--help) usage; exit 0 ;;
-    *) echo "unknown argument: $1" >&2; usage >&2; exit 1 ;;
-  esac
-done
-
 fail() {
   echo "error: $*" >&2
   exit 1
 }
+
+require_option_value() {
+  local option_name="$1"
+  local option_value="${2:-}"
+
+  if [ -z "$option_value" ]; then
+    fail "$option_name requires a value"
+  fi
+}
+
+physical_dir() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --mount)
+      require_option_value "$1" "${2:-}"
+      mount_dir="$2"
+      shift 2
+      ;;
+    --output)
+      require_option_value "$1" "${2:-}"
+      output_root="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
 
 copy_if_present() {
   local path="$1"
@@ -45,9 +73,13 @@ copy_if_present() {
 }
 
 mount_dir="${mount_dir%/}"
+output_root="${output_root%/}"
+
 [ -n "$mount_dir" ] || fail "--mount is required"
-[ "$mount_dir" != "/" ] || fail "refusing to collect from /"
 [ -d "$mount_dir" ] || fail "mount directory does not exist: $mount_dir"
+
+mount_dir_real="$(physical_dir "$mount_dir")" || fail "cannot resolve mount directory: $mount_dir"
+[ "$mount_dir_real" != "/" ] || fail "refusing to collect from /"
 
 report_dir="$output_root/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$report_dir"

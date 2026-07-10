@@ -14,16 +14,30 @@ report_file="${ATOMCAM2_PRE_RUN_REPORT:-/media/mmc/atomcam2-pre-run.env}"
 default_hostname="${ATOMCAM2_DEFAULT_HOSTNAME:-nerves}"
 hostname_file="${ATOMCAM2_HOSTNAME_FILE:-/media/mmc/hostname}"
 
+valid_hostname() {
+  case "$1" in
+    ""|.*|-*|*-|*..*|*.-*|*-.*|*[!A-Za-z0-9.-]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+read_hostname() {
+  if [ -f "$hostname_file" ]; then
+    sed -n '1{s/\r$//;p;}' "$hostname_file"
+  else
+    printf '%s\n' "$default_hostname"
+  fi
+}
+
 mkdir -p "$boot_mount" /tmp || true
 
-if [ -f "$hostname_file" ]; then
-  desired_hostname="$(sed -n '1p' "$hostname_file" | tr -cd 'A-Za-z0-9.-')"
-else
+desired_hostname="$(read_hostname)"
+if ! valid_hostname "$desired_hostname"; then
   desired_hostname="$default_hostname"
 fi
 
-if [ -z "$desired_hostname" ]; then
-  desired_hostname="$default_hostname"
+if ! valid_hostname "$desired_hostname"; then
+  desired_hostname="nerves"
 fi
 
 hostname "$desired_hostname" 2>/dev/null || true

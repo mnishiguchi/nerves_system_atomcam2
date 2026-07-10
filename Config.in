@@ -1,1 +1,4 @@
-source "$BR2_EXTERNAL_NERVES_SYSTEM_ATOMCAM2_PATH/package/Config.in"
+# Keep project-specific Buildroot package menus reachable from the Nerves
+# system directory. The Buildroot external-tree variable for this system is not
+# available during the Nerves defconfig phase, so use NERVES_DEFCONFIG_DIR.
+source "$NERVES_DEFCONFIG_DIR/package/Config.in"

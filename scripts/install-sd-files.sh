@@ -24,22 +24,59 @@ Options:
 USAGE
 }
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --source) source_dir="${2:-}"; shift 2 ;;
-    --mount) mount_dir="${2:-}"; shift 2 ;;
-    --force) force=1; shift ;;
-    --dry-run) dry_run=1; shift ;;
-    --no-backup) backup=0; shift ;;
-    -h|--help) usage; exit 0 ;;
-    *) echo "unknown argument: $1" >&2; usage >&2; exit 1 ;;
-  esac
-done
-
 fail() {
   echo "error: $*" >&2
   exit 1
 }
+
+require_option_value() {
+  local option_name="$1"
+  local option_value="${2:-}"
+
+  if [ -z "$option_value" ]; then
+    fail "$option_name requires a value"
+  fi
+}
+
+physical_dir() {
+  (cd "$1" 2>/dev/null && pwd -P)
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --source)
+      require_option_value "$1" "${2:-}"
+      source_dir="$2"
+      shift 2
+      ;;
+    --mount)
+      require_option_value "$1" "${2:-}"
+      mount_dir="$2"
+      shift 2
+      ;;
+    --force)
+      force=1
+      shift
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    --no-backup)
+      backup=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
 
 copy_file() {
   local source_file="$1"
@@ -67,11 +104,10 @@ maybe_backup_file() {
     return 0
   fi
 
-  mkdir -p "$backup_dir"
-
   if [ "$dry_run" -eq 1 ]; then
     echo "backup: $destination_file -> $backup_dir/$(basename "$destination_file")"
   else
+    mkdir -p "$backup_dir"
     cp -a "$destination_file" "$backup_dir/$(basename "$destination_file")"
   fi
 }
@@ -83,6 +119,10 @@ mount_dir="${mount_dir%/}"
 [ "$mount_dir" != "/" ] || fail "refusing to install to /"
 [ -d "$source_dir" ] || fail "source directory does not exist: $source_dir"
 [ -d "$mount_dir" ] || fail "mount directory does not exist: $mount_dir"
+
+source_dir_real="$(physical_dir "$source_dir")" || fail "cannot resolve source directory: $source_dir"
+mount_dir_real="$(physical_dir "$mount_dir")" || fail "cannot resolve mount directory: $mount_dir"
+[ "$source_dir_real" != "$mount_dir_real" ] || fail "source and mount directories must differ"
 
 "$repo_root/scripts/atomcam2-check-sd-payload.sh" "$source_dir"
 

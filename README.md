@@ -29,24 +29,36 @@ Camera runtime, RTSP, WebUI, Samba, vendor app compatibility, and internal flash
 
 This archive is a full source snapshot for the minimal bring-up direction. It does not include compiled artifacts, proprietary vendor files, or a proven hardware-specific kernel configuration. Treat the kernel and Wi-Fi driver details as the next hardware-confirmation layer.
 
-The safe first boot contract is the flat AtomCam2 microSD payload:
+The safe first boot contract is the flat AtomCam2 microSD payload. The first four files match the AtomCam2 boot handoff; `nerves-provisioning.conf` is for the Nerves app after rootfs handoff:
 
 ```text
 factory_t31_ZMC6tiIDQN
 rootfs_hack.squashfs
 hostname
 authorized_keys
+nerves-provisioning.conf
 ```
+
+Target-side helper scripts are installed through `rootfs_overlay` only. The `package/` directory is kept as a placeholder for future compiled Buildroot packages, not for duplicating plain shell helpers.
 
 ## Build shape
 
 The intended flow is:
 
 ```sh
-cd examples/atomcam2_nerves_app
-export MIX_TARGET=atomcam2
-mix deps.get
-mix firmware
+./scripts/check-prereqs.sh
+./scripts/smoke-check.sh
+./scripts/build-firmware-log.sh
+```
+
+For the first Wi-Fi/SSH image, pass credentials and the public key through the
+build environment:
+
+```sh
+NERVES_WIFI_SSID="your-ssid" \
+NERVES_WIFI_PASSPHRASE="your-passphrase" \
+ATOMCAM2_AUTHORIZED_KEYS="$HOME/.ssh/id_ed25519.pub" \
+./scripts/build-firmware-log.sh
 ```
 
 Then package the generated Buildroot images for AtomCam2 flat-SD testing:
@@ -62,7 +74,19 @@ cd ../..
 ./scripts/atomcam2-check-sd-payload.sh target/atomcam2-sd
 ```
 
-Copy the contents of `target/atomcam2-sd/` to the AtomCam2 microSD FAT partition.
+Copy the contents of `target/atomcam2-sd/` to the AtomCam2 microSD FAT partition, or use the helper. The helper refuses obvious dangerous paths, such as using the same directory for the source and mounted SD partition:
+
+```sh
+./scripts/install-sd-files.sh \
+  --source target/atomcam2-sd \
+  --mount /path/to/mounted/sd \
+  --dry-run
+
+./scripts/install-sd-files.sh \
+  --source target/atomcam2-sd \
+  --mount /path/to/mounted/sd \
+  --force
+```
 
 ## Wi-Fi model
 
@@ -72,7 +96,8 @@ The example app configures `wlan0` through VintageNet. Credential priority is:
 2. environment variables embedded into the release build
 3. `/media/mmc/wpa_supplicant.conf`
 
-The preferred first test is explicit provisioning:
+The packaging helper reuses an existing generated `nerves-provisioning.conf` from the images directory when present.
+The preferred first test is explicit provisioning. It is also safe to edit the packaged file directly before copying it to the SD card:
 
 ```sh
 cat > target/atomcam2-sd/nerves-provisioning.conf <<'EOF_PROVISIONING'
@@ -94,7 +119,11 @@ EOF_PROVISIONING
 2. Wait 1-2 minutes.
 3. Try `ping nerves.local`.
 4. Try `ssh nerves.local`.
-5. If it fails, power down and inspect the FAT partition reports.
+5. If it fails, power down and inspect the FAT partition reports. The helper below copies the breadcrumbs into `target/atomcam2-boot-reports/`:
+
+```sh
+./scripts/collect-boot-report.sh --mount /path/to/mounted/sd
+```
 
 Expected report files:
 

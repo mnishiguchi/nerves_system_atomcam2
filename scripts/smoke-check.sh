@@ -34,6 +34,30 @@ check_script_syntax() {
   echo "ok: syntax ${shell_file#$repo_dir/}"
 }
 
+require_grep() {
+  pattern="$1"
+  file="$2"
+
+  if grep -q "$pattern" "$repo_dir/$file"; then
+    echo "ok: $file contains $pattern"
+  else
+    echo "missing pattern in $file: $pattern" >&2
+    exit 1
+  fi
+}
+
+reject_grep() {
+  pattern="$1"
+  file="$2"
+
+  if grep -q "$pattern" "$repo_dir/$file"; then
+    echo "unexpected pattern in $file: $pattern" >&2
+    exit 1
+  else
+    echo "ok: $file does not contain $pattern"
+  fi
+}
+
 require_file README.md
 require_file mix.exs
 require_file nerves_defconfig
@@ -41,6 +65,7 @@ require_file linux-3.10.14.defconfig
 require_file busybox.fragment
 require_file Config.in
 require_file package/Config.in
+require_file patches/kernel/0003-linux-3.10-force-gnu89-for-gcc-15.patch
 require_file external.desc
 require_file external.mk
 require_file board/atomcam2/initramfs/init
@@ -53,13 +78,52 @@ require_executable rootfs_overlay/usr/bin/atomcam2-network-check
 require_executable scripts/atomcam2-package-flat-sd.sh
 require_executable scripts/atomcam2-check-sd-payload.sh
 require_executable scripts/atomcam2-check-minimal-ssh-scope.sh
+require_executable scripts/build-firmware-log.sh
 require_file examples/atomcam2_nerves_app/mix.exs
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 
+require_grep 'CONFIG_BLK_DEV_INITRD=y' linux-3.10.14.defconfig
+require_grep 'CONFIG_INITRAMFS_SOURCE="${NERVES_DEFCONFIG_DIR}/board/atomcam2/initramfs"' linux-3.10.14.defconfig
+require_grep 'CONFIG_BLK_DEV_LOOP=y' linux-3.10.14.defconfig
+require_grep 'CONFIG_NLS_CODEPAGE_437=y' linux-3.10.14.defconfig
+require_grep 'CONFIG_FEATURE_MOUNT_LOOP=y' busybox.fragment
+require_grep 'BR2_TOOLCHAIN_EXTERNAL=y' nerves_defconfig
+require_grep 'nerves_toolchain_mipsel_nerves_linux_musl' nerves_defconfig
+require_grep 'BR2_TOOLCHAIN_EXTERNAL_CUSTOM_MUSL=y' nerves_defconfig
+reject_grep 'BR2_TOOLCHAIN_BUILDROOT=y' nerves_defconfig
+reject_grep 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y' nerves_defconfig
+reject_grep 'CONFIG_INITRAMFS_SOURCE=""' linux-3.10.14.defconfig
+reject_grep '# CONFIG_BLK_DEV_INITRD is not set' linux-3.10.14.defconfig
+require_grep 'file-resource nerves-provisioning.conf' fwup.conf
+require_grep '.nerves' scripts/smoke-check.sh
+require_grep '.nerves' scripts/atomcam2-check-minimal-ssh-scope.sh
+require_grep 'tmp/log' scripts/build-firmware-log.sh
+require_grep 'refusing to write SD payload to /' scripts/atomcam2-package-flat-sd.sh
+require_grep 'output directory must differ from images directory' scripts/atomcam2-package-flat-sd.sh
+require_grep 'source and mount directories must differ' scripts/install-sd-files.sh
+require_grep 'cannot resolve images directory' scripts/atomcam2-package-flat-sd.sh
+require_grep 'cannot resolve source directory' scripts/install-sd-files.sh
+require_grep 'cannot resolve mount directory' scripts/collect-boot-report.sh
+require_grep 'NERVES_DEFCONFIG_DIR/package/Config.in' Config.in
+require_grep 'NERVES_DEFCONFIG_DIR)/package' external.mk
+reject_grep 'BR2_EXTERNAL_NERVES_SYSTEM_ATOMCAM2_PATH' Config.in
+reject_grep 'BR2_EXTERNAL_NERVES_SYSTEM_ATOMCAM2_PATH' external.mk
+reject_grep 'BR2_PACKAGE_ATOMCAM2_FIRST_SSH' nerves_defconfig
+reject_grep 'atomcam2-first-ssh' package/Config.in
+reject_grep 'env | sort' rootfs_overlay/usr/bin/atomcam2-env
+reject_grep 'head -n' rootfs_overlay/usr/bin/atomcam2-network-check
+reject_grep 'tr -' rootfs_overlay/usr/bin/atomcam2-pre-run
+
 find "$repo_dir" \
   -path '*/.git' -prune -o \
+  -path '*/.nerves' -prune -o \
+  -path '*/_build' -prune -o \
+  -path '*/deps' -prune -o \
+  -path '*/target' -prune -o \
   -path '*/vendor' -prune -o \
+  -name '*.log' -prune -o \
+  -name '*.dump' -prune -o \
   \( -name '*.sh' -o -path '*/usr/bin/atomcam2-*' -o -path '*/initramfs/init' \) \
   -type f -print | while IFS= read -r shell_file; do
   check_script_syntax "$shell_file"

@@ -19,28 +19,109 @@ Options:
 USAGE
 }
 
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+require_option_value() {
+  option_name="$1"
+  option_value="${2:-}"
+
+  [ -n "$option_value" ] || fail "$option_name requires a value"
+}
+
+validate_hostname() {
+  case "$hostname_value" in
+    ""|.*|-*|*-|*..*|*.-*|*-.*|*[!A-Za-z0-9.-]*)
+      fail "invalid hostname: $hostname_value"
+      ;;
+  esac
+}
+
+physical_dir() {
+  (CDPATH= cd -- "$1" 2>/dev/null && pwd -P)
+}
+
+validate_output_dir() {
+  [ -n "$output_dir" ] || fail "output directory is empty"
+  [ "$output_dir" != "/" ] || fail "refusing to write SD payload to /"
+  [ "$output_dir" != "." ] || fail "refusing to replace current directory"
+
+  output_basename="${output_dir##*/}"
+  case "$output_basename" in
+    .|..) fail "refusing unsafe output directory: $output_dir" ;;
+  esac
+
+  [ -d "$images_dir" ] || fail "missing images directory: $images_dir"
+
+  case "$output_dir" in
+    */*)
+      output_parent="${output_dir%/*}"
+      [ -n "$output_parent" ] || output_parent="/"
+      ;;
+    *)
+      output_parent="."
+      ;;
+  esac
+
+  mkdir -p "$output_parent"
+
+  images_dir_real="$(physical_dir "$images_dir")" || fail "cannot resolve images directory: $images_dir"
+  output_parent_real="$(physical_dir "$output_parent")" || fail "cannot resolve output parent: $output_parent"
+  output_dir_real="$output_parent_real/$output_basename"
+
+  [ "$output_dir_real" != "$images_dir_real" ] || fail "output directory must differ from images directory"
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --images-dir) images_dir="$2"; shift 2 ;;
-    --output-dir) output_dir="$2"; shift 2 ;;
-    --hostname) hostname_value="$2"; shift 2 ;;
-    --authorized-keys) authorized_keys_file="$2"; shift 2 ;;
-    -h|--help) usage; exit 0 ;;
-    *) echo "unknown option: $1" >&2; usage >&2; exit 1 ;;
+    --images-dir)
+      require_option_value "$1" "${2:-}"
+      images_dir="$2"
+      shift 2
+      ;;
+    --output-dir)
+      require_option_value "$1" "${2:-}"
+      output_dir="$2"
+      shift 2
+      ;;
+    --hostname)
+      require_option_value "$1" "${2:-}"
+      hostname_value="$2"
+      shift 2
+      ;;
+    --authorized-keys)
+      require_option_value "$1" "${2:-}"
+      authorized_keys_file="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
   esac
 done
+
+images_dir="${images_dir%/}"
+output_dir="${output_dir%/}"
+
+validate_hostname
+validate_output_dir
 
 kernel_image="$images_dir/uImage.lzma"
 rootfs_image="$images_dir/rootfs.squashfs"
 
-if [ ! -f "$kernel_image" ]; then
-  echo "missing kernel image: $kernel_image" >&2
-  exit 1
-fi
+[ -f "$kernel_image" ] || fail "missing kernel image: $kernel_image"
+[ -f "$rootfs_image" ] || fail "missing rootfs image: $rootfs_image"
 
-if [ ! -f "$rootfs_image" ]; then
-  echo "missing rootfs image: $rootfs_image" >&2
-  exit 1
+if [ -n "$authorized_keys_file" ]; then
+  [ -f "$authorized_keys_file" ] || fail "missing authorized keys file: $authorized_keys_file"
 fi
 
 rm -rf "$output_dir"
@@ -51,19 +132,19 @@ cp "$rootfs_image" "$output_dir/rootfs_hack.squashfs"
 printf '%s\n' "$hostname_value" > "$output_dir/hostname"
 
 if [ -n "$authorized_keys_file" ]; then
-  if [ ! -f "$authorized_keys_file" ]; then
-    echo "missing authorized keys file: $authorized_keys_file" >&2
-    exit 1
-  fi
   cp "$authorized_keys_file" "$output_dir/authorized_keys"
 else
   : > "$output_dir/authorized_keys"
 fi
 
-cat > "$output_dir/nerves-provisioning.conf" <<EOF_PROVISIONING
+if [ -f "$images_dir/nerves-provisioning.conf" ]; then
+  cp "$images_dir/nerves-provisioning.conf" "$output_dir/nerves-provisioning.conf"
+else
+  cat > "$output_dir/nerves-provisioning.conf" <<EOF_PROVISIONING
 NERVES_WIFI_SSID=${NERVES_WIFI_SSID:-}
 NERVES_WIFI_PASSPHRASE=${NERVES_WIFI_PASSPHRASE:-}
 EOF_PROVISIONING
+fi
 
 cat <<MESSAGE
 AtomCam2 SD payload created:

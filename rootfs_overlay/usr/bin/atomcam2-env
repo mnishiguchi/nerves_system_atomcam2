@@ -9,4 +9,4 @@ if [ -f /media/mmc/atomcam2.env ]; then
   . /media/mmc/atomcam2.env
 fi
 
-env | sort | grep '^ATOMCAM2_' || true
+env | grep '^ATOMCAM2_' || true

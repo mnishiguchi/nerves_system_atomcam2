@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sat, 11 Jul 2026 09:25:00 +0900
+Subject: [PATCH] linux 3.10: disable blanket -Werror for arch/mips
+
+This vendor kernel is built with a modern GCC 14 toolchain. The MIPS tree
+unconditionally adds `-Werror`, which turns numerous compatibility warnings
+in legacy code paths into hard failures even after the correct T31/XBurst
+machine configuration is selected.
+
+Drop the blanket `-Werror` and let real compile errors fail the build while
+non-fatal warnings remain visible.
+---
+ arch/mips/Kbuild | 4 +---
+ 1 file changed, 1 insertion(+), 3 deletions(-)
+
+diff --git a/arch/mips/Kbuild b/arch/mips/Kbuild
+index 68eab20..a48d51b 100644
+--- a/arch/mips/Kbuild
++++ b/arch/mips/Kbuild
+@@ -1,7 +1,5 @@
+-# Fail on warnings - also for files referenced in subdirs
+-# -Werror can be disabled for specific files using:
+-# CFLAGS_<file.o> := -Wno-error
+-subdir-ccflags-y := -Werror
++# Legacy vendor MIPS code emits warnings with modern GCC; keep them visible
++# without promoting them to hard failures.
+ 
+ # platform specific definitions
+ include arch/mips/Kbuild.platforms
+-- 
+2.47.0

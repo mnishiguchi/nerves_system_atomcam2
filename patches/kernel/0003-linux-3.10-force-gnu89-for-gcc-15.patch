@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 12 Jul 2026 20:30:00 +0900
+Subject: [PATCH] linux 3.10: force gnu89 when building with GCC 15
+
+GCC 15 defaults C compilation to gnu23. In C23, bool, true, and false are
+keywords, but this vendor Linux 3.10 tree still defines bool and false in
+kernel headers. That makes the build fail before the kernel proper is built.
+
+Force the legacy kernel dialect explicitly so modern toolchains compile the
+old kernel source the same way older toolchains did.
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 0be7e46..c4f89d0 100644
+--- a/Makefile
++++ b/Makefile
+@@ -379,7 +379,7 @@ KBUILD_CPPFLAGS := -D__KERNEL__
+ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
+ 		   -fno-strict-aliasing -fno-common \
+ 		   -Werror-implicit-function-declaration \
+-		   -Wno-format-security \
++		   -Wno-format-security -std=gnu89 \
+ 		   -fno-delete-null-pointer-checks
+ KBUILD_AFLAGS_KERNEL :=
+ KBUILD_CFLAGS_KERNEL :=
+-- 
+2.47.0

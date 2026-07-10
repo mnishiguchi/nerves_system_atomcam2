@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sat, 11 Jul 2026 09:05:00 +0900
+Subject: [PATCH] linux 3.10: map gcc 5 and newer to compiler-gcc5
+
+This vendor 3.10 kernel only ships compiler-specific headers for GCC 3, 4,
+and 5. Modern Buildroot toolchains use newer GCC releases, which causes the
+kernel build to fail while trying to include a non-existent
+`include/linux/compiler-gcc14.h`.
+
+For this tree, the GCC 5 compatibility header is the newest available
+baseline, so use it for GCC 5 and newer.
+---
+ include/linux/compiler-gcc.h | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/compiler-gcc.h b/include/linux/compiler-gcc.h
+index 81b3f89..24417a8 100644
+--- a/include/linux/compiler-gcc.h
++++ b/include/linux/compiler-gcc.h
+@@ -100,7 +100,12 @@
+ #define __gcc_header(x) #x
+ #define _gcc_header(x) __gcc_header(linux/compiler-gcc##x.h)
+ #define gcc_header(x) _gcc_header(x)
+-#include gcc_header(__GNUC__)
++
++#if __GNUC__ >= 5
++#include "linux/compiler-gcc5.h"
++#else
++#include gcc_header(__GNUC__)
++#endif
+ 
+ #if !defined(__noclone)
+ #define __noclone	/* not needed */
+-- 
+2.47.0

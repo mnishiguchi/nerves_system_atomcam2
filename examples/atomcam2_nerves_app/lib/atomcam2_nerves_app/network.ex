@@ -84,9 +84,9 @@ defmodule Atomcam2NervesApp.Network do
       |> File.read!()
       |> String.split("\n", trim: true)
       |> Enum.reduce(%{}, fn line, acc ->
-        case String.split(line, "=", parts: 2) do
-          [key, value] -> Map.put(acc, String.trim(key), String.trim(value))
-          _other -> acc
+        case parse_key_value(line) do
+          {key, value} -> Map.put(acc, key, value)
+          :skip -> acc
         end
       end)
     else
@@ -94,9 +94,36 @@ defmodule Atomcam2NervesApp.Network do
     end
   end
 
+  defp parse_key_value(line) do
+    trimmed_line = String.trim(line)
+
+    cond do
+      trimmed_line == "" ->
+        :skip
+
+      String.starts_with?(trimmed_line, "#") ->
+        :skip
+
+      true ->
+        case String.split(trimmed_line, "=", parts: 2) do
+          [key, value] ->
+            key = String.trim(key)
+
+            if key == "" do
+              :skip
+            else
+              {key, String.trim(value)}
+            end
+
+          _other ->
+            :skip
+        end
+    end
+  end
+
   defp config_from_key_values(%{"NERVES_WIFI_SSID" => ssid} = values)
        when is_binary(ssid) and ssid != "" do
-    passphrase = Map.get(values, "NERVES_WIFI_PASSPHRASE", "")
+    passphrase = Map.get(values, "NERVES_WIFI_PASSPHRASE") || ""
 
     key_mgmt =
       if passphrase == "" do
@@ -124,7 +151,7 @@ defmodule Atomcam2NervesApp.Network do
   defp config_from_key_values(_values), do: :error
 
   defp find_wpa_value(contents, key) do
-    pattern = ~r/^\s*#{Regex.escape(key)}=\"?([^\"\n]+)\"?/m
+    pattern = ~r/^\s*#{Regex.escape(key)}="?([^"\n]+)"?/m
 
     case Regex.run(pattern, contents) do
       [_match, value] -> value

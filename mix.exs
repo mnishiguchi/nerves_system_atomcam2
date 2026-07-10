@@ -34,7 +34,8 @@ defmodule NervesSystemAtomcam2.MixProject do
   defp deps do
     [
       {:nerves, "~> 1.11 or ~> 1.12", runtime: false},
-      {:nerves_system_br, "~> 1.33", runtime: false}
+      {:nerves_system_br, "~> 1.33", runtime: false},
+      {:nerves_toolchain_mipsel_nerves_linux_musl, "~> 15.3.0", runtime: false}
     ]
   end
 
@@ -53,10 +54,10 @@ defmodule NervesSystemAtomcam2.MixProject do
       ],
       env: [
         {"TARGET_ARCH", "mipsel"},
-        {"TARGET_CPU", "mips32r5"},
+        {"TARGET_CPU", "mips32"},
         {"TARGET_OS", "linux"},
-        {"TARGET_ABI", "gnu"},
-        {"TARGET_GCC_FLAGS", "-EL -mips32r5 -mabi=32"}
+        {"TARGET_ABI", "musl"},
+        {"TARGET_GCC_FLAGS", "-EL -mabi=32"}
       ],
       checksum: package_files()
     ]

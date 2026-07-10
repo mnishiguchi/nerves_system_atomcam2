@@ -1,6 +1,0 @@
-config BR2_PACKAGE_ATOMCAM2_FIRST_SSH
-    bool "atomcam2 first ssh helpers"
-    help
-      Installs only the small helper scripts needed for the first Nerves MVP:
-      load the AtomCam2 Wi-Fi driver if available, apply a simple hostname, and
-      leave boot breadcrumbs for ping/SSH debugging.

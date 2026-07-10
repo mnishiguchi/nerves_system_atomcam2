@@ -9,9 +9,13 @@ mount -t proc proc /proc 2>/dev/null || true
 mount -t sysfs sysfs /sys 2>/dev/null || true
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 
+boot_is_mounted() {
+  grep -q ' /mnt/boot ' /proc/mounts 2>/dev/null
+}
+
 write_report() {
   report_file="/mnt/boot/atomcam2-initramfs.env"
-  if mountpoint -q /mnt/boot 2>/dev/null; then
+  if boot_is_mounted; then
     {
       echo "stage=$1"
       echo "boot_device=${boot_device:-}"

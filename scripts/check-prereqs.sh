@@ -28,6 +28,10 @@ check_optional_command() {
 check_command bash
 check_command git
 check_command make
+check_command gcc
+check_command g++
+check_command erl
+check_command elixir
 check_command mix
 check_command cpio
 check_command fwup
