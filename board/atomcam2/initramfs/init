@@ -1,0 +1,65 @@
+#!/bin/sh
+set -eu
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+mkdir -p /proc /sys /dev /mnt/boot /mnt/root /tmp
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+
+write_report() {
+  report_file="/mnt/boot/atomcam2-initramfs.env"
+  if mountpoint -q /mnt/boot 2>/dev/null; then
+    {
+      echo "stage=$1"
+      echo "boot_device=${boot_device:-}"
+      echo "rootfs_file=/mnt/boot/rootfs_hack.squashfs"
+    } > "$report_file" 2>/dev/null || true
+  fi
+}
+
+mount_boot() {
+  for boot_device in /dev/mmcblk0p1 /dev/mmcblk0 /dev/mmcblk1p1 /dev/mmcblk1; do
+    if [ -b "$boot_device" ]; then
+      if mount -t vfat -o rw,umask=0000,dmask=0000 "$boot_device" /mnt/boot 2>/dev/null; then
+        return 0
+      fi
+    fi
+  done
+
+  return 1
+}
+
+if ! mount_boot; then
+  echo "atomcam2 initramfs: failed to mount boot partition" >&2
+  exec sh
+fi
+
+{
+  echo "stage=entered"
+  echo "boot_device=${boot_device:-}"
+} > /mnt/boot/atomcam2-init-entered.env 2>/dev/null || true
+
+if [ ! -f /mnt/boot/rootfs_hack.squashfs ]; then
+  write_report "missing_rootfs_hack_squashfs"
+  echo "atomcam2 initramfs: missing rootfs_hack.squashfs" >&2
+  exec sh
+fi
+
+if ! mount -t squashfs -o loop /mnt/boot/rootfs_hack.squashfs /mnt/root 2>/dev/null; then
+  write_report "mount_rootfs_failed"
+  echo "atomcam2 initramfs: failed to mount rootfs_hack.squashfs" >&2
+  exec sh
+fi
+
+write_report "switch_root"
+
+mount --move /dev /mnt/root/dev 2>/dev/null || exec sh
+mount --move /proc /mnt/root/proc 2>/dev/null || exec sh
+mount --move /sys /mnt/root/sys 2>/dev/null || exec sh
+mount --move /mnt/boot /mnt/root/media/mmc 2>/dev/null || exec sh
+mount -o bind /mnt/root/media/mmc /mnt/root/boot 2>/dev/null || true
+
+exec switch_root /mnt/root /sbin/init

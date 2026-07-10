@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+if [ -f /etc/atomcam2.env ]; then
+  . /etc/atomcam2.env
+fi
+
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
+report_file="${ATOMCAM2_WIFI_DRIVER_REPORT:-/media/mmc/atomcam2-wifi-driver.env}"
+
+write_report() {
+  {
+    echo "stage=$1"
+    echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
+    echo "loaded_module=${loaded_module:-}"
+  } > "$report_file" 2>/dev/null || true
+}
+
+if ifconfig wlan0 >/dev/null 2>&1; then
+  write_report "wlan0_already_present"
+  exit 0
+fi
+
+loaded_module=""
+for module_path in ${ATOMCAM2_WIFI_MODULE_CANDIDATES:-}; do
+  if [ -f "$module_path" ]; then
+    if insmod "$module_path" 2>/dev/null; then
+      loaded_module="$module_path"
+      break
+    fi
+  fi
+done
+
+if ifconfig wlan0 >/dev/null 2>&1; then
+  write_report "wlan0_present"
+  exit 0
+fi
+
+write_report "wlan0_missing"
+exit 0

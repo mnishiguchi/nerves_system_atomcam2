@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+if [ -f /etc/atomcam2.env ]; then
+  . /etc/atomcam2.env
+fi
+
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
+env | sort | grep '^ATOMCAM2_' || true

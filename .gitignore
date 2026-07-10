@@ -1,0 +1,13 @@
+/_build/
+/deps/
+/.elixir_ls/
+/.nerves/
+/target/
+/tmp/
+*.fw
+*.img
+*.squashfs
+*.cpio
+*.tar
+*.tar.gz
+*.zip

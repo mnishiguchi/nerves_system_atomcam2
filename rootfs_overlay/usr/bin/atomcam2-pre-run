@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+if [ -f /etc/atomcam2.env ]; then
+  . /etc/atomcam2.env
+fi
+
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
+boot_mount="${ATOMCAM2_BOOT_MOUNT:-/media/mmc}"
+report_file="${ATOMCAM2_PRE_RUN_REPORT:-/media/mmc/atomcam2-pre-run.env}"
+default_hostname="${ATOMCAM2_DEFAULT_HOSTNAME:-nerves}"
+hostname_file="${ATOMCAM2_HOSTNAME_FILE:-/media/mmc/hostname}"
+
+mkdir -p "$boot_mount" /tmp || true
+
+if [ -f "$hostname_file" ]; then
+  desired_hostname="$(sed -n '1p' "$hostname_file" | tr -cd 'A-Za-z0-9.-')"
+else
+  desired_hostname="$default_hostname"
+fi
+
+if [ -z "$desired_hostname" ]; then
+  desired_hostname="$default_hostname"
+fi
+
+hostname "$desired_hostname" 2>/dev/null || true
+
+if [ "${ATOMCAM2_PRE_RUN_WIFI_DRIVER:-1}" = "1" ]; then
+  atomcam2-wifi-driver || true
+fi
+
+atomcam2-network-check >/dev/null 2>&1 || true
+
+{
+  echo "stage=pre_run_complete"
+  echo "hostname=$(hostname 2>/dev/null || true)"
+  echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
+} > "$report_file" 2>/dev/null || true
+
+exit 0

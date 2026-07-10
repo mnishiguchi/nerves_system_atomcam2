@@ -1,0 +1,3 @@
+menu "AtomCam2 packages"
+    source "$BR2_EXTERNAL_NERVES_SYSTEM_ATOMCAM2_PATH/package/atomcam2-first-ssh/Config.in"
+endmenu
