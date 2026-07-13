@@ -2,8 +2,9 @@
 set -euo pipefail
 
 repo_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+. "$repo_dir/scripts/logging.sh"
 app_dir="$repo_dir/examples/atomcam2_nerves_app"
-log_dir="${ATOMCAM2_LOG_DIR:-$repo_dir/tmp/log}"
+log_dir="$(atomcam2_prepare_log_dir "$repo_dir")"
 timestamp="$(date +%Y%m%d-%H%M%S)"
 log_file="$log_dir/mix-firmware-$timestamp.log"
 
@@ -11,8 +12,6 @@ if [ ! -d "$app_dir" ]; then
   echo "missing example app directory: $app_dir" >&2
   exit 1
 fi
-
-mkdir -p "$log_dir"
 
 mix_target="${MIX_TARGET:-atomcam2}"
 mix_env="${MIX_ENV:-prod}"

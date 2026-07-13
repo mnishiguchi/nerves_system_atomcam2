@@ -51,6 +51,8 @@ The intended flow is:
 ./scripts/build-firmware-log.sh
 ```
 
+Host-side logs are written under `tmp/log/` by default.
+
 For the first Wi-Fi/SSH image, pass credentials and the public key through the
 build environment:
 
@@ -124,6 +126,8 @@ EOF_PROVISIONING
 ```sh
 ./scripts/collect-boot-report.sh --mount /path/to/mounted/sd
 ```
+
+The copied report files stay under `target/atomcam2-boot-reports/`, and the host-side collection log is written to `tmp/log/`.
 
 Expected report files:
 

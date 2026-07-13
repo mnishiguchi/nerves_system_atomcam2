@@ -79,6 +79,7 @@ require_executable scripts/atomcam2-package-flat-sd.sh
 require_executable scripts/atomcam2-check-sd-payload.sh
 require_executable scripts/atomcam2-check-minimal-ssh-scope.sh
 require_executable scripts/build-firmware-log.sh
+require_file scripts/logging.sh
 require_file examples/atomcam2_nerves_app/mix.exs
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
@@ -98,7 +99,9 @@ reject_grep '# CONFIG_BLK_DEV_INITRD is not set' linux-3.10.14.defconfig
 require_grep 'file-resource nerves-provisioning.conf' fwup.conf
 require_grep '.nerves' scripts/smoke-check.sh
 require_grep '.nerves' scripts/atomcam2-check-minimal-ssh-scope.sh
-require_grep 'tmp/log' scripts/build-firmware-log.sh
+require_grep 'tmp/log' scripts/logging.sh
+require_grep 'logging.sh' scripts/build-firmware-log.sh
+require_grep 'logging.sh' scripts/collect-boot-report.sh
 require_grep 'refusing to write SD payload to /' scripts/atomcam2-package-flat-sd.sh
 require_grep 'output directory must differ from images directory' scripts/atomcam2-package-flat-sd.sh
 require_grep 'source and mount directories must differ' scripts/install-sd-files.sh
