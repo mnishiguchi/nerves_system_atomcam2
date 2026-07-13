@@ -27,7 +27,9 @@ Camera runtime, RTSP, WebUI, Samba, vendor app compatibility, and internal flash
 
 ## Important status
 
-This archive is a full source snapshot for the minimal bring-up direction. It does not include compiled artifacts, proprietary vendor files, or a proven hardware-specific kernel configuration. Treat the kernel and Wi-Fi driver details as the next hardware-confirmation layer.
+The SD boot path, root filesystem handoff, and MIPS32R2 soft-float dynamic userspace have been proven on Atom Cam 2. The stock Nerves MIPSEL toolchain is not usable for this target because its `24kec` profile enables DSP ASE instructions that raise `SIGILL` on the Ingenic T31.
+
+A locally built MIPS32R2 soft-float toolchain without DSP ASE has passed both PIE and non-PIE dynamic probes. The next checkpoint is a fully clean Nerves firmware build with that same toolchain used by Buildroot, ERTS, ports, NIFs, and native dependencies. The custom Nerves kernel path also remains unproven.
 
 The safe first boot contract is the flat AtomCam2 microSD payload. The first four files match the AtomCam2 boot handoff; `nerves-provisioning.conf` is for the Nerves app after rootfs handoff:
 
@@ -41,27 +43,44 @@ nerves-provisioning.conf
 
 Target-side helper scripts are installed through `rootfs_overlay` only. The `package/` directory is kept as a placeholder for future compiled Buildroot packages, not for duplicating plain shell helpers.
 
+## Custom toolchain
+
+Atom Cam 2 requires a MIPS32R2 soft-float toolchain without DSP ASE. The stock Nerves MIPSEL toolchain still targets `24kec`, so its musl runtime is not usable on the Ingenic T31.
+
+Build that replacement toolchain from a checkout of [`nerves-project/toolchains`](https://github.com/nerves-project/toolchains). This repo does not yet automate generating, unpacking, or validating the archive, so stage it in the two forms expected by the current build:
+
+```text
+target/toolchains/atomcam2-mips32r2-nerves-toolchain.tar.xz
+examples/atomcam2_nerves_app/.envrc -> export NERVES_TOOLCHAIN=/absolute/path/to/x-tools/mipsel-nerves-linux-musl
+```
+
+The archive is consumed by Buildroot through `nerves_defconfig`. `NERVES_TOOLCHAIN` is used by the example app build for ERTS, ports, NIFs, and other native dependencies.
+
+For the investigation that led to this requirement, see `docs/worklog/20260713-atomcam2-toolchain-dsp-ase-investigation.md`.
+
 ## Build shape
 
-The intended flow is:
+Configure the local development environment in:
 
-```sh
-./scripts/check-prereqs.sh
-./scripts/smoke-check.sh
-./scripts/build-firmware-log.sh
+```text
+examples/atomcam2_nerves_app/.envrc
 ```
 
-Host-side logs are written under `tmp/log/` by default.
+This file contains the custom toolchain path, Wi-Fi credentials, authorized key path, and local build settings.
 
-For the first Wi-Fi/SSH image, pass credentials and the public key through the
-build environment:
+Then build from the example app:
 
 ```sh
-NERVES_WIFI_SSID="your-ssid" \
-NERVES_WIFI_PASSPHRASE="your-passphrase" \
-ATOMCAM2_AUTHORIZED_KEYS="$HOME/.ssh/id_ed25519.pub" \
-./scripts/build-firmware-log.sh
+cd examples/atomcam2_nerves_app
+direnv allow
+mix deps.get
+../../scripts/patch-vintage-net-linux-3.10.sh
+../../scripts/build-firmware-log.sh
 ```
+
+The build helper writes logs to `tmp/log/`, reruns the prerequisite and smoke checks, and then runs `mix deps.get` plus `mix firmware`.
+
+The VintageNet compatibility patch is still a manual step because it modifies `deps/vintage_net` after `mix deps.get`.
 
 Then package the generated Buildroot images for AtomCam2 flat-SD testing:
 
@@ -99,6 +118,7 @@ The example app configures `wlan0` through VintageNet. Credential priority is:
 3. `/media/mmc/wpa_supplicant.conf`
 
 The packaging helper reuses an existing generated `nerves-provisioning.conf` from the images directory when present.
+
 The preferred first test is explicit provisioning. It is also safe to edit the packaged file directly before copying it to the SD card:
 
 ```sh
@@ -121,13 +141,11 @@ EOF_PROVISIONING
 2. Wait 1-2 minutes.
 3. Try `ping nerves.local`.
 4. Try `ssh nerves.local`.
-5. If it fails, power down and inspect the FAT partition reports. The helper below copies the breadcrumbs into `target/atomcam2-boot-reports/`:
+5. If it fails, power down and inspect the FAT partition reports. The helper below copies the breadcrumbs into `target/atomcam2-boot-reports/` and writes the host collection log to `tmp/log/`:
 
 ```sh
 ./scripts/collect-boot-report.sh --mount /path/to/mounted/sd
 ```
-
-The copied report files stay under `target/atomcam2-boot-reports/`, and the host-side collection log is written to `tmp/log/`.
 
 Expected report files:
 
@@ -135,5 +153,6 @@ Expected report files:
 atomcam2-init-entered.env
 atomcam2-initramfs.env
 atomcam2-pre-run.env
+atomcam2-wifi-driver.env
 atomcam2-network.env
 ```
