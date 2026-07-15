@@ -81,6 +81,7 @@ require_executable scripts/atomcam2-package-flat-sd.sh
 require_executable scripts/atomcam2-check-sd-payload.sh
 require_executable scripts/atomcam2-check-minimal-ssh-scope.sh
 require_executable scripts/build-firmware-log.sh
+require_executable scripts/prepare-toolchain-archive.sh
 require_file scripts/logging.sh
 require_file examples/atomcam2_nerves_app/mix.exs
 require_file examples/atomcam2_nerves_app/config/target.exs
@@ -110,6 +111,8 @@ require_grep 'CONFIG_DD=y' busybox.fragment
 require_grep 'CONFIG_DEVMEM=y' busybox.fragment
 require_grep 'BR2_TOOLCHAIN_EXTERNAL=y' nerves_defconfig
 require_grep 'atomcam2-mips32r2-nerves-toolchain.tar.xz' nerves_defconfig
+require_grep 'atomcam2-mips32r2-nerves-toolchain.tar.xz' scripts/prepare-toolchain-archive.sh
+require_grep 'prepare-toolchain-archive.sh' scripts/check-prereqs.sh
 require_grep 'BR2_TOOLCHAIN_EXTERNAL_CUSTOM_MUSL=y' nerves_defconfig
 reject_grep 'BR2_TOOLCHAIN_BUILDROOT=y' nerves_defconfig
 reject_grep 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y' nerves_defconfig

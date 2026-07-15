@@ -47,12 +47,20 @@ Target-side helper scripts are installed through `rootfs_overlay` only. The `pac
 
 Atom Cam 2 requires a MIPS32R2 soft-float toolchain without DSP ASE. The stock Nerves MIPSEL toolchain still targets `24kec`, so its musl runtime is not usable on the Ingenic T31.
 
-Build that replacement toolchain from a checkout of [`nerves-project/toolchains`](https://github.com/nerves-project/toolchains). This repo does not yet automate generating, unpacking, or validating the archive, so stage it in the two forms expected by the current build:
+Build that replacement toolchain from a checkout of [`nerves-project/toolchains`](https://github.com/nerves-project/toolchains), then point `NERVES_TOOLCHAIN` at the unpacked toolchain:
+
+```sh
+export NERVES_TOOLCHAIN=/absolute/path/to/x-tools/mipsel-nerves-linux-musl
+./scripts/prepare-toolchain-archive.sh
+```
+
+The preparation script creates the Buildroot input archive at:
 
 ```text
 target/toolchains/atomcam2-mips32r2-nerves-toolchain.tar.xz
-examples/atomcam2_nerves_app/.envrc -> export NERVES_TOOLCHAIN=/absolute/path/to/x-tools/mipsel-nerves-linux-musl
 ```
+
+It leaves an existing non-empty archive unchanged. Pass `--force` to regenerate it from the current `NERVES_TOOLCHAIN` directory.
 
 The archive is consumed by Buildroot through `nerves_defconfig`. `NERVES_TOOLCHAIN` is used by the example app build for ERTS, ports, NIFs, and other native dependencies.
 

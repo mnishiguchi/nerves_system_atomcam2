@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/.." && pwd)"
+toolchain_archive="$repo_root/target/toolchains/atomcam2-mips32r2-nerves-toolchain.tar.xz"
+
 missing=0
 
 check_command() {
@@ -40,6 +44,14 @@ check_command unsquashfs
 # Buildroot can build host mksquashfs for BR2_TARGET_ROOTFS_SQUASHFS, so do not
 # fail early just because the host package is missing.
 check_optional_command mksquashfs "Buildroot can build host squashfs-tools"
+
+if [ -s "$toolchain_archive" ]; then
+  echo "ok: $toolchain_archive"
+else
+  echo "missing: $toolchain_archive"
+  echo "Run ./scripts/prepare-toolchain-archive.sh"
+  missing=1
+fi
 
 if [ "$missing" -ne 0 ]; then
   echo "Install missing required commands before building."
