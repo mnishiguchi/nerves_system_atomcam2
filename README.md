@@ -82,29 +82,30 @@ The build helper writes logs to `tmp/log/`, reruns the prerequisite and smoke ch
 
 The VintageNet compatibility patch is still a manual step because it modifies `deps/vintage_net` after `mix deps.get`.
 
-Then package the generated Buildroot images for AtomCam2 flat-SD testing:
+The firmware post-processing hook preserves the final application SquashFS and creates the complete flat-SD payload automatically. The final rootfs contains the Erlang release under `/srv/erlang`; the smaller base system rootfs does not.
+
+After the build, inspect the summary:
 
 ```sh
-cd ../..
-./scripts/atomcam2-package-flat-sd.sh \
-  --images-dir .nerves/artifacts/nerves_system_atomcam2-portable-0.1.0/images \
-  --output-dir target/atomcam2-sd \
-  --hostname nerves \
-  --authorized-keys "$HOME/.ssh/id_ed25519.pub"
-
-./scripts/atomcam2-check-sd-payload.sh target/atomcam2-sd
+cat examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/rootfs_hack.final.squashfs.summary.txt
 ```
 
-Copy the contents of `target/atomcam2-sd/` to the AtomCam2 microSD FAT partition, or use the helper. The helper refuses obvious dangerous paths, such as using the same directory for the source and mounted SD partition:
+The installable payload is:
+
+```text
+examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/atomcam2-sd/
+```
+
+Do not install `target/atomcam2-sd/` or the base system `rootfs.squashfs`; those are produced before Nerves adds the application release.
+
+Copy the final payload to the mounted AtomCam2 microSD FAT partition. The installer defaults to the final `atomcam2_prod` application payload:
 
 ```sh
 ./scripts/install-sd-files.sh \
-  --source target/atomcam2-sd \
   --mount /path/to/mounted/sd \
   --dry-run
 
 ./scripts/install-sd-files.sh \
-  --source target/atomcam2-sd \
   --mount /path/to/mounted/sd \
   --force
 ```
@@ -122,7 +123,7 @@ The packaging helper reuses an existing generated `nerves-provisioning.conf` fro
 The preferred first test is explicit provisioning. It is also safe to edit the packaged file directly before copying it to the SD card:
 
 ```sh
-cat > target/atomcam2-sd/nerves-provisioning.conf <<'EOF_PROVISIONING'
+cat > examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/atomcam2-sd/nerves-provisioning.conf <<'EOF_PROVISIONING'
 NERVES_WIFI_SSID=your-ssid
 NERVES_WIFI_PASSPHRASE=your-passphrase
 EOF_PROVISIONING
@@ -139,9 +140,11 @@ EOF_PROVISIONING
 
 1. Boot once with the microSD card.
 2. Wait 1-2 minutes.
-3. Try `ping nerves.local`.
-4. Try `ssh nerves.local`.
-5. If it fails, power down and inspect the FAT partition reports. The helper below copies the breadcrumbs into `target/atomcam2-boot-reports/` and writes the host collection log to `tmp/log/`:
+3. Find the DHCP lease in the access point or router.
+4. Ping the assigned IP address.
+5. Resolve and ping `nerves.local`.
+6. Connect with `ssh nerves.local`.
+7. If any stage fails, power down and inspect the FAT partition reports. The helper below copies the breadcrumbs into `target/atomcam2-boot-reports/` and writes the host collection log to `tmp/log/`:
 
 ```sh
 ./scripts/collect-boot-report.sh --mount /path/to/mounted/sd

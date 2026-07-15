@@ -1,15 +1,14 @@
-# 20260712 nerves-config internal toolchain fix
+# 20260712 nerves-config internal toolchain investigation
 
-## Goal
+## Status
 
-Continue the first `mix firmware` build for the AtomCam2 Nerves system.
+This records an early build-system mismatch. The temporary internal-toolchain workaround was superseded by the dedicated external non-DSP Nerves toolchain required for the Ingenic T31 runtime.
 
-## What happened
+See [`20260713-atomcam2-toolchain-dsp-ase-investigation.md`](20260713-atomcam2-toolchain-dsp-ase-investigation.md).
 
-The build reached `nerves-config` after successfully building the toolchain, Linux,
-Erlang, `erlinit`, and `nerves_heart`.
+## Symptom
 
-`nerves-config` failed while copying `echo-gcc-args`:
+The build reached `nerves-config` after building the toolchain, Linux, Erlang, `erlinit`, and `nerves_heart`, then failed while copying `echo-gcc-args`:
 
 ```text
 cp: cannot create regular file '.../host/opt/ext-toolchain/bin/echo-gcc-args': No such file or directory
@@ -17,24 +16,31 @@ cp: cannot create regular file '.../host/opt/ext-toolchain/bin/echo-gcc-args': N
 
 ## Finding
 
-The current system uses Buildroot's internal toolchain during bring-up. However,
-`nerves-config` expects the external Nerves toolchain directory layout:
+The bring-up configuration was using Buildroot's internal toolchain, while `nerves-config` expected the directory structure used by an external Nerves toolchain:
 
 ```text
 host/opt/ext-toolchain/bin
 ```
 
-Deleting `.nerves` did not change the result, so this is a deterministic system
-configuration issue rather than stale build state.
+Deleting `.nerves` reproduced the failure, so stale build state was not the cause.
 
-## Decision
+## Temporary workaround
 
-Create the expected host directory before `nerves-config` installs.
+The expected host directory was created before `nerves-config` installed its helper.
 
-This is a small compatibility shim for the current first-boot build. It does not
-change the target runtime design.
+This allowed the build investigation to continue, but it was not the final toolchain design.
 
-## Follow-up
+## Final resolution
 
-Longer term, decide whether AtomCam2 should keep using Buildroot's internal
-toolchain or move to a dedicated external Nerves-style MIPS toolchain.
+Runtime testing later proved that the stock MIPSEL Nerves toolchain enabled DSP ASE instructions unsupported by the Atom Cam 2's Ingenic T31 processor.
+
+The final platform therefore requires a consistent external toolchain with:
+
+```text
+MIPS32 Release 2
+little-endian
+O32 ABI
+soft-float
+musl
+DSP ASE disabled
+```

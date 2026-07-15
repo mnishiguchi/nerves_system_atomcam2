@@ -69,6 +69,8 @@ require_file patches/kernel/0003-linux-3.10-force-gnu89-for-gcc-15.patch
 require_file external.desc
 require_file external.mk
 require_file board/atomcam2/initramfs/init
+require_file board/atomcam2/initramfs/bin/busybox
+require_file board/atomcam2/initramfs/usr/lib/libc.so
 require_file rootfs_overlay/etc/erlinit.config
 require_file rootfs_overlay/etc/atomcam2.env
 require_executable rootfs_overlay/usr/bin/atomcam2-env
@@ -81,16 +83,33 @@ require_executable scripts/atomcam2-check-minimal-ssh-scope.sh
 require_executable scripts/build-firmware-log.sh
 require_file scripts/logging.sh
 require_file examples/atomcam2_nerves_app/mix.exs
+require_file examples/atomcam2_nerves_app/config/target.exs
+require_executable examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
+require_file examples/atomcam2_nerves_app/config/target.exs
+require_executable scripts/patch-vintage-net-linux-3.10.sh
+require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
+require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
+require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
+require_grep '#define IFA_MAX IFA_FLAGS' scripts/patch-vintage-net-linux-3.10.sh
+reject_grep 'atomcam2-vintage-net.log' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
+reject_grep 'wpa_cli' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep 'CONFIG_BLK_DEV_INITRD=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_INITRAMFS_SOURCE="${NERVES_DEFCONFIG_DIR}/board/atomcam2/initramfs"' linux-3.10.14.defconfig
 require_grep 'CONFIG_BLK_DEV_LOOP=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_NLS_CODEPAGE_437=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_FEATURE_MOUNT_LOOP=y' busybox.fragment
+require_grep 'CONFIG_JZMMC_V12_MMC1=y' linux-3.10.14.defconfig
+require_grep 'CONFIG_JZMMC_V12_MMC1_PC_4BIT=y' linux-3.10.14.defconfig
+require_grep 'CONFIG_SQUASHFS_ZLIB=y' linux-3.10.14.defconfig
+require_grep 'CONFIG_CMDLINE_OVERRIDE=y' linux-3.10.14.defconfig
+require_grep 'CONFIG_AWK=y' busybox.fragment
+require_grep 'CONFIG_DD=y' busybox.fragment
+require_grep 'CONFIG_DEVMEM=y' busybox.fragment
 require_grep 'BR2_TOOLCHAIN_EXTERNAL=y' nerves_defconfig
-require_grep 'nerves_toolchain_mipsel_nerves_linux_musl' nerves_defconfig
+require_grep 'atomcam2-mips32r2-nerves-toolchain.tar.xz' nerves_defconfig
 require_grep 'BR2_TOOLCHAIN_EXTERNAL_CUSTOM_MUSL=y' nerves_defconfig
 reject_grep 'BR2_TOOLCHAIN_BUILDROOT=y' nerves_defconfig
 reject_grep 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y' nerves_defconfig
@@ -104,6 +123,11 @@ require_grep 'logging.sh' scripts/build-firmware-log.sh
 require_grep 'logging.sh' scripts/collect-boot-report.sh
 require_grep 'refusing to write SD payload to /' scripts/atomcam2-package-flat-sd.sh
 require_grep 'output directory must differ from images directory' scripts/atomcam2-package-flat-sd.sh
+require_grep 'kernel image is too large for the AtomCam2 boot contract' scripts/atomcam2-package-flat-sd.sh
+require_grep '\-\-kernel-image' scripts/atomcam2-package-flat-sd.sh
+require_grep '\-\-rootfs-image' scripts/atomcam2-package-flat-sd.sh
+require_grep 'post_processing_script' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'rootfs_hack.final.squashfs' examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
 require_grep 'source and mount directories must differ' scripts/install-sd-files.sh
 require_grep 'cannot resolve images directory' scripts/atomcam2-package-flat-sd.sh
 require_grep 'cannot resolve source directory' scripts/install-sd-files.sh
@@ -117,6 +141,24 @@ reject_grep 'atomcam2-first-ssh' package/Config.in
 reject_grep 'env | sort' rootfs_overlay/usr/bin/atomcam2-env
 reject_grep 'head -n' rootfs_overlay/usr/bin/atomcam2-network-check
 reject_grep 'tr -' rootfs_overlay/usr/bin/atomcam2-pre-run
+reject_grep 'atomcam2-pre-run-entered.env' rootfs_overlay/usr/bin/atomcam2-pre-run
+reject_grep 'atomcam2-wifi-driver-entered.env' rootfs_overlay/usr/bin/atomcam2-wifi-driver
+reject_grep 'atomcam2-wifi-driver.log' rootfs_overlay/usr/bin/atomcam2-wifi-driver
+reject_grep 'atomcam2-erlinit.log' board/atomcam2/post-build.sh
+reject_grep 'ATOMCAM2_WIFI_DRIVER_LOG' rootfs_overlay/etc/atomcam2.env
+
+for symlink_path in \
+  board/atomcam2/initramfs/bin/sh \
+  board/atomcam2/initramfs/bin/mount \
+  board/atomcam2/initramfs/sbin/switch_root \
+  board/atomcam2/initramfs/lib/ld-musl-mipsel-sf.so.1; do
+  if [ -L "$repo_dir/$symlink_path" ]; then
+    echo "ok: symlink $symlink_path"
+  else
+    echo "not a symlink: $symlink_path" >&2
+    exit 1
+  fi
+done
 
 find "$repo_dir" \
   -path '*/.git' -prune -o \
