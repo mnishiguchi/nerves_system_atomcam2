@@ -4,7 +4,7 @@ config :nerves, :firmware,
   post_processing_script: Path.expand("../scripts/preserve-final-rootfs.sh", __DIR__)
 
 config :shoehorn,
-  init: [:nerves_runtime, :nerves_ssh, :mdns_lite, :vintage_net],
+  init: [:nerves_runtime, :vintage_net, :mdns_lite, :nerves_ssh],
   app: Mix.Project.config()[:app]
 
 public_keys =

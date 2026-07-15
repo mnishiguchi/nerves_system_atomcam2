@@ -1,6 +1,6 @@
 defmodule Atomcam2NervesApp.Network do
   @moduledoc """
-  Minimal Wi-Fi configuration worker for the first AtomCam2 Nerves milestone.
+  Minimal Wi-Fi configuration worker for the AtomCam2 Nerves system.
   """
 
   use GenServer
@@ -9,29 +9,34 @@ defmodule Atomcam2NervesApp.Network do
   @interface "wlan0"
   @provisioning_path "/media/mmc/nerves-provisioning.conf"
   @wpa_supplicant_path "/media/mmc/wpa_supplicant.conf"
+  @retry_interval 1_000
+  @max_interface_attempts 30
 
   def start_link(_args) do
     GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
   end
 
   @impl GenServer
-  def init(state) do
-    Process.send_after(self(), :configure_wifi, 2_000)
-    {:ok, state}
+  def init(_state) do
+    Process.send_after(self(), :configure_wifi, @retry_interval)
+    {:ok, %{interface_attempts: 0}}
   end
 
   @impl GenServer
-  def handle_info(:configure_wifi, state) do
-    case wifi_config() do
-      {:ok, config} ->
-        Logger.info("Configuring #{@interface} for AtomCam2 first SSH milestone")
-        VintageNet.configure(@interface, config)
+  def handle_info(:configure_wifi, %{interface_attempts: attempts} = state) do
+    cond do
+      interface_present?() ->
+        configure_wifi()
+        {:noreply, state}
 
-      :error ->
-        Logger.warning("No Wi-Fi credentials found for #{@interface}")
+      attempts + 1 < @max_interface_attempts ->
+        Process.send_after(self(), :configure_wifi, @retry_interval)
+        {:noreply, %{state | interface_attempts: attempts + 1}}
+
+      true ->
+        Logger.error("#{@interface} did not appear after #{@max_interface_attempts} attempts")
+        {:noreply, state}
     end
-
-    {:noreply, state}
   end
 
   def status do
@@ -39,6 +44,28 @@ defmodule Atomcam2NervesApp.Network do
       interface: @interface,
       properties: VintageNet.get_by_prefix(["interface", @interface])
     }
+  end
+
+  defp interface_present? do
+    File.exists?("/sys/class/net/#{@interface}")
+  end
+
+  defp configure_wifi do
+    case wifi_config() do
+      {:ok, config} ->
+        Logger.info("Configuring #{@interface}")
+
+        case VintageNet.configure(@interface, config) do
+          :ok ->
+            Logger.info("VintageNet accepted the #{@interface} configuration")
+
+          {:error, reason} ->
+            Logger.error("VintageNet configuration failed: #{inspect(reason)}")
+        end
+
+      :error ->
+        Logger.warning("No Wi-Fi credentials found for #{@interface}")
+    end
   end
 
   defp wifi_config do
@@ -66,12 +93,10 @@ defmodule Atomcam2NervesApp.Network do
   defp config_from_wpa_supplicant do
     if File.exists?(@wpa_supplicant_path) do
       contents = File.read!(@wpa_supplicant_path)
-      ssid = find_wpa_value(contents, "ssid")
-      passphrase = find_wpa_value(contents, "psk")
 
       config_from_key_values(%{
-        "NERVES_WIFI_SSID" => ssid,
-        "NERVES_WIFI_PASSPHRASE" => passphrase
+        "NERVES_WIFI_SSID" => find_wpa_value(contents, "ssid"),
+        "NERVES_WIFI_PASSPHRASE" => find_wpa_value(contents, "psk")
       })
     else
       :error
@@ -83,10 +108,10 @@ defmodule Atomcam2NervesApp.Network do
       path
       |> File.read!()
       |> String.split("\n", trim: true)
-      |> Enum.reduce(%{}, fn line, acc ->
+      |> Enum.reduce(%{}, fn line, values ->
         case parse_key_value(line) do
-          {key, value} -> Map.put(acc, key, value)
-          :skip -> acc
+          {key, value} -> Map.put(values, key, value)
+          :skip -> values
         end
       end)
     else
@@ -105,19 +130,23 @@ defmodule Atomcam2NervesApp.Network do
         :skip
 
       true ->
-        case String.split(trimmed_line, "=", parts: 2) do
-          [key, value] ->
-            key = String.trim(key)
+        parse_nonempty_key_value(trimmed_line)
+    end
+  end
 
-            if key == "" do
-              :skip
-            else
-              {key, String.trim(value)}
-            end
+  defp parse_nonempty_key_value(line) do
+    case String.split(line, "=", parts: 2) do
+      [key, value] ->
+        key = String.trim(key)
 
-          _other ->
-            :skip
+        if key == "" do
+          :skip
+        else
+          {key, String.trim(value)}
         end
+
+      _other ->
+        :skip
     end
   end
 
@@ -136,6 +165,7 @@ defmodule Atomcam2NervesApp.Network do
      %{
        type: VintageNetWiFi,
        vintage_net_wifi: %{
+         wps: false,
          networks: [
            %{
              ssid: ssid,
