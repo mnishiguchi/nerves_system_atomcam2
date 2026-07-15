@@ -21,7 +21,7 @@ text = path.read_text()
 
 marker = "#define WORKAROUND_IFF_LOWER_UP (0x10000)\n"
 
-compat_block = """#define WORKAROUND_IFF_LOWER_UP (0x10000)
+old_compat_block = """#define WORKAROUND_IFF_LOWER_UP (0x10000)
 
 /*
  * Linux 3.10 headers used by the AtomCam2 bring-up do not define IFA_FLAGS.
@@ -33,13 +33,30 @@ compat_block = """#define WORKAROUND_IFF_LOWER_UP (0x10000)
 #endif
 """
 
-if "#ifndef IFA_FLAGS\n#define IFA_FLAGS 8\n#endif" in text:
+compat_block = """#define WORKAROUND_IFF_LOWER_UP (0x10000)
+
+/*
+ * Linux 3.10 headers used by AtomCam2 do not define IFA_FLAGS.
+ *
+ * IFA_MAX must be expanded at the same time. VintageNet indexes an attribute
+ * array using IFA_FLAGS, so defining IFA_FLAGS without updating IFA_MAX causes
+ * an out-of-bounds access.
+ */
+#ifndef IFA_FLAGS
+#define IFA_FLAGS 8
+#undef IFA_MAX
+#define IFA_MAX IFA_FLAGS
+#endif
+"""
+
+if compat_block in text:
     print(f"ok: already patched: {path}")
-    raise SystemExit(0)
-
-if marker not in text:
+elif old_compat_block in text:
+    path.write_text(text.replace(old_compat_block, compat_block, 1))
+    print(f"ok: upgraded patch: {path}")
+elif marker in text:
+    path.write_text(text.replace(marker, compat_block, 1))
+    print(f"ok: patched: {path}")
+else:
     raise SystemExit(f"failed: marker not found in {path}")
-
-path.write_text(text.replace(marker, compat_block))
-print(f"ok: patched: {path}")
 PY
