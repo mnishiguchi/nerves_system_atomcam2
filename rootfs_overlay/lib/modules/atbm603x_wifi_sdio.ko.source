@@ -1,0 +1,7 @@
+Source: mnakada/atomcam_tools
+Release: Ver.2.5.19
+Asset: atomcam_tools.zip
+Path: rootfs_hack.squashfs:/lib/modules/atbm603x_wifi_sdio.ko
+Kernel: factory_t31_ZMC6tiIDQN
+Kernel SHA-256: b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc
+Module vermagic: 3.10.14__isvp_swan_1.0__ preempt mod_unload MIPS32_R1 32BIT

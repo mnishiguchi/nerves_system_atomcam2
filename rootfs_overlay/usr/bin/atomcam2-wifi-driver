@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 
+{
+  echo "stage=wifi_driver_entered"
+} > /media/mmc/atomcam2-wifi-driver-entered.env 2>/dev/null || true
+
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
 if [ -f /etc/atomcam2.env ]; then
   . /etc/atomcam2.env
 fi
@@ -10,34 +17,363 @@ if [ -f /media/mmc/atomcam2.env ]; then
 fi
 
 report_file="${ATOMCAM2_WIFI_DRIVER_REPORT:-/media/mmc/atomcam2-wifi-driver.env}"
+log_file="${ATOMCAM2_WIFI_DRIVER_LOG:-/media/mmc/atomcam2-wifi-driver.log}"
+vendor_root="${ATOMCAM2_VENDOR_ROOT:-/atom}"
+vendor_system="${ATOMCAM2_VENDOR_SYSTEM:-/atom/system}"
+vendor_configs="${ATOMCAM2_VENDOR_CONFIGS:-/atom/configs}"
+vendor_root_image="${ATOMCAM2_VENDOR_ROOT_IMAGE:-/tmp/atom_root.squashfs}"
+vendor_root_blocks="${ATOMCAM2_VENDOR_ROOT_BLOCKS:-244}"
+
+stage="starting"
+vendor_id=""
+loaded_module=""
+factory_mac=""
+last_error=""
+
+is_mounted() {
+  grep -q " $1 " /proc/mounts 2>/dev/null
+}
+
+bool_mounted() {
+  if is_mounted "$1"; then
+    echo 1
+  else
+    echo 0
+  fi
+}
+
+wlan0_present() {
+  [ -d /sys/class/net/wlan0 ]
+}
 
 write_report() {
   {
-    echo "stage=$1"
-    echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
-    echo "loaded_module=${loaded_module:-}"
+    echo "stage=$stage"
+    echo "vendor_id=$vendor_id"
+    echo "loaded_module=$loaded_module"
+    echo "factory_mac=$factory_mac"
+    echo "vendor_root_mounted=$(bool_mounted "$vendor_root")"
+    echo "vendor_system_mounted=$(bool_mounted "$vendor_system")"
+    echo "vendor_configs_mounted=$(bool_mounted "$vendor_configs")"
+    echo "wlan0_present=$(wlan0_present && echo 1 || echo 0)"
+    echo "last_error=$last_error"
   } > "$report_file" 2>/dev/null || true
 }
 
-if ifconfig wlan0 >/dev/null 2>&1; then
-  write_report "wlan0_already_present"
-  exit 0
-fi
+record_error() {
+  last_error="$1"
+  printf '%s\n' "$1" >> "$log_file" 2>/dev/null || true
+}
 
-loaded_module=""
-for module_path in ${ATOMCAM2_WIFI_MODULE_CANDIDATES:-}; do
-  if [ -f "$module_path" ]; then
-    if insmod "$module_path" 2>/dev/null; then
-      loaded_module="$module_path"
-      break
+mount_vendor_root() {
+  if is_mounted "$vendor_root"; then
+    return 0
+  fi
+
+  [ -b /dev/mtdblock2 ] || return 1
+
+  mkdir -p "$vendor_root" /tmp
+
+  if ! dd if=/dev/mtdblock2 of="$vendor_root_image" bs=16k count="$vendor_root_blocks" 2>> "$log_file"; then
+    record_error "failed to copy /dev/mtdblock2"
+    return 1
+  fi
+
+  if ! mount -t squashfs -o ro "$vendor_root_image" "$vendor_root" 2>> "$log_file"; then
+    record_error "failed to mount vendor rootfs"
+    return 1
+  fi
+}
+
+mount_vendor_partition() {
+  source_device="$1"
+  target_dir="$2"
+  filesystem_type="$3"
+
+  if is_mounted "$target_dir"; then
+    return 0
+  fi
+
+  [ -b "$source_device" ] || return 1
+  mkdir -p "$target_dir"
+
+  if ! mount -t "$filesystem_type" -o ro "$source_device" "$target_dir" 2>> "$log_file"; then
+    record_error "failed to mount $source_device at $target_dir"
+    return 1
+  fi
+}
+
+prepare_vendor_mounts() {
+  mount_vendor_root || true
+  mkdir -p "$vendor_system" "$vendor_configs"
+  mount_vendor_partition /dev/mtdblock3 "$vendor_system" squashfs || true
+  mount_vendor_partition /dev/mtdblock6 "$vendor_configs" jffs2 || true
+}
+
+initialize_sdio_pins() {
+  devmem_command="$(command -v devmem 2>/dev/null || true)"
+
+  if [ -z "$devmem_command" ] && [ -x /sbin/devmem ]; then
+    devmem_command=/sbin/devmem
+  fi
+
+  if [ -z "$devmem_command" ]; then
+    record_error "devmem is unavailable"
+    return 1
+  fi
+
+  "$devmem_command" 0x10011110 32 0x6e094800 >> "$log_file" 2>&1 || return 1
+  "$devmem_command" 0x10011138 32 0x300 >> "$log_file" 2>&1 || return 1
+  "$devmem_command" 0x10011134 32 0x300 >> "$log_file" 2>&1 || return 1
+}
+
+wait_for_file() {
+  target_file="$1"
+  attempts="${2:-100}"
+  count=0
+
+  while [ ! -f "$target_file" ]; do
+    count=$((count + 1))
+    if [ "$count" -ge "$attempts" ]; then
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+load_module() {
+  module_path="$1"
+  shift
+
+  [ -f "$module_path" ] || return 1
+
+  stage="about_to_insmod"
+  loaded_module="$module_path"
+  write_report
+
+  {
+    echo "about_to_insmod=$module_path"
+  } >> "$log_file" 2>&1 || true
+
+  watchdog_log="${ATOMCAM2_INSMOD_WATCHDOG_LOG:-/media/mmc/atomcam2-insmod-watchdog.log}"
+
+  (
+    sleep 5
+
+    {
+      echo "watchdog_stage=insmod_still_running"
+      echo "module_path=$module_path"
+      echo
+      echo "dmesg_begin"
+      dmesg | tail -300
+      echo "dmesg_end"
+      echo
+      echo "proc_modules_begin"
+      cat /proc/modules 2>/dev/null || true
+      echo "proc_modules_end"
+      echo
+      echo "processes_begin"
+      ps 2>/dev/null || true
+      echo "processes_end"
+      echo
+      echo "atbm_sysfs_begin"
+      find /sys/module/atbm603x_wifi_sdio \
+        -maxdepth 3 \
+        -print \
+        2>/dev/null || true
+      echo "atbm_sysfs_end"
+    } > "$watchdog_log" 2>&1
+  ) &
+
+  watchdog_pid=$!
+
+  set +e
+
+  insmod "$module_path" "$@" >> "$log_file" 2>&1
+  insmod_status=$?
+
+  set -e
+
+  kill "$watchdog_pid" 2>/dev/null || true
+  wait "$watchdog_pid" 2>/dev/null || true
+
+  {
+    echo "insmod_returned=$module_path"
+    echo "insmod_status=$insmod_status"
+    echo "dmesg_after_insmod_begin"
+    dmesg | tail -300
+    echo "dmesg_after_insmod_end"
+  } >> "$log_file" 2>&1 || true
+
+  if [ "$insmod_status" -eq 0 ]; then
+    stage="insmod_returned"
+    loaded_module="$module_path"
+    write_report
+    return 0
+  fi
+
+  stage="insmod_failed"
+  record_error "failed to load $module_path with status $insmod_status"
+  write_report
+  return 1
+}
+
+detect_vendor_id() {
+  vendor_file=/sys/bus/mmc/devices/mmc1:0001/mmc1:0001:1/vendor
+  detect_module="$vendor_system/driver/mmc_detect_test.ko"
+
+  vendor_id="0x024c"
+
+  if [ -f "$detect_module" ]; then
+    insmod "$detect_module" 2>> "$log_file" || true
+
+    if wait_for_file "$vendor_file" 10; then
+      vendor_id="$(cat "$vendor_file" 2>/dev/null || echo 0x024c)"
+    else
+      record_error "timed out waiting for SDIO vendor id"
     fi
   fi
-done
+}
 
-if ifconfig wlan0 >/dev/null 2>&1; then
-  write_report "wlan0_present"
+load_detected_driver() {
+  case "$vendor_id" in
+    0x024c)
+      if load_module "$vendor_system/driver/rtl8189ftv.ko"; then
+        return 0
+      fi
+
+      record_error "no usable RTL8189FTV module for vendor $vendor_id"
+      return 1
+      ;;
+
+    0x007a)
+      if [ -f "$vendor_root/usr/share/atbm603x_conf/atbm_txpwer_dcxo_cfg.txt" ]; then
+        cp "$vendor_root/usr/share/atbm603x_conf/atbm_txpwer_dcxo_cfg.txt" /tmp/
+      fi
+
+      if [ -f "$vendor_root/usr/share/atbm603x_conf/set_rate_power.txt" ]; then
+        cp "$vendor_root/usr/share/atbm603x_conf/set_rate_power.txt" /tmp/
+      fi
+
+      for module_path in \
+        "$vendor_root/tmp/system/lib/modules/atbm603x_wifi_sdio.ko" \
+        "$vendor_system/lib/modules/atbm603x_wifi_sdio.ko" \
+        "$vendor_root/lib/modules/atbm603x_wifi_sdio.ko" \
+        /lib/modules/atbm603x_wifi_sdio.ko
+      do
+        if [ ! -f "$module_path" ]; then
+          printf 'missing ATBM module: %s\n' "$module_path" >> "$log_file" 2>/dev/null || true
+          continue
+        fi
+
+        if load_module "$module_path"; then
+          return 0
+        fi
+      done
+
+      record_error "no usable ATBM603x module for vendor $vendor_id"
+      return 1
+      ;;
+
+    0x5653)
+      if load_module \
+        "$vendor_system/driver/ssv6x5x.ko" \
+        "stacfgpath=$vendor_system/driver/ssv6x5x-wifi.cfg"
+      then
+        return 0
+      fi
+
+      record_error "no usable SSV6x5x module for vendor $vendor_id"
+      return 1
+      ;;
+
+    0x424c)
+      if load_module "$vendor_system/driver/bl_fdrv.ko"; then
+        return 0
+      fi
+
+      record_error "no usable BL602 module for vendor $vendor_id"
+      return 1
+      ;;
+
+    *)
+      for module_path in ${ATOMCAM2_WIFI_MODULE_CANDIDATES:-}; do
+        if load_module "$module_path"; then
+          return 0
+        fi
+      done
+
+      record_error "unsupported Wi-Fi vendor: $vendor_id"
+      return 1
+      ;;
+  esac
+}
+
+set_factory_mac() {
+  product_config="$vendor_configs/.product_config"
+
+  [ -f "$product_config" ] || return 0
+
+  factory_mac="$(awk -F= '
+    /(CONFIG_INFO|NETRELATED_MAC)=/ {
+      value = $2
+      printf "%s:%s:%s:%s:%s:%s", \
+        substr(value, 1, 2), substr(value, 3, 2), substr(value, 5, 2), \
+        substr(value, 7, 2), substr(value, 9, 2), substr(value, 11, 2)
+      exit
+    }
+  ' "$product_config")"
+
+  if [ -n "$factory_mac" ]; then
+    ifconfig wlan0 hw ether "$factory_mac" 2>> "$log_file" || true
+  fi
+}
+
+: > "$log_file" 2>/dev/null || true
+
+if wlan0_present; then
+  stage="wlan0_already_present"
+  write_report
   exit 0
 fi
 
-write_report "wlan0_missing"
+stage="preparing_vendor_mounts"
+prepare_vendor_mounts
+
+stage="initializing_sdio"
+if ! initialize_sdio_pins; then
+  record_error "failed to initialize SDIO pins"
+fi
+
+ifconfig lo up 2>> "$log_file" || true
+
+stage="detecting_wifi"
+detect_vendor_id
+
+stage="loading_wifi_driver"
+write_report
+
+if ! load_detected_driver; then
+  stage="driver_load_failed"
+  write_report
+  exit 1
+fi
+
+count=0
+while ! wlan0_present; do
+  count=$((count + 1))
+  if [ "$count" -ge 20 ]; then
+    stage="wlan0_timeout"
+    record_error "driver loaded but wlan0 did not appear"
+    write_report
+    exit 1
+  fi
+  sleep 1
+done
+
+set_factory_mac
+ifconfig wlan0 up 2>> "$log_file" || true
+
+stage="wlan0_present"
+write_report
 exit 0
