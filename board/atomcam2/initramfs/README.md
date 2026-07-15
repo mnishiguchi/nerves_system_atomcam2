@@ -28,6 +28,14 @@ The initramfs handoff depends on these kernel capabilities being built in, not a
 
 - MMC block device support
 - VFAT and required NLS tables for the SD-card boot partition
-- SquashFS with XZ support for `rootfs_hack.squashfs`
+- SquashFS with zlib support for the gzip-compressed `rootfs_hack.squashfs`
 - loop block device support because the squashfs image is mounted from a file
 - devtmpfs, procfs, and sysfs
+
+
+## BusyBox runtime
+
+The initramfs BusyBox is dynamically linked with the custom plain-MIPS32R2
+musl toolchain. The initramfs therefore carries the matching `libc.so` and
+`/lib/ld-musl-mipsel-sf.so.1` symlink. BusyBox applets are symlinks rather than
+duplicated binaries so the built-in initramfs stays small.

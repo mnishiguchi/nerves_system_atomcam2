@@ -1,5 +1,8 @@
 import Config
 
+config :nerves, :firmware,
+  post_processing_script: Path.expand("../scripts/preserve-final-rootfs.sh", __DIR__)
+
 config :shoehorn,
   init: [:nerves_runtime, :nerves_ssh, :mdns_lite, :vintage_net],
   app: Mix.Project.config()[:app]

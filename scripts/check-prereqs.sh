@@ -35,6 +35,7 @@ check_command elixir
 check_command mix
 check_command cpio
 check_command fwup
+check_command unsquashfs
 
 # Buildroot can build host mksquashfs for BR2_TARGET_ROOTFS_SQUASHFS, so do not
 # fail early just because the host package is missing.

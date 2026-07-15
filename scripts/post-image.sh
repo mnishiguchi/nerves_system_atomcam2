@@ -43,6 +43,13 @@ NERVES_WIFI_SSID=${NERVES_WIFI_SSID:-}
 NERVES_WIFI_PASSPHRASE=${NERVES_WIFI_PASSPHRASE:-}
 EOF_PROVISIONING
 
+if [ -n "${ATOMCAM2_KERNEL_IMAGE:-}" ]; then
+  [ -f "$ATOMCAM2_KERNEL_IMAGE" ] || fail "ATOMCAM2_KERNEL_IMAGE does not exist: $ATOMCAM2_KERNEL_IMAGE"
+
+  cp "$ATOMCAM2_KERNEL_IMAGE" "$images_dir/uImage.lzma"
+  echo "Using AtomCam2 kernel override: $ATOMCAM2_KERNEL_IMAGE"
+fi
+
 "${NERVES_DEFCONFIG_DIR}/scripts/atomcam2-package-flat-sd.sh" \
   --images-dir "$images_dir" \
   --output-dir "$output_dir" \

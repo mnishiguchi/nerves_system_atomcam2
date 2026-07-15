@@ -2,7 +2,9 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-source_dir="target/atomcam2-sd"
+mix_target="${MIX_TARGET:-atomcam2}"
+mix_env="${MIX_ENV:-prod}"
+source_dir="$repo_root/examples/atomcam2_nerves_app/_build/${mix_target}_${mix_env}/nerves/images/atomcam2-sd"
 mount_dir=""
 dry_run=0
 force=0
@@ -15,7 +17,7 @@ Usage: scripts/install-sd-files.sh --mount MOUNT_DIR [options]
 Copy generated AtomCam2 SD-card files to a mounted FAT partition.
 
 Options:
-  --source DIR     Source directory. Default: target/atomcam2-sd
+  --source DIR     Source directory. Default: final app payload for MIX_TARGET/MIX_ENV
   --mount DIR      Mounted AtomCam2 SD-card FAT partition
   --force          Allow overwriting existing AtomCam2 files
   --dry-run        Print actions without copying
