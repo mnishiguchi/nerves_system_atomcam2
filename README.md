@@ -110,19 +110,20 @@ The installable payload is:
 _build/atomcam2_prod/nerves/images/atomcam2-sd/
 ```
 
-Install it to the mounted Atom Cam 2 MicroSD FAT partition:
+Install it to a mounted MicroSD FAT partition labeled `ATOMCAM2`:
 
 ```sh
-../../scripts/install-sd-files.sh \
-  --mount /path/to/mounted/sd \
-  --dry-run
-
-../../scripts/install-sd-files.sh \
-  --mount /path/to/mounted/sd \
-  --force
+mix atomcam2.install --dry-run
+mix atomcam2.install
 ```
 
-The installer validates the payload and backs up the current files before replacement.
+Use an explicit mount path when automatic detection is not suitable:
+
+```sh
+mix atomcam2.install --mount /path/to/mounted/sd
+```
+
+The task installs the final application payload through `scripts/install-sd-files.sh`. The installer validates the payload, backs up existing files, verifies the installed files, and synchronizes writes before returning.
 
 After power-cycling the camera:
 

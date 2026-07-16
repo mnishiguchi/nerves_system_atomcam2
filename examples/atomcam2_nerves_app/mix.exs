@@ -1,3 +1,5 @@
+Code.require_file("mix/tasks/atomcam2.install.exs", __DIR__)
+
 defmodule Atomcam2NervesApp.MixProject do
   use Mix.Project
 

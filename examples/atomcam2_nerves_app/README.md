@@ -51,16 +51,19 @@ _build/<target>_<env>/nerves/images/atomcam2-sd/
 
 Do not install the smaller base system `rootfs.squashfs` or the system-build-only `target/atomcam2-sd` payload. Those do not contain the application release.
 
-After a normal AtomCam2 production build, inspect the summary and install the final payload:
+After a normal Atom Cam 2 production build, inspect the summary and install the final payload:
 
 ```sh
 cat _build/atomcam2_prod/nerves/images/rootfs_hack.final.squashfs.summary.txt
 
-../../scripts/install-sd-files.sh \
-  --mount /path/to/mounted/sd \
-  --dry-run
-
-../../scripts/install-sd-files.sh \
-  --mount /path/to/mounted/sd \
-  --force
+mix atomcam2.install --dry-run
+mix atomcam2.install
 ```
+
+The task detects a mounted filesystem labeled `ATOMCAM2`. Pass an explicit path when needed:
+
+```sh
+mix atomcam2.install --mount /path/to/mounted/sd
+```
+
+It delegates payload validation, backup, installation verification, and write synchronization to `scripts/install-sd-files.sh`.

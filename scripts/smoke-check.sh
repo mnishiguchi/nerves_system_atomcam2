@@ -89,6 +89,7 @@ require_file examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_executable examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
+require_file examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
 require_file examples/atomcam2_nerves_app/config/target.exs
 require_executable scripts/patch-vintage-net-linux-3.10.sh
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
@@ -97,6 +98,11 @@ require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/n
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'use Toolshed' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
+require_grep 'Code.require_file("mix/tasks/atomcam2.install.exs"' examples/atomcam2_nerves_app/mix.exs
+require_grep 'defmodule Mix.Tasks.Atomcam2.Install' examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
+require_grep 'LABEL=ATOMCAM2' examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
+require_grep 'scripts/install-sd-files.sh' examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
+require_grep '"--force"' examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
 require_grep '#define IFA_MAX IFA_FLAGS' scripts/patch-vintage-net-linux-3.10.sh
 require_grep 'aliases: aliases()' examples/atomcam2_nerves_app/mix.exs
 require_grep 'setup:' examples/atomcam2_nerves_app/mix.exs

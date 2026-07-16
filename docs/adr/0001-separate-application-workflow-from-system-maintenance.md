@@ -72,16 +72,17 @@ It should validate the final application payload, back up the current SD files, 
 
 ### Transition
 
-Until the prebuilt artifact and installation task exist, the README must distinguish one-time system preparation from the repeated application loop.
+Until the prebuilt system artifact exists, the README must distinguish one-time system preparation from the repeated application loop.
 
 The application now provides:
 
 ```sh
 mix setup
 mix firmware
+mix atomcam2.install
 ```
 
-`mix setup` currently fetches dependencies and applies the Linux 3.10 VintageNet compatibility patch through the repository script. This removes the manual preparation command from the normal application workflow while keeping the workaround explicit and independently testable.
+`mix setup` currently fetches dependencies and applies the Linux 3.10 VintageNet compatibility patch through the repository script. `mix atomcam2.install` delegates to the validated flat-SD installer and keeps backup and installation safety checks in one place.
 
 System maintainers still prepare the local toolchain archive separately:
 
@@ -103,5 +104,4 @@ The current repository remains transitional until the following work is complete
 
 - Publish or otherwise distribute a reusable system artifact.
 - Replace the locally applied VintageNet patch with an upstream fix or deliberately maintained dependency.
-- Add `mix atomcam2.install`.
 - Prove a safe application update path for `mix upload`.
