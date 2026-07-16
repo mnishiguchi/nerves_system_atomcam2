@@ -1,10 +1,10 @@
-Code.require_file("mix/tasks/atomcam2.install.exs", __DIR__)
-
 defmodule Atomcam2NervesApp.MixProject do
   use Mix.Project
 
   @app :atomcam2_nerves_app
   @version "0.1.0"
+  @system_version "0.1.0"
+  @system_repository "mnishiguchi/nerves_system_atomcam2"
   @all_targets [:atomcam2]
 
   def project do
@@ -54,17 +54,35 @@ defmodule Atomcam2NervesApp.MixProject do
       {:vintage_net_wifi, "~> 0.12", targets: @all_targets},
 
       # Dependencies for specific targets
-      {:nerves_system_atomcam2, path: "../..", runtime: false, targets: :atomcam2}
+      atomcam2_system()
     ]
   end
 
   defp aliases do
     [
-      setup: [
-        "deps.get",
-        "cmd ../../scripts/patch-vintage-net-linux-3.10.sh"
-      ]
+      setup: ["deps.get"]
     ]
+  end
+
+  defp atomcam2_system do
+    case System.get_env("ATOMCAM2_SYSTEM_SOURCE", "release") do
+      "release" ->
+        {:nerves_system_atomcam2,
+         github: @system_repository,
+         tag: "v#{@system_version}",
+         runtime: false,
+         targets: :atomcam2}
+
+      "local" ->
+        {:nerves_system_atomcam2,
+         path: "../..",
+         runtime: false,
+         targets: :atomcam2,
+         nerves: [compile: true]}
+
+      source ->
+        raise "unsupported ATOMCAM2_SYSTEM_SOURCE: #{inspect(source)}"
+    end
   end
 
   defp release do

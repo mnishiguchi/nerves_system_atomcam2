@@ -2,6 +2,11 @@
 
 ## 0.1.0-dev
 
+- Add publishable system and Atom Cam 2 custom toolchain artifact metadata.
+- Move the Linux 3.10 VintageNet compatibility definition into system staging headers.
+- Make the example application use released artifacts by default with an explicit local-system override.
+- Add a release script for artifact creation, publication, and isolated application verification.
+- Reject unverified remote fwup updates and retain `mix atomcam2.install` as the supported update path.
 - Create minimal AtomCam2 Nerves system source snapshot.
 - Focus first milestone on `ping nerves.local` and `ssh nerves.local`.
 - Add flat SD-card packaging scripts.

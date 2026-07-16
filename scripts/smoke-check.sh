@@ -65,6 +65,12 @@ require_file linux-3.10.14.defconfig
 require_file busybox.fragment
 require_file Config.in
 require_file package/Config.in
+require_file package/atomcam2-compat-headers/Config.in
+require_file package/atomcam2-compat-headers/atomcam2-compat-headers.mk
+require_file package/atomcam2-compat-headers/atomcam2-linux-3.10-compat.h
+require_file toolchain/mix.exs
+require_file toolchain/VERSION
+require_file toolchain/lib/nerves_toolchain_atomcam2.ex
 require_file patches/kernel/0003-linux-3.10-force-gnu89-for-gcc-15.patch
 require_file external.desc
 require_file external.mk
@@ -82,6 +88,7 @@ require_executable scripts/atomcam2-check-sd-payload.sh
 require_executable scripts/atomcam2-check-minimal-ssh-scope.sh
 require_executable scripts/build-firmware-log.sh
 require_executable scripts/prepare-toolchain-archive.sh
+require_executable scripts/release-artifacts.sh
 require_file scripts/logging.sh
 require_file examples/atomcam2_nerves_app/mix.exs
 require_file examples/atomcam2_nerves_app/config/target.exs
@@ -89,24 +96,35 @@ require_file examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_executable examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
-require_file examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_file lib/mix/tasks/atomcam2.install.ex
 require_file examples/atomcam2_nerves_app/config/target.exs
-require_executable scripts/patch-vintage-net-linux-3.10.sh
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
 require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'use Toolshed' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
-require_grep 'Code.require_file("mix/tasks/atomcam2.install.exs"' examples/atomcam2_nerves_app/mix.exs
-require_grep 'defmodule Mix.Tasks.Atomcam2.Install' examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
-require_grep 'LABEL=ATOMCAM2' examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
-require_grep 'scripts/install-sd-files.sh' examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
-require_grep '"--force"' examples/atomcam2_nerves_app/mix/tasks/atomcam2.install.exs
-require_grep '#define IFA_MAX IFA_FLAGS' scripts/patch-vintage-net-linux-3.10.sh
+require_grep 'defmodule Mix.Tasks.Atomcam2.Install' lib/mix/tasks/atomcam2.install.ex
+require_grep 'LABEL=ATOMCAM2' lib/mix/tasks/atomcam2.install.ex
+require_grep 'scripts/install-sd-files.sh' lib/mix/tasks/atomcam2.install.ex
+require_grep '"--force"' lib/mix/tasks/atomcam2.install.ex
+require_grep '#define IFA_MAX IFA_FLAGS' package/atomcam2-compat-headers/atomcam2-linux-3.10-compat.h
+require_grep 'BR2_PACKAGE_ATOMCAM2_COMPAT_HEADERS=y' nerves_defconfig
+require_grep 'atomcam2-linux-3.10-compat.h' mix.exs
+require_grep 'artifact_sites:' mix.exs
+require_grep 'nerves_toolchain_atomcam2' mix.exs
+require_grep 'type: :toolchain' toolchain/mix.exs
+require_grep 'artifact_sites:' toolchain/mix.exs
+require_grep 'release-artifacts.sh' toolchain/lib/nerves_toolchain_atomcam2.ex
 require_grep 'aliases: aliases()' examples/atomcam2_nerves_app/mix.exs
 require_grep 'setup:' examples/atomcam2_nerves_app/mix.exs
-require_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
+require_grep 'ATOMCAM2_SYSTEM_SOURCE' examples/atomcam2_nerves_app/mix.exs
+require_grep 'github: @system_repository' examples/atomcam2_nerves_app/mix.exs
+require_grep 'nerves: \[compile: true\]' examples/atomcam2_nerves_app/mix.exs
+require_grep 'precheck_callback:' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+reject_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
 require_grep 'mix setup' scripts/build-firmware-log.sh
 require_grep 'check_command python3' scripts/check-prereqs.sh
 reject_grep 'atomcam2-vintage-net.log' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
@@ -141,6 +159,10 @@ require_grep 'logging.sh' scripts/collect-boot-report.sh
 require_grep 'refusing to write SD payload to /' scripts/atomcam2-package-flat-sd.sh
 require_grep 'output directory must differ from images directory' scripts/atomcam2-package-flat-sd.sh
 require_grep 'kernel image is too large for the AtomCam2 boot contract' scripts/atomcam2-package-flat-sd.sh
+require_grep 'ATOMCAM2_KERNEL_IMAGE must point to the verified AtomCam2 control kernel' scripts/post-image.sh
+require_grep 'b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc' scripts/post-image.sh
+require_grep 'ATOMCAM2_KERNEL_IMAGE' scripts/release-artifacts.sh
+require_grep 'unexpected AtomCam2 control kernel SHA256' scripts/release-artifacts.sh
 require_grep '\-\-kernel-image' scripts/atomcam2-package-flat-sd.sh
 require_grep '\-\-rootfs-image' scripts/atomcam2-package-flat-sd.sh
 require_grep 'post_processing_script' examples/atomcam2_nerves_app/config/target.exs
@@ -183,6 +205,7 @@ find "$repo_dir" \
   -path '*/_build' -prune -o \
   -path '*/deps' -prune -o \
   -path '*/target' -prune -o \
+  -path "$repo_dir/tmp" -prune -o \
   -path '*/vendor' -prune -o \
   -name '*.log' -prune -o \
   -name '*.dump' -prune -o \

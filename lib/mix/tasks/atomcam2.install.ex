@@ -44,9 +44,8 @@ defmodule Mix.Tasks.Atomcam2.Install do
   defp install(options) do
     ensure_atomcam2_target!()
 
-    application_root = Mix.Project.project_file() |> Path.expand() |> Path.dirname()
-    repository_root = Path.expand("../..", application_root)
-    installer = Path.join(repository_root, "scripts/install-sd-files.sh")
+    system_root = Path.expand("../../..", __DIR__)
+    installer = Path.join(system_root, "scripts/install-sd-files.sh")
     payload = Path.expand("nerves/images/atomcam2-sd", Mix.Project.build_path())
     mount = options[:mount] || detect_mount!()
 
@@ -64,7 +63,7 @@ defmodule Mix.Tasks.Atomcam2.Install do
       |> maybe_add_flag(options[:backup] == false, "--no-backup")
 
     case System.cmd(installer, installer_arguments,
-           cd: repository_root,
+           cd: system_root,
            into: IO.stream(),
            stderr_to_stdout: true
          ) do

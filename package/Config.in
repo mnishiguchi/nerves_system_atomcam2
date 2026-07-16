@@ -1,2 +1,1 @@
-# Project-specific Buildroot packages can be added here when the first-SSH
-# milestone needs compiled target-side components.
+source "$NERVES_DEFCONFIG_DIR/package/atomcam2-compat-headers/Config.in"

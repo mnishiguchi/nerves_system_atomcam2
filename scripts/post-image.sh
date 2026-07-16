@@ -21,6 +21,7 @@ provisioning_image="$images_dir/nerves-provisioning.conf"
 output_dir="$images_dir/atomcam2-sd"
 artifact_dir=$(CDPATH= cd -- "$images_dir/.." && pwd)
 artifact_scripts_dir="$artifact_dir/scripts"
+expected_kernel_sha256="b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc"
 
 mkdir -p "$artifact_scripts_dir"
 for script_name in merge-squashfs rel2fw.sh scrub-otp-release.sh; do
@@ -43,12 +44,20 @@ NERVES_WIFI_SSID=${NERVES_WIFI_SSID:-}
 NERVES_WIFI_PASSPHRASE=${NERVES_WIFI_PASSPHRASE:-}
 EOF_PROVISIONING
 
-if [ -n "${ATOMCAM2_KERNEL_IMAGE:-}" ]; then
-  [ -f "$ATOMCAM2_KERNEL_IMAGE" ] || fail "ATOMCAM2_KERNEL_IMAGE does not exist: $ATOMCAM2_KERNEL_IMAGE"
+[ -n "${ATOMCAM2_KERNEL_IMAGE:-}" ] ||
+  fail "ATOMCAM2_KERNEL_IMAGE must point to the verified AtomCam2 control kernel"
 
-  cp "$ATOMCAM2_KERNEL_IMAGE" "$images_dir/uImage.lzma"
-  echo "Using AtomCam2 kernel override: $ATOMCAM2_KERNEL_IMAGE"
+[ -f "$ATOMCAM2_KERNEL_IMAGE" ] ||
+  fail "ATOMCAM2_KERNEL_IMAGE does not exist: $ATOMCAM2_KERNEL_IMAGE"
+
+actual_kernel_sha256="$(sha256sum "$ATOMCAM2_KERNEL_IMAGE" | awk '{print $1}')"
+
+if [ "$actual_kernel_sha256" != "$expected_kernel_sha256" ]; then
+  fail "unexpected AtomCam2 control kernel SHA256: $actual_kernel_sha256"
 fi
+
+cp "$ATOMCAM2_KERNEL_IMAGE" "$images_dir/uImage.lzma"
+echo "Using verified AtomCam2 control kernel: $ATOMCAM2_KERNEL_IMAGE"
 
 "${NERVES_DEFCONFIG_DIR}/scripts/atomcam2-package-flat-sd.sh" \
   --images-dir "$images_dir" \

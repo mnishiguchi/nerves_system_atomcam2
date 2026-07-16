@@ -33,125 +33,96 @@ Commit `3cd22ab` is the reproducible ping and SSH baseline. It uses the explicit
 
 Camera runtime, RTSP, WebUI, Samba, vendor application compatibility, internal flash writes, and production updates remain out of scope.
 
-## Quick start
+## Application workflow
 
-This repository is still in the system-porting stage. A fresh checkout currently needs one-time system preparation before the repeated application build loop becomes simple.
+Application developers consume the tagged system source and its prebuilt system
+and custom toolchain artifacts from the matching GitHub release.
 
-### 1. Configure local values
-
-Configure the ignored local environment file:
-
-```text
-examples/atomcam2_nerves_app/.envrc
-```
-
-It should provide:
+Configure Wi-Fi credentials before building:
 
 ```sh
-export NERVES_TOOLCHAIN=/absolute/path/to/x-tools/mipsel-nerves-linux-musl
 export NERVES_WIFI_SSID=your-ssid
 export NERVES_WIFI_PASSPHRASE=your-passphrase
-export ATOMCAM2_AUTHORIZED_KEYS=/absolute/path/to/authorized_keys
 ```
 
-Load it:
+Then run from the example application:
 
 ```sh
 cd examples/atomcam2_nerves_app
-direnv allow
+export MIX_TARGET=atomcam2
+export MIX_ENV=prod
+
+mix setup
+mix firmware
+mix atomcam2.install
 ```
 
-### 2. Prepare the system inputs once
+`mix setup` only retrieves dependencies. Target compatibility is supplied by the
+system artifact; application dependency source is not modified.
 
-From the repository root:
+The install task detects a mounted FAT filesystem labeled `ATOMCAM2`, validates
+the generated flat-SD payload, backs up the current files, installs the new
+payload, verifies it, and synchronizes writes.
+
+## Remote update policy
+
+`mix upload` is intentionally unsupported. Atom Cam 2 boots from files on a FAT
+partition that remains mounted by the running system, so writing that partition
+through the fwup SSH subsystem has not been proven safe. The target rejects
+remote fwup connections. Power down the camera and use `mix atomcam2.install`.
+
+## System-maintainer workflow
+
+System maintainers can opt into local system compilation:
 
 ```sh
+export ATOMCAM2_SYSTEM_SOURCE=local
+export NERVES_TOOLCHAIN=/absolute/path/to/x-tools/mipsel-nerves-linux-musl
+
 ./scripts/prepare-toolchain-archive.sh
 ./scripts/check-prereqs.sh
 ./scripts/smoke-check.sh
-```
 
-The toolchain preparation script creates:
-
-```text
-target/toolchains/atomcam2-mips32r2-nerves-toolchain.tar.xz
-```
-
-It leaves an existing non-empty archive unchanged. Pass `--force` to regenerate it from the current `NERVES_TOOLCHAIN` directory.
-
-### 3. Set up application dependencies
-
-From the example application:
-
-```sh
 cd examples/atomcam2_nerves_app
 mix setup
-```
-
-The setup alias runs `mix deps.get` and applies the required VintageNet compatibility patch for the Linux 3.10 headers used by Atom Cam 2. It is idempotent and should be run again after cleaning or replacing `deps/vintage_net`.
-
-### 4. Build the firmware
-
-```sh
 mix firmware
 ```
 
-For a logged maintainer build that also reruns repository checks:
+The custom compiler must target MIPS32R2 soft-float without DSP ASE. Buildroot
+consumes its prepared archive, while Nerves uses the same compiler for ERTS,
+ports, NIFs, and other target-native dependencies.
+
+The system installs `atomcam2-linux-3.10-compat.h` into its staging sysroot and
+adds it to target compiler flags. This supplies the `IFA_FLAGS` definition needed
+by VintageNet without patching `deps/vintage_net`.
+
+## Releasing artifacts
+
+After a local system build and hardware verification, create both release
+artifacts from a clean release commit:
 
 ```sh
-../../scripts/build-firmware-log.sh
+./scripts/release-artifacts.sh
 ```
 
-### 5. Install the flat-SD payload
-
-The installable payload is:
-
-```text
-_build/atomcam2_prod/nerves/images/atomcam2-sd/
-```
-
-Install it to a mounted MicroSD FAT partition labeled `ATOMCAM2`:
+Publish the matching GitHub release explicitly:
 
 ```sh
-mix atomcam2.install --dry-run
-mix atomcam2.install
+./scripts/release-artifacts.sh --publish
 ```
 
-Use an explicit mount path when automatic detection is not suitable:
+After publication, prove that an isolated checkout downloads both artifacts and
+builds without `NERVES_SYSTEM`, `NERVES_TOOLCHAIN`, or a local system override:
 
 ```sh
-mix atomcam2.install --mount /path/to/mounted/sd
+./scripts/release-artifacts.sh --verify
 ```
 
-The task installs the final application payload through `scripts/install-sd-files.sh`. The installer validates the payload, backs up existing files, verifies the installed files, and synchronizes writes before returning.
+The release tag, system package version, toolchain package version, and example
+application system version must remain aligned.
 
-After power-cycling the camera:
-
-```sh
-ping nerves.local
-ssh nerves@nerves.local
-```
-
-## Intended application workflow
-
-The repeated dependency and firmware build loop is now:
-
-```sh
-mix setup
-mix firmware
-```
-
-The remaining installation goal is a dedicated command:
-
-```sh
-mix atomcam2.install
-```
-
-Until that task exists, use `scripts/install-sd-files.sh` as shown above. Later application updates should use `mix upload` when a safe update path is available.
-
-Application developers should not need to build Buildroot, prepare a toolchain archive, patch VintageNet manually, or understand the vendor boot chain. Those responsibilities belong to the system-maintainer workflow and should be delivered through a reusable prebuilt `nerves_system_atomcam2` artifact.
-
-The architectural decision and transition plan are recorded in [`docs/adr/0001-separate-application-workflow-from-system-maintenance.md`](docs/adr/0001-separate-application-workflow-from-system-maintenance.md).
+The architectural decision is recorded in
+[`docs/adr/0001-separate-application-workflow-from-system-maintenance.md`](docs/adr/0001-separate-application-workflow-from-system-maintenance.md).
 
 ## Atom Cam 2 boot contract
 
@@ -192,7 +163,7 @@ export NERVES_TOOLCHAIN=/absolute/path/to/x-tools/mipsel-nerves-linux-musl
 ./scripts/prepare-toolchain-archive.sh
 ```
 
-Buildroot consumes the generated archive through `nerves_defconfig`. The example application uses `NERVES_TOOLCHAIN` for ERTS, ports, NIFs, and other native dependencies.
+Buildroot consumes the generated archive through `nerves_defconfig`. Released application builds download the matching custom toolchain artifact automatically; `NERVES_TOOLCHAIN` is only required for system maintenance and release creation.
 
 For the investigation that established this requirement, see [`docs/worklog/20260713-atomcam2-toolchain-dsp-ase-investigation.md`](docs/worklog/20260713-atomcam2-toolchain-dsp-ase-investigation.md).
 
@@ -213,27 +184,6 @@ cat > _build/atomcam2_prod/nerves/images/atomcam2-sd/nerves-provisioning.conf <<
 NERVES_WIFI_SSID=your-ssid
 NERVES_WIFI_PASSPHRASE=your-passphrase
 EOF_PROVISIONING
-```
-
-## System-maintainer workflow
-
-System maintainers are responsible for:
-
-- Building and validating the custom MIPS32R2 toolchain.
-- Preparing the Buildroot toolchain archive.
-- Building Buildroot, Linux, BusyBox, and the initramfs.
-- Preserving the vendor Linux 3.10 boot contract.
-- Maintaining the vendor SDIO Wi-Fi driver integration.
-- Maintaining or upstreaming the VintageNet Linux 3.10 compatibility change.
-- Producing and publishing a reusable system artifact.
-- Preserving a known-good recovery payload before hardware experiments.
-
-Run the static checks before a clean system build:
-
-```sh
-./scripts/check-prereqs.sh
-./scripts/smoke-check.sh
-./scripts/atomcam2-check-minimal-ssh-scope.sh .
 ```
 
 ## Recovery and diagnostics

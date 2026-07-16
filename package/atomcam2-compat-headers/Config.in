@@ -1,0 +1,5 @@
+config BR2_PACKAGE_ATOMCAM2_COMPAT_HEADERS
+	bool "Atom Cam 2 Linux 3.10 compatibility headers"
+	help
+	  Install compile-time compatibility definitions needed by target
+	  dependencies when building against the Atom Cam 2 Linux 3.10 headers.

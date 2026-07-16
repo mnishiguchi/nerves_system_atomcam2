@@ -22,6 +22,9 @@ public_keys =
 config :nerves_ssh,
   authorized_keys: public_keys
 
+config :ssh_subsystem_fwup,
+  precheck_callback: {Atomcam2NervesApp.FirmwareUpdate, :reject_remote_update, []}
+
 config :mdns_lite,
   hosts: [:hostname, "nerves"],
   ttl: 120

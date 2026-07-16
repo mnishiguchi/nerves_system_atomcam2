@@ -1,8 +1,9 @@
 defmodule NervesSystemAtomcam2.MixProject do
   use Mix.Project
 
+  @github_repository "mnishiguchi/nerves_system_atomcam2"
   @app :nerves_system_atomcam2
-  @source_url "https://github.com/mnishiguchi/nerves_system_atomcam2"
+  @source_url "https://github.com/#{@github_repository}"
   @version Path.join(__DIR__, "VERSION")
            |> File.read!()
            |> String.trim()
@@ -35,7 +36,7 @@ defmodule NervesSystemAtomcam2.MixProject do
     [
       {:nerves, "~> 1.11 or ~> 1.12", runtime: false},
       {:nerves_system_br, "~> 1.33", runtime: false},
-      {:nerves_toolchain_mipsel_nerves_linux_musl, "~> 15.3.0", runtime: false}
+      {:nerves_toolchain_atomcam2, path: "toolchain", runtime: false}
     ]
   end
 
@@ -48,6 +49,9 @@ defmodule NervesSystemAtomcam2.MixProject do
   defp nerves_package do
     [
       type: :system,
+      artifact_sites: [
+        {:github_releases, @github_repository}
+      ],
       platform: Nerves.System.BR,
       platform_config: [
         defconfig: "nerves_defconfig"
@@ -57,7 +61,7 @@ defmodule NervesSystemAtomcam2.MixProject do
         {"TARGET_CPU", "mips32"},
         {"TARGET_OS", "linux"},
         {"TARGET_ABI", "musl"},
-        {"TARGET_GCC_FLAGS", "-EL -mabi=32"}
+        {"TARGET_GCC_FLAGS", "-EL -mabi=32 -include atomcam2-linux-3.10-compat.h"}
       ],
       checksum: package_files()
     ]
@@ -75,10 +79,12 @@ defmodule NervesSystemAtomcam2.MixProject do
     [
       "board",
       "docs",
+      "lib",
       "package",
       "patches",
       "rootfs_overlay",
       "scripts",
+      "toolchain",
       "busybox.fragment",
       "Config.in",
       "external.desc",
