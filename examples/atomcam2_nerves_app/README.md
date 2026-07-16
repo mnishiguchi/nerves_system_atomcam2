@@ -4,10 +4,26 @@ This app exists only to prove:
 
 ```sh
 ping nerves.local
-ssh nerves.local
+ssh nerves@nerves.local
 ```
 
 It configures Wi-Fi through VintageNet, advertises `nerves.local` through `mdns_lite`, and starts NervesSSH.
+
+## Build
+
+Prepare dependencies and apply the Atom Cam 2 Linux 3.10 compatibility patch:
+
+```sh
+mix setup
+```
+
+The setup alias is idempotent. Run it again after cleaning or replacing `deps/vintage_net`.
+
+Build the firmware:
+
+```sh
+mix firmware
+```
 
 Every `mix firmware` build preserves the merged application rootfs at:
 

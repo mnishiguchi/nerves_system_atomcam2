@@ -79,17 +79,16 @@ target/toolchains/atomcam2-mips32r2-nerves-toolchain.tar.xz
 
 It leaves an existing non-empty archive unchanged. Pass `--force` to regenerate it from the current `NERVES_TOOLCHAIN` directory.
 
-### 3. Fetch and prepare application dependencies
+### 3. Set up application dependencies
 
 From the example application:
 
 ```sh
 cd examples/atomcam2_nerves_app
-mix deps.get
-../../scripts/patch-vintage-net-linux-3.10.sh
+mix setup
 ```
 
-The VintageNet patch is required because the Linux 3.10 headers used by Atom Cam 2 do not define `IFA_FLAGS`. Run it again after replacing or cleaning `deps/vintage_net`.
+The setup alias runs `mix deps.get` and applies the required VintageNet compatibility patch for the Linux 3.10 headers used by Atom Cam 2. It is idempotent and should be run again after cleaning or replacing `deps/vintage_net`.
 
 ### 4. Build the firmware
 
@@ -134,15 +133,20 @@ ssh nerves@nerves.local
 
 ## Intended application workflow
 
-The long-term application workflow should resemble regular Nerves development:
+The repeated dependency and firmware build loop is now:
 
 ```sh
 mix setup
 mix firmware
+```
+
+The remaining installation goal is a dedicated command:
+
+```sh
 mix atomcam2.install
 ```
 
-Later application updates should use `mix upload` when a safe update path is available.
+Until that task exists, use `scripts/install-sd-files.sh` as shown above. Later application updates should use `mix upload` when a safe update path is available.
 
 Application developers should not need to build Buildroot, prepare a toolchain archive, patch VintageNet manually, or understand the vendor boot chain. Those responsibilities belong to the system-maintainer workflow and should be delivered through a reusable prebuilt `nerves_system_atomcam2` artifact.
 

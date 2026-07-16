@@ -13,6 +13,7 @@ defmodule Atomcam2NervesApp.MixProject do
       archives: [nerves_bootstrap: "~> 1.10"],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      aliases: aliases(),
       releases: [{@app, release()}]
     ]
   end
@@ -52,6 +53,15 @@ defmodule Atomcam2NervesApp.MixProject do
 
       # Dependencies for specific targets
       {:nerves_system_atomcam2, path: "../..", runtime: false, targets: :atomcam2}
+    ]
+  end
+
+  defp aliases do
+    [
+      setup: [
+        "deps.get",
+        "cmd ../../scripts/patch-vintage-net-linux-3.10.sh"
+      ]
     ]
   end
 

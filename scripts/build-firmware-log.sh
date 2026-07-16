@@ -25,6 +25,6 @@ echo "MIX_ENV: $mix_env"
 
 (
   cd "$app_dir"
-  MIX_TARGET="$mix_target" MIX_ENV="$mix_env" mix deps.get
+  MIX_TARGET="$mix_target" MIX_ENV="$mix_env" mix setup
   MIX_TARGET="$mix_target" MIX_ENV="$mix_env" mix firmware "$@"
 ) 2>&1 | tee "$log_file"

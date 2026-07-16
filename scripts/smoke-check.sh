@@ -95,6 +95,11 @@ require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
 require_grep '#define IFA_MAX IFA_FLAGS' scripts/patch-vintage-net-linux-3.10.sh
+require_grep 'aliases: aliases()' examples/atomcam2_nerves_app/mix.exs
+require_grep 'setup:' examples/atomcam2_nerves_app/mix.exs
+require_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
+require_grep 'mix setup' scripts/build-firmware-log.sh
+require_grep 'check_command python3' scripts/check-prereqs.sh
 reject_grep 'atomcam2-vintage-net.log' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 reject_grep 'wpa_cli' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep 'CONFIG_BLK_DEV_INITRD=y' linux-3.10.14.defconfig

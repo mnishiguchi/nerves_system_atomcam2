@@ -37,6 +37,7 @@ check_command g++
 check_command erl
 check_command elixir
 check_command mix
+check_command python3
 check_command cpio
 check_command fwup
 check_command unsquashfs

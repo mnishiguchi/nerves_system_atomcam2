@@ -72,16 +72,24 @@ It should validate the final application payload, back up the current SD files, 
 
 ### Transition
 
-Until the prebuilt artifact and Mix tasks exist, the README must distinguish one-time system preparation from the repeated application loop. The current transitional workflow may still require:
+Until the prebuilt artifact and installation task exist, the README must distinguish one-time system preparation from the repeated application loop.
+
+The application now provides:
 
 ```sh
-./scripts/prepare-toolchain-archive.sh
-mix deps.get
-../../scripts/patch-vintage-net-linux-3.10.sh
+mix setup
 mix firmware
 ```
 
-These commands describe the current implementation, not the desired long-term application interface.
+`mix setup` currently fetches dependencies and applies the Linux 3.10 VintageNet compatibility patch through the repository script. This removes the manual preparation command from the normal application workflow while keeping the workaround explicit and independently testable.
+
+System maintainers still prepare the local toolchain archive separately:
+
+```sh
+./scripts/prepare-toolchain-archive.sh
+```
+
+These commands describe the current transitional implementation, not the complete long-term application interface.
 
 ## Consequences
 
@@ -94,6 +102,6 @@ Publishing a system artifact introduces artifact-versioning and release-maintena
 The current repository remains transitional until the following work is complete:
 
 - Publish or otherwise distribute a reusable system artifact.
-- Remove the manual VintageNet patch step through an upstream fix, maintained fork, or automated setup process.
-- Add `mix setup` and `mix atomcam2.install`.
+- Replace the locally applied VintageNet patch with an upstream fix or deliberately maintained dependency.
+- Add `mix atomcam2.install`.
 - Prove a safe application update path for `mix upload`.
