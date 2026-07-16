@@ -85,6 +85,7 @@ require_executable scripts/prepare-toolchain-archive.sh
 require_file scripts/logging.sh
 require_file examples/atomcam2_nerves_app/mix.exs
 require_file examples/atomcam2_nerves_app/config/target.exs
+require_file examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_executable examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
@@ -94,6 +95,8 @@ require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
 require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'use Toolshed' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep '#define IFA_MAX IFA_FLAGS' scripts/patch-vintage-net-linux-3.10.sh
 require_grep 'aliases: aliases()' examples/atomcam2_nerves_app/mix.exs
 require_grep 'setup:' examples/atomcam2_nerves_app/mix.exs

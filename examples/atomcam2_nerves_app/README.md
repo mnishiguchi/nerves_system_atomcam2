@@ -25,6 +25,18 @@ Build the firmware:
 mix firmware
 ```
 
+## Target IEx
+
+The target imports Toolshed automatically through `/etc/iex.exs`. Standard Nerves shell helpers are available immediately after connecting:
+
+```sh
+ssh nerves@nerves.local
+```
+
+```elixir
+exit
+```
+
 Every `mix firmware` build preserves the merged application rootfs at:
 
 ```text

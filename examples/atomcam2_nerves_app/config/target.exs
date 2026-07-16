@@ -1,6 +1,7 @@
 import Config
 
 config :nerves, :firmware,
+  rootfs_overlay: Path.expand("../rootfs_overlay", __DIR__),
   post_processing_script: Path.expand("../scripts/preserve-final-rootfs.sh", __DIR__)
 
 config :shoehorn,
