@@ -112,7 +112,7 @@ The refactor is complete when the application follows the selected standard Nerv
 ## Implementation checklist
 
 - [x] Establish and record the clean baseline.
-- [ ] Add NervesMOTD without changing application supervision or networking.
+- [x] Add NervesMOTD without changing application supervision or networking.
 - [ ] Activate RingLogger on the target.
 - [ ] Advertise standard SSH-related mDNS services.
 - [ ] Advertise Nerves device metadata.
@@ -123,3 +123,49 @@ The refactor is complete when the application follows the selected standard Nerv
 - [ ] Simplify custom Wi-Fi supervision only after replacement behavior is verified.
 - [ ] Review VM argument conventions independently.
 - [ ] Complete final repository and hardware verification.
+
+## Implementation progress
+
+### Milestone 1: NervesMOTD
+
+Implementation status: implemented and hardware-verified on July 17, 2026.
+
+Changes are limited to the example application:
+
+- Add `nerves_motd` as a target dependency.
+- Configure a simple Atom Cam 2 logo.
+- Print the MOTD before importing Toolshed in `/etc/iex.exs`.
+- Preserve the existing supervision tree, networking, SSH, packaging, and platform boundary.
+
+Required verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix setup`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] Wi-Fi connects after power-up.
+- [x] `nerves.local` resolves and responds to ping.
+- [x] SSH opens an IEx session.
+- [x] The Atom Cam 2 MOTD appears before the IEx prompt.
+- [x] Toolshed remains imported.
+- [x] `node()` and `exit()` behave as expected.
+
+Hardware evidence:
+
+- Verified control kernel:
+  - SHA-256: `b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc`
+  - Size: `1976325 bytes`
+- Firmware UUID: `d7695134-40f6-5b64-8252-46aa4cc99413`
+- Firmware name: `spy-gap`
+- `nerves.local` resolved to `192.168.10.117`.
+- Ping completed with four replies and zero packet loss.
+- SSH opened `atomcam2_nerves_app@127.0.0.1`.
+- NervesMOTD printed `Atom Cam 2 running Nerves` before the IEx prompt.
+- Toolshed was imported and `cmd/1` executed successfully.
+- NervesMOTD, NervesRuntime, NervesSSH, mDNS, VintageNet, VintageNetWiFi, and the example application were started.
+- VintageNet reported `wlan0` configured with an internet connection and `wps: false`.
+- Remote `mix upload nerves.local` was rejected with instructions to use `mix atomcam2.install`.
+
+The missing `uname` command is a property of the minimal BusyBox configuration and does not indicate a Toolshed failure. The incomplete firmware metadata shown as `unknown 0.0.0 - unknown` is outside this milestone.
+

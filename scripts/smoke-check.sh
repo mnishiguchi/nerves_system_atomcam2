@@ -104,6 +104,9 @@ require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'nerves_motd' examples/atomcam2_nerves_app/mix.exs
+require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'NervesMOTD.print()' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'use Toolshed' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'defmodule Mix.Tasks.Atomcam2.Install' lib/mix/tasks/atomcam2.install.ex
 require_grep 'LABEL=ATOMCAM2' lib/mix/tasks/atomcam2.install.ex

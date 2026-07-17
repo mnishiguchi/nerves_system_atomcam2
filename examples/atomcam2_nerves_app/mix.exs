@@ -44,6 +44,8 @@ defmodule Atomcam2NervesApp.MixProject do
       # {:nerves_pack, "~> 0.7.0", targets: @all_targets},
       # {:nerves_ssh, "~> 1.2", targets: @all_targets},
 
+      {:nerves_motd, "~> 0.1.17", targets: @all_targets},
+
       # Minimal target dependencies for the first Wi-Fi + SSH milestone.
       # Avoid :nerves_pack for now because it pulls in :vintage_net_direct and
       # :one_dhcpd, which are not needed for Wi-Fi client mode.

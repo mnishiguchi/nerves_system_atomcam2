@@ -8,6 +8,9 @@ config :shoehorn,
   init: [:nerves_runtime, :vintage_net, :mdns_lite, :nerves_ssh],
   app: Mix.Project.config()[:app]
 
+config :nerves_motd,
+  logo: "Atom Cam 2 running Nerves\n"
+
 public_keys =
   System.user_home!()
   |> Path.join(".ssh/*.pub")
