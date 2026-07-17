@@ -107,6 +107,8 @@ require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'nerves_motd' examples/atomcam2_nerves_app/mix.exs
 require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'config :logger, backends: \[RingLogger\]' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'protocol: "ssh"' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'protocol: "sftp-ssh"' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'NervesMOTD.print()' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'use Toolshed' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'defmodule Mix.Tasks.Atomcam2.Install' lib/mix/tasks/atomcam2.install.ex

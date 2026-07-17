@@ -212,3 +212,43 @@ A transient NervesSSH startup failure and read-only `/data/nerves_ssh`
 fallback were observed in the retained boot logs. SSH recovered and remained
 stable, so these findings do not block this milestone.
 
+### Milestone 3: SSH-related mDNS services
+
+Implementation status: hardware-verified on July 17, 2026.
+
+Changes are limited to the existing `mdns_lite` target configuration:
+
+- Advertise the SSH service as `_ssh._tcp` on port 22.
+- Advertise the SFTP service as `_sftp-ssh._tcp` on port 22.
+- Preserve the existing `nerves.local` hostname advertisement.
+- Preserve NervesMOTD, RingLogger, Toolshed, networking, SSH, packaging, and the platform boundary.
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] Wi-Fi connects after power-up.
+- [x] `nerves.local` resolves and responds to ping.
+- [x] SSH opens an IEx session.
+- [x] NervesMOTD, RingLogger, and Toolshed remain available.
+- [x] `MdnsLite.Info.dump_records/0` contains `_ssh._tcp` PTR, SRV, and TXT records.
+- [x] `MdnsLite.Info.dump_records/0` contains `_sftp-ssh._tcp` PTR, SRV, and TXT records.
+- [x] A host-side mDNS browser discovers both services on port 22.
+- [x] Remote firmware upload remains rejected.
+
+Hardware evidence:
+
+- Firmware name: `fox-invest`
+- Firmware UUID: `6480dd3a-c504-52fd-fcb1-efe8600dad61`
+- `nerves.local` responded to 3 of 3 ping requests with 0% packet loss.
+- SSH opened an IEx session and displayed NervesMOTD.
+- Toolshed was imported successfully.
+- `Application.fetch_env!(:mdns_lite, :services)` returned the SSH and SFTP service definitions.
+- `_ssh._tcp.local` contained PTR, SRV, and TXT records.
+- `_sftp-ssh._tcp.local` contained PTR, SRV, and TXT records.
+- Both SRV records targeted `nerves.local` on port 22.
+- `avahi-browse` discovered both services at `192.168.10.117` on port 22.
+- RingLogger remained operational and retained recent device logs.
+- `mix upload nerves.local` was rejected with instructions to use `mix atomcam2.install`.
