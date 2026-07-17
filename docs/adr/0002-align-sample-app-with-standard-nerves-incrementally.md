@@ -390,3 +390,41 @@ Hardware evidence:
 - `mix nerves.discover` displayed the expected device metadata.
 - `mix upload nerves.local` was rejected with instructions to use `mix atomcam2.install`.
 
+### Milestone 7: Custom NervesMOTD logo
+
+Implementation status: hardware-verified on July 17, 2026.
+
+The example application now provides a generated ANSI illustration of the
+Atom Cam 2 as the NervesMOTD logo.
+
+The illustration is implemented in
+`Atomcam2NervesApp.MOTDLogo` and configured through `config/runtime.exs`.
+The IEx startup file remains responsible only for printing NervesMOTD and
+importing Toolshed.
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix compile`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] SSH displays the custom logo automatically.
+- [x] The logo contains the `ATOM CAM 2` title.
+- [x] The rendered logo contains multiple ANSI foreground and background colors.
+- [x] `NervesMOTD.print/0` obtains the logo from application configuration.
+- [x] `/etc/iex.exs` contains no logo implementation or rendering call.
+- [x] Toolshed remains available.
+- [x] SSH, SFTP, and Nerves discovery mDNS services remain available.
+
+Hardware evidence:
+
+- Firmware name: `ostrich-say`
+- Firmware UUID: `a4cdf475-b761-5d8e-f5dc-24140de265b7`
+- The custom Atom Cam 2 illustration appeared automatically when SSH opened IEx.
+- The configured logo was 8,258 bytes.
+- The configured logo contained 45 distinct ANSI color pairs.
+- The configured logo contained the `ATOM CAM 2` title.
+- `/etc/iex.exs` remained `NervesMOTD.print()` followed by `use Toolshed`.
+- `_ssh._tcp`, `_sftp-ssh._tcp`, and `_nerves-device._tcp` remained advertised.
+

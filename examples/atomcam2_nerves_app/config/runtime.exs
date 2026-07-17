@@ -1,6 +1,6 @@
 import Config
 
-if config_env() != :host do
+if config_target() != :host do
   provisioning_path = "/media/mmc/nerves-provisioning.conf"
 
   provisioning =
@@ -64,4 +64,7 @@ if config_env() != :host do
 
   config :nerves_ssh,
     authorized_keys: compiled_keys ++ sd_keys
+
+  config :nerves_motd,
+    logo: Atomcam2NervesApp.MOTDLogo.render()
 end

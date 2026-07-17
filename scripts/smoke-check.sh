@@ -110,7 +110,19 @@ require_grep 'VintageNet.get_configuration(@interface)' examples/atomcam2_nerves
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'nerves_motd' examples/atomcam2_nerves_app/mix.exs
-require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/target.exs
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_logo.ex
+require_grep 'defmodule Atomcam2NervesApp.MOTDLogo' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_logo.ex
+require_grep 'config_target() != :host' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerves_app/config/runtime.exs
+iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
+
+if grep -Fq 'MOTDLogo.render' "$iex_file"; then
+  echo "error: $iex_file contains MOTDLogo.render" >&2
+  exit 1
+else
+  echo "ok: $iex_file does not contain MOTDLogo.render"
+fi
 require_grep 'config :logger, backends: \[RingLogger\]' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'protocol: "ssh"' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'protocol: "sftp-ssh"' examples/atomcam2_nerves_app/config/target.exs
