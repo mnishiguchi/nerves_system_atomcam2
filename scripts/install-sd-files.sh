@@ -146,6 +146,11 @@ authorized_keys
 nerves-provisioning.conf
 "
 
+if [ -f "$source_dir/nerves-firmware-metadata.conf" ]; then
+  files="$files
+nerves-firmware-metadata.conf"
+fi
+
 for file in $files; do
   if [ -f "$source_dir/$file" ]; then
     maybe_backup_file "$mount_dir/$file"

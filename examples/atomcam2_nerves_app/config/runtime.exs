@@ -1,6 +1,28 @@
 import Config
 
 if config_target() != :host do
+  firmware_metadata_path =
+    "/media/mmc/nerves-firmware-metadata.conf"
+
+  if File.exists?(firmware_metadata_path) do
+    firmware_metadata =
+      firmware_metadata_path
+      |> File.read!()
+      |> String.split("\n", trim: true)
+      |> Map.new(fn line ->
+        case String.split(line, "=", parts: 2) do
+          [key, value] when key != "" and value != "" ->
+            {key, value}
+
+          _ ->
+            raise "invalid firmware metadata line: #{inspect(line)}"
+        end
+      end)
+
+    config :nerves_runtime,
+      kv_backend: {Nerves.Runtime.KVBackend.InMemory, contents: firmware_metadata}
+  end
+
   provisioning_path = "/media/mmc/nerves-provisioning.conf"
 
   provisioning =

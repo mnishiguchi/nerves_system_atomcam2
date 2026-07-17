@@ -21,7 +21,7 @@ esac
 
 require_file() {
   file_name="$1"
-  empty_policy="$2"
+  empty_policy="${2:-}"
   file_path="$payload_dir/$file_name"
 
   if [ -s "$file_path" ] || { [ -f "$file_path" ] && [ "$empty_policy" = "allow_empty" ]; }; then
@@ -60,6 +60,31 @@ require_file rootfs_hack.squashfs required
 require_file hostname required
 require_file authorized_keys allow_empty
 require_file nerves-provisioning.conf allow_empty
+
+firmware_metadata_file="$payload_dir/nerves-firmware-metadata.conf"
+
+if [ -e "$firmware_metadata_file" ]; then
+  require_file nerves-firmware-metadata.conf
+
+  for metadata_key in     nerves_fw_active     a.nerves_fw_product     a.nerves_fw_version     a.nerves_fw_uuid     a.nerves_fw_platform     a.nerves_fw_architecture
+  do
+    metadata_value="$(
+      awk -F= -v wanted="$metadata_key" '
+        $1 == wanted {
+          print substr($0, index($0, "=") + 1)
+          exit
+        }
+      ' "$firmware_metadata_file"
+    )"
+
+    if [ -n "$metadata_value" ]; then
+      echo "ok: $firmware_metadata_file contains $metadata_key"
+    else
+      echo "invalid firmware metadata: missing $metadata_key" >&2
+      exit 1
+    fi
+  done
+fi
 
 check_hostname
 

@@ -119,6 +119,8 @@ require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'nerves-firmware-metadata.conf' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'Nerves.Runtime.KVBackend.InMemory' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep '"wlan0"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'wps: false' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
@@ -146,6 +148,10 @@ require_grep 'defmodule Mix.Tasks.Atomcam2.Install' lib/mix/tasks/atomcam2.insta
 require_grep 'LABEL=ATOMCAM2' lib/mix/tasks/atomcam2.install.ex
 require_grep 'scripts/install-sd-files.sh' lib/mix/tasks/atomcam2.install.ex
 require_grep '"--force"' lib/mix/tasks/atomcam2.install.ex
+require_grep 'nerves-firmware-metadata.conf' lib/mix/tasks/atomcam2.install.ex
+require_grep 'meta-uuid' lib/mix/tasks/atomcam2.install.ex
+require_grep 'nerves-firmware-metadata.conf' scripts/install-sd-files.sh
+require_grep 'a.nerves_fw_uuid' scripts/atomcam2-check-sd-payload.sh
 require_grep '#define IFA_MAX IFA_FLAGS' package/atomcam2-compat-headers/atomcam2-linux-3.10-compat.h
 require_grep 'BR2_PACKAGE_ATOMCAM2_COMPAT_HEADERS=y' nerves_defconfig
 require_grep 'atomcam2-linux-3.10-compat.h' mix.exs

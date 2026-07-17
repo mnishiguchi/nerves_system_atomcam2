@@ -1,6 +1,14 @@
 defmodule Mix.Tasks.Atomcam2.Install do
   use Mix.Task
 
+  @firmware_metadata_fields [
+    {"meta-product", "nerves_fw_product"},
+    {"meta-version", "nerves_fw_version"},
+    {"meta-uuid", "nerves_fw_uuid"},
+    {"meta-platform", "nerves_fw_platform"},
+    {"meta-architecture", "nerves_fw_architecture"}
+  ]
+
   @shortdoc "Installs the Atom Cam 2 flat-SD payload"
 
   @moduledoc """
@@ -46,7 +54,10 @@ defmodule Mix.Tasks.Atomcam2.Install do
 
     system_root = Path.expand("../../..", __DIR__)
     installer = Path.join(system_root, "scripts/install-sd-files.sh")
-    payload = Path.expand("nerves/images/atomcam2-sd", Mix.Project.build_path())
+    images_path = Path.expand("nerves/images", Mix.Project.build_path())
+    payload = Path.join(images_path, "atomcam2-sd")
+    firmware = Path.join(images_path, "#{Mix.Project.config()[:app]}.fw")
+    metadata_file = Path.join(payload, "nerves-firmware-metadata.conf")
     mount = options[:mount] || detect_mount!()
 
     unless File.regular?(installer) do
@@ -56,6 +67,12 @@ defmodule Mix.Tasks.Atomcam2.Install do
     unless File.dir?(payload) do
       Mix.raise("missing final Atom Cam 2 payload: #{payload}\nRun mix firmware first.")
     end
+
+    unless File.regular?(firmware) do
+      Mix.raise("missing Atom Cam 2 firmware: #{firmware}\nRun mix firmware first.")
+    end
+
+    write_firmware_metadata!(firmware, metadata_file)
 
     installer_arguments =
       ["--source", payload, "--mount", mount, "--force"]
@@ -69,6 +86,55 @@ defmodule Mix.Tasks.Atomcam2.Install do
          ) do
       {_output, 0} -> :ok
       {_output, status} -> Mix.raise("Atom Cam 2 installation failed with status #{status}")
+    end
+  end
+
+  defp write_firmware_metadata!(firmware, metadata_file) do
+    fwup =
+      System.find_executable("fwup") ||
+        Mix.raise("fwup is required to read firmware metadata")
+
+    metadata =
+      case System.cmd(fwup, ["-m", "-i", firmware], stderr_to_stdout: true) do
+        {output, 0} ->
+          parse_firmware_metadata(output)
+
+        {output, status} ->
+          Mix.raise("could not read firmware metadata (status #{status}): #{String.trim(output)}")
+      end
+
+    lines =
+      ["nerves_fw_active=a"] ++
+        Enum.map(@firmware_metadata_fields, fn {fwup_key, kv_key} ->
+          "a.#{kv_key}=#{firmware_metadata_value!(metadata, fwup_key)}"
+        end)
+
+    File.write!(metadata_file, Enum.join(lines, "\n") <> "\n")
+    Mix.shell().info("Generated firmware metadata: #{metadata_file}")
+  end
+
+  defp parse_firmware_metadata(output) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.filter(&String.starts_with?(&1, "meta-"))
+    |> Map.new(fn line ->
+      case String.split(line, "=", parts: 2) do
+        [key, value] ->
+          {key, value |> String.trim() |> String.trim(~s("))}
+
+        _ ->
+          Mix.raise("invalid fwup metadata line: #{inspect(line)}")
+      end
+    end)
+  end
+
+  defp firmware_metadata_value!(metadata, key) do
+    case Map.fetch(metadata, key) do
+      {:ok, value} when value != "" ->
+        value
+
+      _ ->
+        Mix.raise("firmware metadata does not contain #{key}")
     end
   end
 
@@ -93,7 +159,9 @@ defmodule Mix.Tasks.Atomcam2.Install do
         |> select_mount!()
 
       {output, status} ->
-        Mix.raise("could not detect the ATOMCAM2 mount (status #{status}): #{String.trim(output)}")
+        Mix.raise(
+          "could not detect the ATOMCAM2 mount (status #{status}): #{String.trim(output)}"
+        )
     end
   end
 
