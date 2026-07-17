@@ -169,3 +169,46 @@ Hardware evidence:
 
 The missing `uname` command is a property of the minimal BusyBox configuration and does not indicate a Toolshed failure. The incomplete firmware metadata shown as `unknown 0.0.0 - unknown` is outside this milestone.
 
+### Milestone 2: RingLogger
+
+Implementation status: hardware-verified on July 17, 2026.
+
+Changes are limited to the example application's target logging configuration:
+
+- Configure RingLogger as the target Logger backend.
+- Remove the default console backend through the standard Logger backend configuration.
+- Preserve NervesMOTD, Toolshed, supervision, networking, SSH, packaging, and the platform boundary.
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] Wi-Fi connects after power-up.
+- [x] `nerves.local` resolves and responds to ping.
+- [x] SSH opens an IEx session.
+- [x] NervesMOTD and Toolshed remain available.
+- [x] `:ring_logger` is started.
+- [x] Recent boot logs are available through `RingLogger.tail/1`.
+- [x] A new Logger message is retained in the ring buffer.
+- [x] Remote firmware upload remains rejected.
+
+Hardware evidence:
+
+- Firmware name: `two-beach`
+- Firmware UUID: `f01658b9-ba23-5049-8841-f84b19560894`
+- `nerves.local` responded to 3 of 3 ping requests with 0% packet loss.
+- SSH opened an IEx session and displayed NervesMOTD.
+- Toolshed was imported successfully.
+- RingLogger `0.11.6` was present in the started applications.
+- `RingLogger.tail(20)` returned retained boot and network logs.
+- `RingLogger.grep/1` found `ADR 0002 RingLogger hardware verification`.
+- The NervesSSH process remained stable during a 10-second observation.
+- VintageNet reported `wlan0` configured with internet connectivity.
+- `mix upload nerves.local` was rejected with instructions to use `mix atomcam2.install`.
+
+A transient NervesSSH startup failure and read-only `/data/nerves_ssh`
+fallback were observed in the retained boot logs. SSH recovered and remained
+stable, so these findings do not block this milestone.
+

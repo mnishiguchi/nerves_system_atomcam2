@@ -11,6 +11,8 @@ config :shoehorn,
 config :nerves_motd,
   logo: "Atom Cam 2 running Nerves\n"
 
+config :logger, backends: [RingLogger]
+
 public_keys =
   System.user_home!()
   |> Path.join(".ssh/*.pub")
