@@ -2,109 +2,153 @@
 
 ## Status
 
-Accepted on July 16, 2026.
+Accepted
 
 ## Context
 
-The example application should resemble a conventional Nerves application such as `circuits_quickstart` where practical.
+The Atom Cam 2 example application originally used project-specific runtime
+code for responsibilities that standard Nerves libraries already provide,
+including Wi-Fi startup, interactive shell presentation, logging, service
+discovery, system time, and SSH state.
 
-A previous refactor attempted to adopt several standard application conventions at once, including new dependencies, `nerves_pack`, Shoehorn changes, runtime network configuration, service discovery, logging, MOTD, and IEx helpers.
+The platform does not use the ordinary Nerves firmware-partition layout. It
+boots a flat MicroSD payload containing the protected Atom Cam 2 kernel and a
+SquashFS root filesystem. As a result, some standard Nerves assumptions do not
+apply:
 
-The resulting firmware no longer provided reliable Wi-Fi, `nerves.local`, ping, or SSH. Because many responsibilities changed together, the regression could not be attributed safely to one package or configuration change.
+- Firmware installation must continue through `mix atomcam2.install`.
+- Remote firmware upload must remain rejected.
+- The active firmware metadata cannot be read from a conventional U-Boot
+  environment or application partition.
+- Writable runtime state must be stored on `/media/mmc`.
+- The platform does not expose standard application-partition usage or thermal
+  sensor data.
 
-The Atom Cam 2 system also has target-specific requirements that a standard example application does not have:
-
-- A custom MIPS32R2 soft-float toolchain.
-- A vendor-compatible kernel and initramfs boot handoff.
-- Vendor SDIO preparation and Wi-Fi module loading before BEAM starts.
-- Linux 3.10 compatibility for VintageNet.
-- WPS disabled in the Wi-Fi configuration.
-- A flat-file MicroSD installation contract.
-
-These requirements must remain stable while the application is simplified.
+A single large replacement would make regressions difficult to isolate on
+hardware. The application therefore needed to move toward standard Nerves
+conventions through small, independently verified changes.
 
 ## Decision
 
-Use `circuits_quickstart` as a reference, not as a template to copy wholesale.
-
 ### Preserve the platform boundary
 
-Application refactoring must not modify the following in the same change:
+Keep the existing Atom Cam 2 boot and installation contract:
 
-- The custom Nerves system.
-- The toolchain or Buildroot configuration.
-- The kernel or initramfs handoff.
-- Vendor Wi-Fi preparation.
-- The flat-SD packaging and installation flow.
-- Verified target compatibility adjustments.
+- Preserve the verified Atom Cam 2 control kernel.
+- Continue producing the flat MicroSD payload.
+- Use `mix atomcam2.install` for installation.
+- Reject unsupported remote firmware updates.
+- Do not represent the platform as having a standard Nerves application
+  partition when it does not.
 
-The hardware-verified application workflow remains:
+Standardize the application runtime without redesigning the underlying platform
+workflow.
 
-```sh
-mix setup
-mix firmware
-mix atomcam2.install
-```
+### Adopt standard Nerves runtime services explicitly
 
-### Refactor incrementally
+Use focused Nerves libraries for the services the example application needs:
 
-Introduce one independently testable behavior at a time.
+- `NervesMOTD` for the IEx greeting
+- `RingLogger` for retained runtime logs
+- `NervesSSH` for remote IEx access
+- `MdnsLite` for SSH, SFTP, and Nerves device advertisements
+- `VintageNet` and `VintageNetWiFi` for Wi-Fi configuration
+- `NervesTime` for approximate startup time and NTP synchronization
+- `Nerves.Runtime` for runtime firmware metadata
 
-Examples include:
+Declare these dependencies explicitly rather than adopting `nerves_pack`.
+The application needs project-specific configuration for several services and
+does not need the direct-link networking or DHCP-server behavior that the bundle
+would add.
 
-- Toolshed startup.
-- NervesMOTD.
-- RingLogger.
-- Additional mDNS services.
-- `nerves_pack`.
-- Runtime Wi-Fi configuration.
-- Removal of custom application supervision.
+### Let VintageNet own Wi-Fi configuration
 
-Do not combine dependency changes, service ownership changes, application renaming, network configuration changes, and packaging changes in one refactor.
+Build the default `wlan0` configuration in `config/runtime.exs` from the
+provisioning data on `/media/mmc`.
 
-`nerves_pack` may be adopted only after the services it owns have been tested individually and duplicate ownership has been removed deliberately.
+Remove the custom network worker only after the VintageNet configuration has
+been verified on hardware. Application code must not reconfigure `wlan0` after
+VintageNet starts.
 
-Existing custom application code must remain until its standard replacement has passed hardware verification.
+Retain credential-safe diagnostics, but do not expose the Wi-Fi passphrase.
 
-### Require hardware verification
+### Store writable runtime state on the MicroSD partition
 
-Each meaningful milestone must pass:
+Use `/media/mmc` for state that must survive reboot:
 
-```sh
-git diff --check
-./scripts/smoke-check.sh
+- `/media/mmc/nerves-firmware-metadata.conf`
+- `/media/mmc/.nerves_time`
+- `/media/mmc/nerves_ssh`
 
-cd examples/atomcam2_nerves_app
+Generate the firmware metadata file from the actual `.fw` artifact during
+installation and load it through `Nerves.Runtime.KVBackend.InMemory`.
 
-mix setup
-mix firmware
-mix atomcam2.install
-```
+Persist SSH host keys under `/media/mmc/nerves_ssh` because `/data` is read-only
+on this platform.
 
-After power-cycling the camera:
+### Synchronize time when Internet access becomes available
 
-```sh
-ping nerves.local
-ssh nerves@nerves.local
-```
+Allow `NervesTime` to restore an approximate timestamp from
+`/media/mmc/.nerves_time`.
 
-The SSH IEx session must also confirm:
+Subscribe to the VintageNet `wlan0` connection property and restart `ntpd` when
+the interface reaches `:internet` and time is not yet synchronized. This process
+does not configure networking; VintageNet remains the sole owner of the
+interface.
 
-```elixir
-node()
-exit()
-```
+### Advertise only required discovery services
 
-A milestone must be committed separately before starting the next one.
+Advertise:
 
-If verification fails, return to the most recent hardware-verified commit before investigating or attempting another refactor.
+- `_ssh._tcp`
+- `_sftp-ssh._tcp`
+- `_nerves-device._tcp`
+
+Do not enable the mDNS DNS bridge until application code requires generic
+outbound `.local` resolution through the Erlang resolver. Direct `MdnsLite`
+resolution remains available when explicitly needed.
+
+### Keep Erlang distribution local
+
+Keep the release node and Erlang distribution bound to `127.0.0.1`.
+
+Use NervesSSH for remote administration instead of exposing raw distributed
+Erlang. Preserve the verified `rel/vm.args.eex` configuration unless a concrete
+requirement justifies changing it.
+
+### Verify incrementally on hardware
+
+Implement each runtime change independently and verify it on an Atom Cam 2
+before removing replaced code or proceeding to the next responsibility.
+
+Repository checks, firmware construction, MicroSD installation, boot, Wi-Fi,
+SSH, discovery, metadata, persistent state, and time synchronization must all
+pass before considering the alignment complete.
 
 ## Consequences
 
-The migration will require more, smaller commits and repeated hardware tests.
+### Positive
 
-This is accepted because regressions remain attributable to a narrow change and the custom Atom Cam 2 system stays recoverable.
+- The example application follows familiar Nerves runtime patterns.
+- Network ownership is explicit and no longer duplicated by a custom worker.
+- Logging, MOTD, SSH, discovery, metadata, and time behavior are easier to
+  understand and maintain.
+- Firmware identity, approximate time, and SSH host identity survive the custom
+  flat-MicroSD workflow.
+- Hardware regressions are easier to isolate because the migration was performed
+  incrementally.
 
-The final example application may intentionally differ from `circuits_quickstart` where the target boot, networking, provisioning, or installation contract requires it.
+### Negative
 
-The refactor is complete when the application follows the selected standard Nerves conventions without changing the verified platform behavior. Matching the exact dependency list or directory structure of `circuits_quickstart` is not a goal.
+- The custom installer and metadata bridge remain necessary because the platform
+  does not use the standard Nerves firmware-partition layout.
+- A small application process is required to prompt NTP synchronization when
+  Internet connectivity appears after `NervesTime` starts.
+- NervesMOTD continues to report application-partition usage and temperature as
+  unavailable because the platform does not expose those data sources.
+- The mDNS DNS bridge remains deferred and must be reconsidered if outbound
+  `.local` resolution becomes a requirement.
+
+## Related documentation
+
+- `docs/worklog/20260717-align-example-app-with-standard-nerves.md`

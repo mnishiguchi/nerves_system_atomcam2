@@ -95,20 +95,63 @@ require_file examples/atomcam2_nerves_app/config/target.exs
 require_file examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_executable examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
-require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
+network_file="$repo_dir/examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex"
+
+if [ -e "$network_file" ]; then
+  echo "error: $network_file still exists" >&2
+  exit 1
+else
+  echo "ok: $network_file does not exist"
+fi
+
+application_lib_dir="$repo_dir/examples/atomcam2_nerves_app/lib"
+
+if grep -R -Fq 'Atomcam2NervesApp.Network' "$application_lib_dir"; then
+  echo "error: application source still references Atomcam2NervesApp.Network" >&2
+  exit 1
+else
+  echo "ok: application source does not reference Atomcam2NervesApp.Network"
+fi
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
 require_file lib/mix/tasks/atomcam2.install.ex
 require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
-require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
+require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'nerves-firmware-metadata.conf' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'Nerves.Runtime.KVBackend.InMemory' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep '"wlan0"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'wps: false' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'nerves_motd' examples/atomcam2_nerves_app/mix.exs
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_logo.ex
+require_grep 'defmodule Atomcam2NervesApp.MOTDLogo' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_logo.ex
+require_grep 'config_target() != :host' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerves_app/config/runtime.exs
+iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
+
+if grep -Fq 'MOTDLogo.render' "$iex_file"; then
+  echo "error: $iex_file contains MOTDLogo.render" >&2
+  exit 1
+else
+  echo "ok: $iex_file does not contain MOTDLogo.render"
+fi
+require_grep 'config :logger, backends: \[RingLogger\]' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'protocol: "ssh"' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'protocol: "sftp-ssh"' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'NervesMOTD.print()' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'use Toolshed' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'defmodule Mix.Tasks.Atomcam2.Install' lib/mix/tasks/atomcam2.install.ex
 require_grep 'LABEL=ATOMCAM2' lib/mix/tasks/atomcam2.install.ex
 require_grep 'scripts/install-sd-files.sh' lib/mix/tasks/atomcam2.install.ex
 require_grep '"--force"' lib/mix/tasks/atomcam2.install.ex
+require_grep 'nerves-firmware-metadata.conf' lib/mix/tasks/atomcam2.install.ex
+require_grep 'meta-uuid' lib/mix/tasks/atomcam2.install.ex
+require_grep 'nerves-firmware-metadata.conf' scripts/install-sd-files.sh
+require_grep 'a.nerves_fw_uuid' scripts/atomcam2-check-sd-payload.sh
 require_grep '#define IFA_MAX IFA_FLAGS' package/atomcam2-compat-headers/atomcam2-linux-3.10-compat.h
 require_grep 'BR2_PACKAGE_ATOMCAM2_COMPAT_HEADERS=y' nerves_defconfig
 require_grep 'atomcam2-linux-3.10-compat.h' mix.exs
@@ -127,8 +170,6 @@ require_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_ne
 reject_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
 require_grep 'mix setup' scripts/build-firmware-log.sh
 require_grep 'check_command python3' scripts/check-prereqs.sh
-reject_grep 'atomcam2-vintage-net.log' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
-reject_grep 'wpa_cli' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep 'CONFIG_BLK_DEV_INITRD=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_INITRAMFS_SOURCE="${NERVES_DEFCONFIG_DIR}/board/atomcam2/initramfs"' linux-3.10.14.defconfig
 require_grep 'CONFIG_BLK_DEV_LOOP=y' linux-3.10.14.defconfig
@@ -214,4 +255,22 @@ find "$repo_dir" \
   check_script_syntax "$shell_file"
 done
 
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+require_grep 'Atomcam2NervesApp.Discovery.advertise()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
+require_grep 'protocol: "nerves-device"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+require_grep '"serial=#{Nerves.Runtime.serial_number()}"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+require_grep '"version=#{application_version()}"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+require_grep 'port: 0' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+
 "$repo_dir/scripts/atomcam2-check-minimal-ssh-scope.sh" "$repo_dir"
+
+require_grep 'nerves_time' examples/atomcam2_nerves_app/mix.exs
+require_grep 'time_file: "/media/mmc/.nerves_time"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'await_initialization_timeout: 5_000' examples/atomcam2_nerves_app/config/runtime.exs
+
+require_grep 'system_dir: "/media/mmc/nerves_ssh"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'user_dir: "/media/mmc/nerves_ssh/default_user"' examples/atomcam2_nerves_app/config/runtime.exs
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
+require_grep 'Atomcam2NervesApp.TimeSync' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
+require_grep 'VintageNet.subscribe(@connection_property)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
+require_grep 'NervesTime.restart_ntpd()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex

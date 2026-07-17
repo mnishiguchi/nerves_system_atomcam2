@@ -8,6 +8,8 @@ config :shoehorn,
   init: [:nerves_runtime, :vintage_net, :mdns_lite, :nerves_ssh],
   app: Mix.Project.config()[:app]
 
+config :logger, backends: [RingLogger]
+
 public_keys =
   System.user_home!()
   |> Path.join(".ssh/*.pub")
@@ -32,3 +34,18 @@ config :mdns_lite,
 config :vintage_net,
   regulatory_domain: "00",
   config: []
+
+# Advertise the SSH services provided by NervesSSH.
+config :mdns_lite,
+  services: [
+    %{
+      protocol: "ssh",
+      transport: "tcp",
+      port: 22
+    },
+    %{
+      protocol: "sftp-ssh",
+      transport: "tcp",
+      port: 22
+    }
+  ]

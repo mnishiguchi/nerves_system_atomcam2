@@ -39,14 +39,11 @@ defmodule Atomcam2NervesApp.MixProject do
       {:ring_logger, "~> 0.9"},
       {:toolshed, "~> 0.5"},
 
-      # # Dependencies for all targets except :host
-      # {:nerves_runtime, "~> 0.13.0", targets: @all_targets},
-      # {:nerves_pack, "~> 0.7.0", targets: @all_targets},
-      # {:nerves_ssh, "~> 1.2", targets: @all_targets},
+      # Runtime services
+      {:nerves_time, "~> 0.4.12"},
+      {:nerves_motd, "~> 0.1.17", targets: @all_targets},
 
-      # Minimal target dependencies for the first Wi-Fi + SSH milestone.
-      # Avoid :nerves_pack for now because it pulls in :vintage_net_direct and
-      # :one_dhcpd, which are not needed for Wi-Fi client mode.
+      # Explicit networking and remote access dependencies
       {:nerves_runtime, "~> 0.13.0", targets: @all_targets},
       {:nerves_ssh, "~> 1.2", targets: @all_targets},
       {:mdns_lite, "~> 0.9", targets: @all_targets},
@@ -75,10 +72,7 @@ defmodule Atomcam2NervesApp.MixProject do
 
       "local" ->
         {:nerves_system_atomcam2,
-         path: "../..",
-         runtime: false,
-         targets: :atomcam2,
-         nerves: [compile: true]}
+         path: "../..", runtime: false, targets: :atomcam2, nerves: [compile: true]}
 
       source ->
         raise "unsupported ATOMCAM2_SYSTEM_SOURCE: #{inspect(source)}"

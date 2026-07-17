@@ -5,9 +5,9 @@ defmodule Atomcam2NervesApp.Application do
 
   @impl Application
   def start(_type, _args) do
-    children = [
-      Atomcam2NervesApp.Network
-    ]
+    :ok = Atomcam2NervesApp.Discovery.advertise()
+
+    children = [Atomcam2NervesApp.TimeSync]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: Atomcam2NervesApp.Supervisor)
   end

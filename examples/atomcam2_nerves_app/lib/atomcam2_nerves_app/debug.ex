@@ -4,7 +4,24 @@ defmodule Atomcam2NervesApp.Debug do
   """
 
   def wifi do
-    Atomcam2NervesApp.Network.status()
+    %{vintage_net_wifi: wifi} =
+      config = VintageNet.get_configuration("wlan0")
+
+    %{
+      type: config.type,
+      ipv4: config.ipv4,
+      networks:
+        Enum.map(wifi.networks, fn network ->
+          Map.take(network, [:ssid, :key_mgmt])
+        end),
+      wps: wifi.wps,
+      addresses:
+        VintageNet.get([
+          "interface",
+          "wlan0",
+          "addresses"
+        ])
+    }
   end
 
   def ip do
