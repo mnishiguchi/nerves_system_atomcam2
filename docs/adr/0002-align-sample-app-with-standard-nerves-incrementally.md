@@ -113,14 +113,14 @@ The refactor is complete when the application follows the selected standard Nerv
 
 - [x] Establish and record the clean baseline.
 - [x] Add NervesMOTD without changing application supervision or networking.
-- [ ] Activate RingLogger on the target.
-- [ ] Advertise standard SSH-related mDNS services.
-- [ ] Advertise Nerves device metadata.
-- [ ] Evaluate the mDNS DNS bridge.
-- [ ] Add runtime Wi-Fi credentials without removing existing sources.
+- [x] Activate RingLogger on the target.
+- [x] Advertise standard SSH-related mDNS services.
+- [x] Advertise Nerves device metadata.
+- [x] Evaluate the mDNS DNS bridge.
+- [x] Add runtime Wi-Fi credentials without removing existing sources.
 - [ ] Evaluate `nerves_pack` before adopting it.
 - [ ] Remove dependencies made redundant by verified replacements.
-- [ ] Simplify custom Wi-Fi supervision only after replacement behavior is verified.
+- [x] Simplify custom Wi-Fi supervision only after replacement behavior is verified.
 - [ ] Review VM argument conventions independently.
 - [ ] Complete final repository and hardware verification.
 
@@ -260,9 +260,9 @@ Implementation status: hardware-verified on July 17, 2026.
 The standard Nerves discovery service is registered during example application
 startup through the existing `mdns_lite` process.
 
-The custom Atom Cam 2 SD boot path does not expose the usual active firmware KV
-metadata. The advertisement therefore uses runtime and application values that
-remain available:
+At this milestone, the custom Atom Cam 2 SD boot path did not yet expose the
+usual active firmware KV metadata. The advertisement therefore used runtime and
+application values that remained available:
 
 - Serial number from `Nerves.Runtime.serial_number/0`
 - Version from the example application's application specification
@@ -468,4 +468,121 @@ Hardware evidence:
 - VintageNet connected `wlan0` to the provisioned network through DHCP.
 - The effective configuration used WPA-PSK with `wps: false`.
 - `_ssh._tcp`, `_sftp-ssh._tcp`, and `_nerves-device._tcp` remained advertised.
+
+### Milestone 9: Runtime firmware metadata
+
+Implementation status: hardware-verified on July 18, 2026.
+
+The Atom Cam 2 installer now extracts metadata from the generated firmware
+artifact and writes it to
+`nerves-firmware-metadata.conf` in the final MicroSD payload.
+
+At runtime, the example application loads this file through
+`Nerves.Runtime.KVBackend.InMemory`. This provides the standard active firmware
+metadata expected by Nerves Runtime and NervesMOTD without requiring a writable
+U-Boot environment.
+
+The metadata is generated from the actual `.fw` artifact rather than being
+hard-coded, so the firmware UUID remains accurate for every build.
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix compile`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install --dry-run`
+- [x] `mix atomcam2.install`
+- [x] The metadata file is generated from the built firmware.
+- [x] The metadata file is validated before installation.
+- [x] The metadata file is copied to the MicroSD card.
+- [x] Nerves Runtime uses the in-memory KV backend.
+- [x] Product, version, UUID, platform, and architecture are available through `Nerves.Runtime.KV`.
+- [x] NervesMOTD displays the correct firmware designation.
+- [x] NervesMOTD displays the correct platform and architecture.
+
+Hardware evidence:
+
+- Firmware name: `zebra-hello`
+- Firmware UUID: `fc70a0ed-52ad-59c6-a1c8-0013552d8e1b`
+- The active firmware slot was `a`.
+- The product was `atomcam2_nerves_app`.
+- The version was `0.1.0`.
+- The platform was `atomcam2`.
+- The architecture was `mipsel`.
+- NervesMOTD displayed the firmware name, UUID, product, version, platform, and architecture.
+
+### Milestone 10: System time synchronization
+
+Implementation status: hardware-verified on July 18, 2026.
+
+The example application now includes `nerves_time`.
+
+Approximate time is persisted to `/media/mmc/.nerves_time`, allowing the device
+to start from a recent timestamp despite having no battery-backed real-time
+clock. NervesTime then synchronizes the system clock through NTP after network
+connectivity becomes available.
+
+NervesMOTD now identifies the clock as unsynchronized until NTP synchronization
+has been confirmed.
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix compile`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] BusyBox provides `ntpd`.
+- [x] BusyBox provides `date`.
+- [x] The Erlang VM uses `multi_time_warp`.
+- [x] The MicroSD time file is writable.
+- [x] Startup time is restored from the persisted time file.
+- [x] NervesMOTD marks time as unsynchronized before NTP confirmation.
+- [x] NervesTime acquires synchronization after network startup.
+- [x] The persisted time file is updated after synchronization.
+
+Hardware evidence:
+
+- NervesTime reported `synchronized?: true`.
+- The synchronized source reported stratum 3.
+- The final measured offset was approximately -9 milliseconds.
+- The clock advanced to the current 2026 UTC date.
+- The time file modification timestamp was updated after synchronization.
+- A subsequent boot started near the persisted timestamp instead of 1970.
+
+### Milestone 11: Persistent SSH host keys
+
+Implementation status: hardware-verified on July 18, 2026.
+
+NervesSSH now stores its system and user state under
+`/media/mmc/nerves_ssh`.
+
+The custom root filesystem keeps `/data` read-only, so the standard NervesSSH
+paths previously fell back to `/tmp`. That fallback generated a new SSH host
+key after every reboot. Using the writable MicroSD partition preserves the host
+identity while retaining the existing authorized-key authentication.
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix compile`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] The NervesSSH system directory is on the writable MicroSD partition.
+- [x] The NervesSSH user directory is on the writable MicroSD partition.
+- [x] SSH host keys are generated successfully.
+- [x] SSH accepts the configured authorized key.
+- [x] The SSH ED25519 fingerprint remains unchanged across reboot.
+- [x] Reconnecting after reboot does not require removing the known-host entry.
+
+Hardware evidence:
+
+- Firmware name: `resist-dinner`
+- Firmware UUID: `c149d1e5-bf31-5c48-de49-9d31e0925d32`
+- The ED25519 fingerprint before reboot was
+  `SHA256:FV/R0bGaCv9BMqCaBTTk3QYi+fMxXsZP5dv/sFXdMuc`.
+- The ED25519 fingerprint after reboot was identical.
+- SSH opened an IEx session after reboot without replacing the known-host entry.
 
