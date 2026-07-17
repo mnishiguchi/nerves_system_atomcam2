@@ -5,6 +5,8 @@ defmodule Atomcam2NervesApp.Application do
 
   @impl Application
   def start(_type, _args) do
+    :ok = Atomcam2NervesApp.Discovery.advertise()
+
     children = [
       Atomcam2NervesApp.Network
     ]

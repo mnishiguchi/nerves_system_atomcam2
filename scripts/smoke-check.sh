@@ -220,4 +220,11 @@ find "$repo_dir" \
   check_script_syntax "$shell_file"
 done
 
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+require_grep 'Atomcam2NervesApp.Discovery.advertise()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
+require_grep 'protocol: "nerves-device"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+require_grep '"serial=#{Nerves.Runtime.serial_number()}"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+require_grep '"version=#{application_version()}"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+require_grep 'port: 0' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
+
 "$repo_dir/scripts/atomcam2-check-minimal-ssh-scope.sh" "$repo_dir"

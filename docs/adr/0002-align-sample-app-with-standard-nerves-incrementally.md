@@ -252,3 +252,54 @@ Hardware evidence:
 - `avahi-browse` discovered both services at `192.168.10.117` on port 22.
 - RingLogger remained operational and retained recent device logs.
 - `mix upload nerves.local` was rejected with instructions to use `mix atomcam2.install`.
+
+### Milestone 4: Nerves device discovery metadata
+
+Implementation status: hardware-verified on July 17, 2026.
+
+The standard Nerves discovery service is registered during example application
+startup through the existing `mdns_lite` process.
+
+The custom Atom Cam 2 SD boot path does not expose the usual active firmware KV
+metadata. The advertisement therefore uses runtime and application values that
+remain available:
+
+- Serial number from `Nerves.Runtime.serial_number/0`
+- Version from the example application's application specification
+- Explicit Atom Cam 2 product, description, and platform values
+- Architecture derived from the Erlang runtime architecture
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix compile`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] Wi-Fi connects after power-up.
+- [x] `nerves.local` resolves and responds to ping.
+- [x] SSH opens an IEx session.
+- [x] `_nerves-device._tcp` is registered automatically after boot.
+- [x] The service contains PTR, SRV, and TXT records.
+- [x] The SRV record targets `nerves.local` on port 0.
+- [x] The TXT record contains serial, version, product, description, platform, and architecture.
+- [x] `avahi-browse` discovers the service.
+- [x] `mix nerves.discover` displays the device metadata.
+- [x] SSH and SFTP mDNS services remain available.
+- [x] Remote firmware upload remains rejected.
+
+Hardware evidence:
+
+- Firmware name: `cushion-camera`
+- Firmware UUID: `40264b6d-07d9-52ec-02db-5ec874d93fe4`
+- `nerves.local` responded to 3 of 3 ping requests with 0% packet loss.
+- `_nerves-device._tcp.local` contained PTR, SRV, and TXT records.
+- The SRV record targeted `nerves.local` on port 0.
+- The TXT record advertised serial `86010000a9a2`.
+- The TXT record advertised version `0.1.0`.
+- The TXT record advertised product `atomcam2_nerves_app`.
+- The TXT record advertised platform `atomcam2`.
+- The TXT record advertised architecture `mipsel`.
+- `avahi-browse` resolved the service at `192.168.10.117`.
+- `mix nerves.discover` displayed the hostname, address, serial, product, version, and platform.
+- `mix upload nerves.local` was rejected with instructions to use `mix atomcam2.install`.
