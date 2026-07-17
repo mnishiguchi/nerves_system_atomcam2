@@ -122,7 +122,7 @@ The refactor is complete when the application follows the selected standard Nerv
 - [x] Remove dependencies made redundant by verified replacements.
 - [x] Simplify custom Wi-Fi supervision only after replacement behavior is verified.
 - [x] Review VM argument conventions independently.
-- [ ] Complete final repository and hardware verification.
+- [x] Complete final repository and hardware verification.
 
 ## Implementation progress
 
@@ -637,4 +637,54 @@ Verification:
 - [x] Review the node name, cookie, distribution interface, and shell settings.
 - [x] Confirm Erlang distribution remains restricted to loopback.
 - [x] Preserve the hardware-verified VM configuration.
+
+### Milestone 13: Final repository and hardware verification
+
+Implementation status: hardware-verified on July 18, 2026.
+
+The complete incremental refactor was rebuilt, installed, and verified on the
+Atom Cam 2.
+
+The final verification identified one startup timing issue: NervesTime could
+start before Wi-Fi had Internet access and remain unsynchronized until its next
+successful retry. The application now subscribes to the VintageNet connection
+property and restarts `ntpd` when `wlan0` reaches `:internet`.
+
+This process does not configure Wi-Fi or read credentials. VintageNet remains
+the sole owner of interface configuration.
+
+Verification:
+
+- [x] `git diff --check main...HEAD`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix deps.get`
+- [x] Warning-free `mix compile --warnings-as-errors`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install --dry-run`
+- [x] `mix atomcam2.install`
+- [x] The firmware build leaves the repository working tree clean.
+- [x] The example application starts successfully.
+- [x] Firmware metadata is available through Nerves Runtime.
+- [x] Wi-Fi connects through DHCP using WPA-PSK with WPS disabled.
+- [x] SSH, SFTP, and Nerves discovery services remain advertised.
+- [x] Persistent SSH storage remains available.
+- [x] NTP synchronization starts automatically after Internet connectivity.
+- [x] No manual `NervesTime.restart_ntpd/0` call is required.
+
+Hardware evidence:
+
+- Firmware name: `labor-fossil`
+- Firmware UUID: `7a673074-5e8d-5605-6d3c-5b61c9c4934d`
+- The application `atomcam2_nerves_app` was started.
+- Product, version, UUID, platform, and architecture metadata were populated.
+- `wlan0` received `192.168.10.117/24` through DHCP.
+- The effective Wi-Fi configuration used WPA-PSK with `wps: false`.
+- `_ssh._tcp`, `_sftp-ssh._tcp`, and `_nerves-device._tcp` were advertised.
+- `/media/mmc/nerves_ssh` contained the persistent SSH host key.
+- The time synchronization process was running.
+- VintageNet reported the connection state as `:internet`.
+- NervesTime acquired synchronization automatically at stratum 3.
+- The measured clock offset was approximately -2.8 milliseconds.
+
+ADR 0002 is complete.
 
