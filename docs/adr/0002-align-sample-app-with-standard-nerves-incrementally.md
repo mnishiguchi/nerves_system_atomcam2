@@ -341,3 +341,52 @@ Verification:
 - [x] Confirm the example application has no current consumer of generic outbound `.local` resolution.
 - [x] Record the decision without changing runtime behavior.
 
+### Milestone 6: Runtime Wi-Fi configuration
+
+Implementation status: hardware-verified on July 17, 2026.
+
+Wi-Fi credentials from `/media/mmc/nerves-provisioning.conf` are now converted
+into the default VintageNet `wlan0` configuration by `config/runtime.exs`.
+
+The existing network worker remains as a fallback during the migration. It
+preserves an existing VintageNet Wi-Fi configuration and retains the previous
+provisioning-file, process-environment, and `wpa_supplicant.conf` sources.
+
+The configuration continues to use DHCP and explicitly disables WPS.
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] `mix compile`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] Wi-Fi connects automatically after power-up.
+- [x] The active interface type is `VintageNetWiFi`.
+- [x] The active IPv4 method is DHCP.
+- [x] The configured network uses WPA-PSK.
+- [x] WPS remains disabled.
+- [x] `Application.get_env(:vintage_net, :config)` contains the `wlan0` default.
+- [x] The custom worker preserves the existing VintageNet configuration.
+- [x] The custom worker does not reconfigure `wlan0`.
+- [x] Existing credential fallback sources remain implemented.
+- [x] SSH opens an IEx session.
+- [x] SSH, SFTP, and Nerves discovery mDNS services remain available.
+- [x] `mix nerves.discover` continues to find the device.
+- [x] Remote firmware upload remains rejected.
+
+Hardware evidence:
+
+- Firmware name: `all-cherry`
+- Firmware UUID: `0f30b1f7-eeb0-5750-4083-b082ffe51891`
+- VintageNet connected `wlan0` to the provisioned network.
+- The device received `192.168.10.117/24` through DHCP.
+- The effective configuration used `VintageNetWiFi`, WPA-PSK, and `wps: false`.
+- The VintageNet application environment contained the runtime `wlan0` default.
+- RingLogger confirmed that the network worker kept the existing configuration.
+- RingLogger contained no custom-worker `Configuring wlan0` entry.
+- `_ssh._tcp`, `_sftp-ssh._tcp`, and `_nerves-device._tcp` remained advertised.
+- `avahi-browse` resolved the Nerves discovery service.
+- `mix nerves.discover` displayed the expected device metadata.
+- `mix upload nerves.local` was rejected with instructions to use `mix atomcam2.install`.
+

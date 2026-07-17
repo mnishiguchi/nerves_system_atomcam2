@@ -26,7 +26,7 @@ defmodule Atomcam2NervesApp.Network do
   def handle_info(:configure_wifi, %{interface_attempts: attempts} = state) do
     cond do
       interface_present?() ->
-        configure_wifi()
+        configure_wifi_if_needed()
         {:noreply, state}
 
       attempts + 1 < @max_interface_attempts ->
@@ -48,6 +48,16 @@ defmodule Atomcam2NervesApp.Network do
 
   defp interface_present? do
     File.exists?("/sys/class/net/#{@interface}")
+  end
+
+  defp configure_wifi_if_needed do
+    case VintageNet.get_configuration(@interface) do
+      %{type: VintageNetWiFi} ->
+        Logger.info("Keeping existing VintageNet configuration for #{@interface}")
+
+      _other ->
+        configure_wifi()
+    end
   end
 
   defp configure_wifi do

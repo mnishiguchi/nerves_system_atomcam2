@@ -102,6 +102,11 @@ require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
 require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
+require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep '"wlan0"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'wps: false' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'VintageNet.get_configuration(@interface)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'nerves_motd' examples/atomcam2_nerves_app/mix.exs
