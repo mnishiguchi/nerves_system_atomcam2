@@ -21,17 +21,38 @@ GitHub release:
 mix setup
 ```
 
-System maintainers can compile the local checkout explicitly:
+## Local development environment
+
+System maintainers can build against the current repository checkout through the
+tracked direnv example:
 
 ```sh
-export ATOMCAM2_SYSTEM_SOURCE=local
-mix setup
-mix firmware
+cp .envrc.example .envrc
+direnv allow
 ```
 
-Local system compilation also requires the validated custom compiler through
-`NERVES_TOOLCHAIN` and the Buildroot toolchain archive prepared by the repository
-maintainer scripts.
+The real `.envrc` is ignored because it may contain machine-specific paths, SSH
+keys, and Wi-Fi credentials. Review the copied file before building.
+
+The important variables are:
+
+- `ATOMCAM2_SYSTEM_SOURCE=local` selects the system from the current repository.
+- `ATOMCAM2_KERNEL_IMAGE` points to the verified Atom Cam 2 control kernel.
+- `NERVES_TOOLCHAIN` selects the validated custom compiler when it is not
+  already configured.
+- `ATOMCAM2_AUTHORIZED_KEYS`, `NERVES_WIFI_SSID`, and
+  `NERVES_WIFI_PASSPHRASE` are optional local settings.
+
+The normal local workflow remains:
+
+```sh
+mix setup
+mix firmware
+mix atomcam2.install
+```
+
+Unset `ATOMCAM2_SYSTEM_SOURCE` when explicitly validating a published system
+artifact instead of the current checkout.
 
 The Linux 3.10 compatibility definition required by VintageNet is supplied by
 the Nerves system staging headers. The application no longer modifies dependency

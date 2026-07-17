@@ -1,0 +1,27 @@
+# Local defaults for developing the example application against this checkout.
+repo_root="$(git rev-parse --show-toplevel)"
+control_kernel="$repo_root/target/atomcam2-control/factory_t31_ZMC6tiIDQN"
+
+export MIX_ENV=prod
+export MIX_TARGET=atomcam2
+
+# Use the Nerves system from this repository instead of the tagged release.
+# Unset this when explicitly validating a published system artifact.
+export ATOMCAM2_SYSTEM_SOURCE=local
+
+# Atom Cam 2 must package the verified control kernel.
+export ATOMCAM2_KERNEL_IMAGE="$control_kernel"
+
+if [ ! -f "$ATOMCAM2_KERNEL_IMAGE" ]; then
+  echo "warning: Atom Cam 2 control kernel not found:" >&2
+  echo "  $ATOMCAM2_KERNEL_IMAGE" >&2
+fi
+
+# Local system compilation also requires the validated custom toolchain.
+# Uncomment and update this when NERVES_TOOLCHAIN is not configured globally.
+# export NERVES_TOOLCHAIN="/absolute/path/to/x-tools/mipsel-nerves-linux-musl"
+
+# Optional machine-specific settings. Keep real values in the ignored .envrc.
+# export ATOMCAM2_AUTHORIZED_KEYS="$HOME/.ssh/id_ed25519.pub"
+# export NERVES_WIFI_SSID="your-ssid"
+# export NERVES_WIFI_PASSPHRASE="your-passphrase"

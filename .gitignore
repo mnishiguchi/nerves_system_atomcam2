@@ -15,3 +15,6 @@
 # Local build/debug logs
 /tmp/log/*.log
 /tmp/log/*.dump
+
+# Local example application environment
+/examples/atomcam2_nerves_app/.envrc
