@@ -263,3 +263,7 @@ require_grep '"version=#{application_version()}"' examples/atomcam2_nerves_app/l
 require_grep 'port: 0' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/discovery.ex
 
 "$repo_dir/scripts/atomcam2-check-minimal-ssh-scope.sh" "$repo_dir"
+
+require_grep 'nerves_time' examples/atomcam2_nerves_app/mix.exs
+require_grep 'time_file: "/media/mmc/.nerves_time"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'await_initialization_timeout: 5_000' examples/atomcam2_nerves_app/config/runtime.exs

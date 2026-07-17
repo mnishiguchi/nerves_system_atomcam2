@@ -44,6 +44,7 @@ defmodule Atomcam2NervesApp.MixProject do
       # {:nerves_pack, "~> 0.7.0", targets: @all_targets},
       # {:nerves_ssh, "~> 1.2", targets: @all_targets},
 
+      {:nerves_time, "~> 0.4.12"},
       {:nerves_motd, "~> 0.1.17", targets: @all_targets},
 
       # Minimal target dependencies for the first Wi-Fi + SSH milestone.
@@ -77,10 +78,7 @@ defmodule Atomcam2NervesApp.MixProject do
 
       "local" ->
         {:nerves_system_atomcam2,
-         path: "../..",
-         runtime: false,
-         targets: :atomcam2,
-         nerves: [compile: true]}
+         path: "../..", runtime: false, targets: :atomcam2, nerves: [compile: true]}
 
       source ->
         raise "unsupported ATOMCAM2_SYSTEM_SOURCE: #{inspect(source)}"

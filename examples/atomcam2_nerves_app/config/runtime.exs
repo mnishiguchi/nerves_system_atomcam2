@@ -1,6 +1,10 @@
 import Config
 
 if config_target() != :host do
+  config :nerves_time,
+    time_file: "/media/mmc/.nerves_time",
+    await_initialization_timeout: 5_000
+
   firmware_metadata_path =
     "/media/mmc/nerves-firmware-metadata.conf"
 
