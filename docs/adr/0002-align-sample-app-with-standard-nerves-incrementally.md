@@ -108,3 +108,18 @@ This is accepted because regressions remain attributable to a narrow change and 
 The final example application may intentionally differ from `circuits_quickstart` where the target boot, networking, provisioning, or installation contract requires it.
 
 The refactor is complete when the application follows the selected standard Nerves conventions without changing the verified platform behavior. Matching the exact dependency list or directory structure of `circuits_quickstart` is not a goal.
+
+## Implementation checklist
+
+- [x] Establish and record the clean baseline.
+- [ ] Add NervesMOTD without changing application supervision or networking.
+- [ ] Activate RingLogger on the target.
+- [ ] Advertise standard SSH-related mDNS services.
+- [ ] Advertise Nerves device metadata.
+- [ ] Evaluate the mDNS DNS bridge.
+- [ ] Add runtime Wi-Fi credentials without removing existing sources.
+- [ ] Evaluate `nerves_pack` before adopting it.
+- [ ] Remove dependencies made redundant by verified replacements.
+- [ ] Simplify custom Wi-Fi supervision only after replacement behavior is verified.
+- [ ] Review VM argument conventions independently.
+- [ ] Complete final repository and hardware verification.
