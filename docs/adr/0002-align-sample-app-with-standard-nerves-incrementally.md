@@ -118,10 +118,10 @@ The refactor is complete when the application follows the selected standard Nerv
 - [x] Advertise Nerves device metadata.
 - [x] Evaluate the mDNS DNS bridge.
 - [x] Add runtime Wi-Fi credentials without removing existing sources.
-- [ ] Evaluate `nerves_pack` before adopting it.
-- [ ] Remove dependencies made redundant by verified replacements.
+- [x] Evaluate `nerves_pack` before adopting it.
+- [x] Remove dependencies made redundant by verified replacements.
 - [x] Simplify custom Wi-Fi supervision only after replacement behavior is verified.
-- [ ] Review VM argument conventions independently.
+- [x] Review VM argument conventions independently.
 - [ ] Complete final repository and hardware verification.
 
 ## Implementation progress
@@ -585,4 +585,56 @@ Hardware evidence:
   `SHA256:FV/R0bGaCv9BMqCaBTTk3QYi+fMxXsZP5dv/sFXdMuc`.
 - The ED25519 fingerprint after reboot was identical.
 - SSH opened an IEx session after reboot without replacing the known-host entry.
+
+### Milestone 12: Evaluate remaining Nerves conventions
+
+Implementation status: evaluated on July 18, 2026.
+
+The remaining dependency and virtual-machine conventions were reviewed after
+the runtime behavior had been hardware-verified.
+
+#### Nerves Pack
+
+Do not adopt `nerves_pack`.
+
+The example application already declares and configures the individual runtime
+services it needs. Its Atom Cam 2 integration also requires explicit Wi-Fi,
+discovery, SSH persistence, firmware metadata, and time configuration.
+
+Adopting the dependency bundle would obscure those requirements and introduce
+direct-link networking dependencies that the Wi-Fi-client-only device does not
+use.
+
+#### Direct dependencies
+
+Retain the current direct dependencies.
+
+Each runtime dependency is either called by application code, configured
+directly, or provides behavior verified during an earlier milestone. No
+dependency became redundant when the custom network worker was removed.
+
+Obsolete commented dependency declarations were removed from `mix.exs`.
+
+#### Virtual-machine arguments
+
+Preserve the current `rel/vm.args.eex`.
+
+The release deliberately names the node on `127.0.0.1` and binds Erlang
+distribution to the loopback interface. Remote administration uses NervesSSH
+rather than raw distributed Erlang.
+
+The configuration has been verified with the current Elixir and OTP versions.
+Migrating node naming and cookie configuration to release environment variables
+would not improve current behavior and would introduce avoidable risk.
+
+Verification:
+
+- [x] Review the services and dependencies provided by `nerves_pack`.
+- [x] Confirm direct-link and DHCP-server behavior is not required.
+- [x] Confirm every current direct dependency has a project-level consumer.
+- [x] Confirm no dependency became redundant after removing the network worker.
+- [x] Remove obsolete commented dependency declarations.
+- [x] Review the node name, cookie, distribution interface, and shell settings.
+- [x] Confirm Erlang distribution remains restricted to loopback.
+- [x] Preserve the hardware-verified VM configuration.
 
