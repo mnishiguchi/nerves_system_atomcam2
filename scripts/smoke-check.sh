@@ -267,3 +267,6 @@ require_grep 'port: 0' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/disc
 require_grep 'nerves_time' examples/atomcam2_nerves_app/mix.exs
 require_grep 'time_file: "/media/mmc/.nerves_time"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'await_initialization_timeout: 5_000' examples/atomcam2_nerves_app/config/runtime.exs
+
+require_grep 'system_dir: "/media/mmc/nerves_ssh"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'user_dir: "/media/mmc/nerves_ssh/default_user"' examples/atomcam2_nerves_app/config/runtime.exs
