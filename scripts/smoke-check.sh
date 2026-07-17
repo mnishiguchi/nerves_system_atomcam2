@@ -95,18 +95,32 @@ require_file examples/atomcam2_nerves_app/config/target.exs
 require_file examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_executable examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
-require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
+network_file="$repo_dir/examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex"
+
+if [ -e "$network_file" ]; then
+  echo "error: $network_file still exists" >&2
+  exit 1
+else
+  echo "ok: $network_file does not exist"
+fi
+
+application_lib_dir="$repo_dir/examples/atomcam2_nerves_app/lib"
+
+if grep -R -Fq 'Atomcam2NervesApp.Network' "$application_lib_dir"; then
+  echo "error: application source still references Atomcam2NervesApp.Network" >&2
+  exit 1
+else
+  echo "ok: application source does not reference Atomcam2NervesApp.Network"
+fi
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
 require_file lib/mix/tasks/atomcam2.install.ex
 require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
-require_grep 'wps: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep '"wlan0"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'wps: false' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'VintageNet.get_configuration(@interface)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_overlay:' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'nerves_motd' examples/atomcam2_nerves_app/mix.exs
@@ -150,8 +164,6 @@ require_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_ne
 reject_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
 require_grep 'mix setup' scripts/build-firmware-log.sh
 require_grep 'check_command python3' scripts/check-prereqs.sh
-reject_grep 'atomcam2-vintage-net.log' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
-reject_grep 'wpa_cli' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/network.ex
 require_grep 'CONFIG_BLK_DEV_INITRD=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_INITRAMFS_SOURCE="${NERVES_DEFCONFIG_DIR}/board/atomcam2/initramfs"' linux-3.10.14.defconfig
 require_grep 'CONFIG_BLK_DEV_LOOP=y' linux-3.10.14.defconfig

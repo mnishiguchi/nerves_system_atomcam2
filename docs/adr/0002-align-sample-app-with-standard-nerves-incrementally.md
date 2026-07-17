@@ -428,3 +428,44 @@ Hardware evidence:
 - `/etc/iex.exs` remained `NervesMOTD.print()` followed by `use Toolshed`.
 - `_ssh._tcp`, `_sftp-ssh._tcp`, and `_nerves-device._tcp` remained advertised.
 
+### Milestone 8: Remove the custom network worker
+
+Implementation status: hardware-verified on July 17, 2026.
+
+The example application no longer starts or includes
+`Atomcam2NervesApp.Network`.
+
+VintageNet now owns Wi-Fi configuration and startup through the configuration
+created by `config/runtime.exs`. The application retains only a credential-safe
+debug helper for inspecting the effective Wi-Fi configuration.
+
+Verification:
+
+- [x] `git diff --check`
+- [x] `./scripts/smoke-check.sh`
+- [x] Warning-free `mix compile`
+- [x] `mix firmware`
+- [x] `mix atomcam2.install`
+- [x] The custom network source file is removed.
+- [x] The custom network BEAM module is absent from the release.
+- [x] Application source contains no reference to the custom network module.
+- [x] The application starts with an empty supervisor.
+- [x] Wi-Fi connects automatically without the custom worker.
+- [x] The active interface uses `VintageNetWiFi`.
+- [x] The active IPv4 method is DHCP.
+- [x] WPA-PSK remains enabled.
+- [x] WPS remains disabled.
+- [x] The Wi-Fi debug helper does not expose credentials.
+- [x] SSH, SFTP, and Nerves discovery mDNS services remain available.
+
+Hardware evidence:
+
+- Firmware name: `margin-focus`
+- Firmware UUID: `8f5c1154-8d1e-54ec-ea1a-956a228a7676`
+- `Atomcam2NervesApp.Network` was not loaded.
+- `Atomcam2NervesApp.Supervisor` had no supervised children.
+- `atomcam2_nerves_app` remained started.
+- VintageNet connected `wlan0` to the provisioned network through DHCP.
+- The effective configuration used WPA-PSK with `wps: false`.
+- `_ssh._tcp`, `_sftp-ssh._tcp`, and `_nerves-device._tcp` remained advertised.
+
