@@ -303,3 +303,41 @@ Hardware evidence:
 - `avahi-browse` resolved the service at `192.168.10.117`.
 - `mix nerves.discover` displayed the hostname, address, serial, product, version, and platform.
 - `mix upload nerves.local` was rejected with instructions to use `mix atomcam2.install`.
+
+### Milestone 5: Evaluate the mDNS DNS bridge
+
+Implementation status: evaluated and deferred on July 17, 2026.
+
+`MdnsLite` can resolve other `.local` hosts directly, but the Erlang resolver
+does not currently route `.local` queries through `MdnsLite`.
+
+Runtime evidence:
+
+- `MdnsLite.gethostbyname("thinkpad.local")` returned
+  `{:ok, {192, 168, 10, 111}}`.
+- `:inet.gethostbyname/1` returned `{:error, :nxdomain}`.
+- `:inet.getaddr/2` returned `{:error, :nxdomain}`.
+- `:mdns_lite` has no `:dns_bridge_enabled` configuration.
+- `:vintage_net` has no `:additional_name_servers` configuration.
+- The Erlang resolver uses `lookup: [:native]`.
+
+The bridge would allow ordinary Erlang networking functions to resolve
+`.local` names. The current example application does not initiate outbound
+connections to `.local` hosts, so this capability has no present consumer.
+
+Decision:
+
+- Do not enable the mDNS DNS bridge.
+- Preserve direct `MdnsLite` resolution for cases that explicitly require it.
+- Reconsider the bridge when an application feature needs generic outbound
+  `.local` hostname resolution through `:inet`, `:gen_tcp`, or `:gen_udp`.
+- Avoid adding a local DNS listener and resolver configuration until required.
+
+Verification:
+
+- [x] Confirm direct `MdnsLite` resolution of another `.local` host.
+- [x] Confirm the ordinary Erlang resolver does not resolve the same host.
+- [x] Inspect the current `mdns_lite`, `vintage_net`, and Erlang resolver configuration.
+- [x] Confirm the example application has no current consumer of generic outbound `.local` resolution.
+- [x] Record the decision without changing runtime behavior.
+
