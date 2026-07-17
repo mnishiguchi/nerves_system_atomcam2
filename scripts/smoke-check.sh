@@ -270,3 +270,7 @@ require_grep 'await_initialization_timeout: 5_000' examples/atomcam2_nerves_app/
 
 require_grep 'system_dir: "/media/mmc/nerves_ssh"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'user_dir: "/media/mmc/nerves_ssh/default_user"' examples/atomcam2_nerves_app/config/runtime.exs
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
+require_grep 'Atomcam2NervesApp.TimeSync' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
+require_grep 'VintageNet.subscribe(@connection_property)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
+require_grep 'NervesTime.restart_ntpd()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
