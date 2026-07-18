@@ -182,3 +182,46 @@ A standalone `mix nerves.artifact.details` invocation was not used for final
 verification because Nerves attempted to resolve the toolchain's own expected
 installation path. The checksum was calculated directly with the same
 per-file SHA-256 algorithm used by Nerves.
+
+## Validated toolchain archive preparation
+
+The toolchain archive preparation now requires `NERVES_TOOLCHAIN` explicitly.
+The previous developer-specific fallback path was removed.
+
+The validated compiler was checked directly before archiving:
+
+```text
+Target tuple: mipsel-nerves-linux-musl
+ABI: MIPS o32
+Architecture: mips32r2
+Software floating point: enabled
+Hardware floating point: disabled
+DSP ASE: disabled
+DSP R2 ASE: disabled
+```
+
+The private Buildroot input archive was regenerated successfully:
+
+```text
+target/toolchains/atomcam2-mips32r2-nerves-toolchain.tar.xz
+Archive root: mipsel-nerves-linux-musl/
+```
+
+The release script now:
+
+- Rejects differing system and toolchain versions.
+- Derives the toolchain checksum from the checksum inputs declared in
+  `toolchain/mix.exs`.
+- Regenerates the private Buildroot input archive through the validated
+  preparation script.
+- Preserves the existing verified control-kernel SHA-256 requirement.
+
+The configured public toolchain artifact identity remains:
+
+```text
+Checksum Short: 977999C
+Download File Name: nerves_toolchain_atomcam2-linux_x86_64-0.1.0-977999C.tar.xz
+```
+
+The full system artifact and public toolchain artifact were not built during
+this milestone.

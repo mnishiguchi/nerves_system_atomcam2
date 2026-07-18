@@ -3,7 +3,9 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/.." && pwd)"
-version="$(tr -d '[:space:]' < "$repo_root/VERSION")"
+system_version="$(tr -d '[:space:]' < "$repo_root/VERSION")"
+toolchain_version="$(tr -d '[:space:]' < "$repo_root/toolchain/VERSION")"
+version="$system_version"
 release_tag="v$version"
 output_dir="$repo_root/tmp/release/$release_tag"
 control_kernel="${ATOMCAM2_KERNEL_IMAGE:-$repo_root/target/atomcam2-control/factory_t31_ZMC6tiIDQN}"
@@ -82,6 +84,14 @@ done
 
 require_command git
 
+if [ -z "$system_version" ]; then
+  fail "system VERSION is empty"
+elif [ -z "$toolchain_version" ]; then
+  fail "toolchain VERSION is empty"
+elif [ "$system_version" != "$toolchain_version" ]; then
+  fail "system and toolchain versions differ: $system_version != $toolchain_version"
+fi
+
 reuse_artifacts="0"
 
 if [ -e "$output_dir" ]; then
@@ -95,8 +105,8 @@ if [ -e "$output_dir" ]; then
 fi
 
 if [ "$reuse_artifacts" = "0" ]; then
+  require_command elixir
   require_command mix
-  require_command python3
   require_command sha256sum
   require_command tar
 
@@ -119,7 +129,7 @@ if [ "$reuse_artifacts" = "0" ]; then
   fi
 
   mkdir -p "$output_dir"
-  "$repo_root/scripts/prepare-toolchain-archive.sh"
+  "$repo_root/scripts/prepare-toolchain-archive.sh" --force
 
   host_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   host_arch="$(uname -m)"
@@ -140,15 +150,53 @@ if [ "$reuse_artifacts" = "0" ]; then
 
   toolchain_checksum="$({
     cd "$repo_root/toolchain"
-    python3 - <<'PY'
-from hashlib import sha256
-from pathlib import Path
 
-files = [Path("VERSION"), Path("mix.exs")]
-files.extend(sorted(path for path in Path("lib").rglob("*") if path.is_file()))
-blob = b"".join(sha256(path.read_bytes()).digest() for path in files)
-print(sha256(blob).hexdigest().upper()[:7])
-PY
+    elixir -e '
+      Application.ensure_all_started(:mix)
+
+      modules =
+        "mix.exs"
+        |> Code.compile_file()
+        |> Enum.map(fn {module, _bytecode} -> module end)
+
+      project_module =
+        Enum.find(modules, fn module ->
+          function_exported?(module, :project, 0) and
+            String.ends_with?(Atom.to_string(module), ".MixProject")
+        end) ||
+          raise "could not find the toolchain Mix project"
+
+      checksum_paths =
+        project_module.project()
+        |> Keyword.fetch!(:nerves_package)
+        |> Keyword.fetch!(:checksum)
+
+      files =
+        checksum_paths
+        |> Enum.flat_map(fn path ->
+          path
+          |> Path.wildcard()
+          |> Enum.flat_map(fn entry ->
+            if File.dir?(entry) do
+              Path.wildcard(Path.join(entry, "**"))
+            else
+              [entry]
+            end
+          end)
+        end)
+        |> Enum.filter(&File.regular?/1)
+        |> Enum.uniq()
+
+      checksum =
+        files
+        |> Enum.map(&File.read!/1)
+        |> Enum.map(&:crypto.hash(:sha256, &1))
+        |> then(&:crypto.hash(:sha256, &1))
+        |> Base.encode16()
+        |> binary_part(0, 7)
+
+      IO.puts(checksum)
+    '
   })"
 
   toolchain_name="nerves_toolchain_atomcam2-${host_os}_${host_arch}-${version}-${toolchain_checksum}.tar.xz"
