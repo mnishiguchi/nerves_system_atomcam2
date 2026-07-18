@@ -59,6 +59,7 @@ reject_grep() {
 }
 
 require_file README.md
+require_file fwup.conf
 require_file mix.exs
 require_file nerves_defconfig
 require_file linux-3.10.14.defconfig
@@ -200,6 +201,43 @@ reject_grep 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y' nerves_defconfig
 reject_grep 'CONFIG_INITRAMFS_SOURCE=""' linux-3.10.14.defconfig
 reject_grep '# CONFIG_BLK_DEV_INITRD is not set' linux-3.10.14.defconfig
 require_grep 'file-resource nerves-provisioning.conf' fwup.conf
+
+fwup_upgrade_task="$(
+  sed -n '/^task upgrade {/,/^}/p' "$repo_dir/fwup.conf"
+)"
+
+if [ -n "$fwup_upgrade_task" ]; then
+  echo "ok: fwup.conf contains upgrade task"
+else
+  echo "missing upgrade task in fwup.conf" >&2
+  exit 1
+fi
+
+for required_line in \
+  'require-partition-offset(0, ${BOOT_PART_OFFSET})' \
+  'on-resource factory_t31_ZMC6tiIDQN { fat_write(${BOOT_PART_OFFSET}, "factory_t31_ZMC6tiIDQN") }' \
+  'on-resource rootfs_hack.squashfs { fat_write(${BOOT_PART_OFFSET}, "rootfs_hack.squashfs") }'; do
+  if printf '%s\n' "$fwup_upgrade_task" | grep -Fq -- "$required_line"; then
+    echo "ok: fwup upgrade task contains $required_line"
+  else
+    echo "missing fwup upgrade requirement: $required_line" >&2
+    exit 1
+  fi
+done
+
+for preserved_resource in \
+  authorized_keys \
+  hostname \
+  nerves-provisioning.conf; do
+  if printf '%s\n' "$fwup_upgrade_task" |
+      grep -Fq -- "on-resource $preserved_resource "; then
+    echo "fwup upgrade task replaces preserved resource: $preserved_resource" >&2
+    exit 1
+  else
+    echo "ok: fwup upgrade task preserves $preserved_resource"
+  fi
+done
+
 require_grep '.nerves' scripts/smoke-check.sh
 require_grep '.nerves' scripts/atomcam2-check-minimal-ssh-scope.sh
 require_grep 'tmp/log' scripts/logging.sh
