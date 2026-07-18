@@ -168,6 +168,9 @@ require_grep 'github: @system_repository' examples/atomcam2_nerves_app/mix.exs
 require_grep 'nerves: \[compile: true\]' examples/atomcam2_nerves_app/mix.exs
 require_grep 'precheck_callback:' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_grep 'mix firmware.burn' README.md
+require_grep 'mix firmware.burn' examples/atomcam2_nerves_app/README.md
+require_grep 'power down the camera and use mix firmware.burn' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
 reject_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
 require_grep 'mix setup' scripts/build-firmware-log.sh
 require_grep 'check_command python3' scripts/check-prereqs.sh

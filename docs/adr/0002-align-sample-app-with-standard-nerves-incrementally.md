@@ -4,6 +4,9 @@
 
 Accepted
 
+The installation-specific decisions in this ADR are superseded by
+[ADR 0004](0004-adopt-fwup-for-standard-media-workflows.md).
+
 ## Context
 
 The Atom Cam 2 example application originally used project-specific runtime

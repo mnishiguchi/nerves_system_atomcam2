@@ -4,8 +4,7 @@ This app proves the supported Atom Cam 2 application workflow:
 
 ```sh
 mix setup
-mix firmware
-mix atomcam2.install
+mix firmware.burn
 ```
 
 It configures Wi-Fi through VintageNet, advertises `nerves.local` through
@@ -47,8 +46,7 @@ The normal local workflow remains:
 
 ```sh
 mix setup
-mix firmware
-mix atomcam2.install
+mix firmware.burn
 ```
 
 Unset `ATOMCAM2_SYSTEM_SOURCE` when explicitly validating a published system
@@ -60,21 +58,23 @@ source code during setup.
 
 ## Build and install
 
+Build and write firmware:
+
+```sh
+mix firmware.burn
+```
+
+To write an existing firmware bundle:
+
 ```sh
 mix firmware
-mix atomcam2.install --dry-run
-mix atomcam2.install
+mix burn
 ```
 
-The install task detects a mounted filesystem labeled `ATOMCAM2`. Pass an
-explicit path when needed:
+Both workflows use the fwup `complete` task by default. Pass `--device` to
+select specific media.
 
-```sh
-mix atomcam2.install --mount /path/to/mounted/sd
-```
-
-It delegates payload validation, backup, installation verification, and write
-synchronization to the installer shipped by the `nerves_system_atomcam2` dependency.
+`mix atomcam2.install` remains only as a deprecated compatibility wrapper around `mix burn`.
 
 ## Target IEx
 
@@ -90,7 +90,8 @@ Toolshed is imported automatically through `/etc/iex.exs`, so helpers such as
 `mix upload` is intentionally unsupported. The running system mounts the same
 FAT partition that contains the vendor kernel and SquashFS files, and an in-place
 fwup update has not been proven safe. The target rejects connections to the fwup
-SSH subsystem. Power down the camera and use `mix atomcam2.install` instead.
+SSH subsystem. Power down the camera and use `mix firmware.burn`, or `mix burn`
+when the firmware is already built.
 
 Every firmware build preserves the merged application rootfs at:
 
