@@ -1,0 +1,3 @@
+repository=https://github.com/nerves-project/toolchains.git
+revision=fa8f8ba3fd3927b2b4fcc23f3d71918e53fec5ba
+package=nerves_toolchain_mipsel_nerves_linux_musl

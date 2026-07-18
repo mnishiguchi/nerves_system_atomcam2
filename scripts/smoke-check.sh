@@ -70,6 +70,8 @@ require_file package/atomcam2-compat-headers/atomcam2-compat-headers.mk
 require_file package/atomcam2-compat-headers/atomcam2-linux-3.10-compat.h
 require_file toolchain/mix.exs
 require_file toolchain/VERSION
+require_file toolchain/UPSTREAM
+require_file toolchain/defconfig
 require_file toolchain/lib/nerves_toolchain_atomcam2.ex
 require_file patches/kernel/0003-linux-3.10-force-gnu89-for-gcc-15.patch
 require_file external.desc
@@ -159,6 +161,8 @@ require_grep 'artifact_sites:' mix.exs
 require_grep 'nerves_toolchain_atomcam2' mix.exs
 require_grep 'type: :toolchain' toolchain/mix.exs
 require_grep 'artifact_sites:' toolchain/mix.exs
+require_grep '"UPSTREAM"' toolchain/mix.exs
+require_grep '"defconfig"' toolchain/mix.exs
 require_grep 'release-artifacts.sh' toolchain/lib/nerves_toolchain_atomcam2.ex
 require_grep 'aliases: aliases()' examples/atomcam2_nerves_app/mix.exs
 require_grep 'setup:' examples/atomcam2_nerves_app/mix.exs
@@ -185,6 +189,10 @@ require_grep 'CONFIG_DEVMEM=y' busybox.fragment
 require_grep 'BR2_TOOLCHAIN_EXTERNAL=y' nerves_defconfig
 require_grep 'atomcam2-mips32r2-nerves-toolchain.tar.xz' nerves_defconfig
 require_grep 'atomcam2-mips32r2-nerves-toolchain.tar.xz' scripts/prepare-toolchain-archive.sh
+require_grep 'NERVES_TOOLCHAIN must point' scripts/prepare-toolchain-archive.sh
+require_grep 'mips32r2' scripts/prepare-toolchain-archive.sh
+require_grep 'DSP R2 ASE disabled' scripts/prepare-toolchain-archive.sh
+reject_grep 'default_toolchain_root' scripts/prepare-toolchain-archive.sh
 require_grep 'prepare-toolchain-archive.sh' scripts/check-prereqs.sh
 require_grep 'BR2_TOOLCHAIN_EXTERNAL_CUSTOM_MUSL=y' nerves_defconfig
 reject_grep 'BR2_TOOLCHAIN_BUILDROOT=y' nerves_defconfig
@@ -204,6 +212,8 @@ require_grep 'ATOMCAM2_KERNEL_IMAGE must point to the verified AtomCam2 control 
 require_grep 'b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc' scripts/post-image.sh
 require_grep 'ATOMCAM2_KERNEL_IMAGE' scripts/release-artifacts.sh
 require_grep 'unexpected AtomCam2 control kernel SHA256' scripts/release-artifacts.sh
+require_grep 'toolchain/VERSION' scripts/release-artifacts.sh
+require_grep 'checksum_paths' scripts/release-artifacts.sh
 require_grep '\-\-kernel-image' scripts/atomcam2-package-flat-sd.sh
 require_grep '\-\-rootfs-image' scripts/atomcam2-package-flat-sd.sh
 require_grep 'post_processing_script' examples/atomcam2_nerves_app/config/target.exs
