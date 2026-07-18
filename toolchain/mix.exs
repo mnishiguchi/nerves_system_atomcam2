@@ -45,9 +45,8 @@ defmodule NervesToolchainAtomcam2.MixProject do
 
   defp checksum_files do
     [
-      "VERSION",
-      "mix.exs",
-      "lib"
+      "UPSTREAM",
+      "defconfig"
     ]
   end
 end

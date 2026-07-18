@@ -133,3 +133,52 @@ separate checksum implementation.
 
 Do not create the `v0.1.0` tag or GitHub release until both artifact archives
 have been built and verified manually.
+
+## Validated toolchain build inputs
+
+The existing compiler was traced to the official Nerves toolchains repository:
+
+```text
+Repository: https://github.com/nerves-project/toolchains.git
+Revision: fa8f8ba3fd3927b2b4fcc23f3d71918e53fec5ba
+Base package: nerves_toolchain_mipsel_nerves_linux_musl
+```
+
+The validated customization changes the target architecture from `24kec` to
+plain `mips32r2`.
+
+The resulting compiler defaults were verified as:
+
+```text
+Target tuple: mipsel-nerves-linux-musl
+GCC: 15.3.0
+ABI: 32
+Architecture: mips32r2
+Software floating point: enabled
+Hardware floating point: disabled
+DSP ASE: disabled
+DSP R2 ASE: disabled
+```
+
+The tracked `toolchain/defconfig` matches the source configuration used to
+produce the validated compiler.
+
+The toolchain artifact checksum now derives from:
+
+```text
+toolchain/UPSTREAM
+toolchain/defconfig
+```
+
+The resulting Linux x86_64 artifact identity is:
+
+```text
+Checksum: 977999CF3B8BA90118DAFB4D656EEFEFE00969E7790E98EA5BFDAAA789D90626
+Checksum Short: 977999C
+Download File Name: nerves_toolchain_atomcam2-linux_x86_64-0.1.0-977999C.tar.xz
+```
+
+A standalone `mix nerves.artifact.details` invocation was not used for final
+verification because Nerves attempted to resolve the toolchain's own expected
+installation path. The checksum was calculated directly with the same
+per-file SHA-256 algorithm used by Nerves.
