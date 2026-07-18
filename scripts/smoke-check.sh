@@ -122,8 +122,12 @@ require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'nerves-firmware-metadata.conf' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'Nerves.Runtime.KVBackend.InMemory' examples/atomcam2_nerves_app/config/runtime.exs
+reject_grep 'nerves-firmware-metadata.conf' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'Nerves.Runtime.KVBackend.InMemory' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'a.nerves_fw_product' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'a.nerves_fw_version' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'a.nerves_fw_platform' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'a.nerves_fw_architecture' examples/atomcam2_nerves_app/config/target.exs
 require_grep '"wlan0"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'wps: false' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
@@ -134,6 +138,11 @@ require_grep 'defmodule Atomcam2NervesApp.MOTDLogo' examples/atomcam2_nerves_app
 require_grep 'config_target() != :host' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'runtime_mod: Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/config/runtime.exs
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'defmodule Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'def active_partition, do: "Flat SD"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'def firmware_id, do: "UUID unavailable"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
 
 if grep -Fq 'MOTDLogo.render' "$iex_file"; then
