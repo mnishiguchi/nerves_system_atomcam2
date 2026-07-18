@@ -148,12 +148,8 @@ require_grep 'protocol: "sftp-ssh"' examples/atomcam2_nerves_app/config/target.e
 require_grep 'NervesMOTD.print()' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'use Toolshed' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'defmodule Mix.Tasks.Atomcam2.Install' lib/mix/tasks/atomcam2.install.ex
-require_grep 'LABEL=ATOMCAM2' lib/mix/tasks/atomcam2.install.ex
-require_grep 'scripts/install-sd-files.sh' lib/mix/tasks/atomcam2.install.ex
-require_grep '"--force"' lib/mix/tasks/atomcam2.install.ex
-require_grep 'nerves-firmware-metadata.conf' lib/mix/tasks/atomcam2.install.ex
-require_grep 'meta-uuid' lib/mix/tasks/atomcam2.install.ex
-require_grep 'nerves-firmware-metadata.conf' scripts/install-sd-files.sh
+require_grep 'Mix.Task.run("burn", arguments)' lib/mix/tasks/atomcam2.install.ex
+require_grep 'deprecated; delegating to mix burn' lib/mix/tasks/atomcam2.install.ex
 require_grep 'a.nerves_fw_uuid' scripts/atomcam2-check-sd-payload.sh
 require_grep '#define IFA_MAX IFA_FLAGS' package/atomcam2-compat-headers/atomcam2-linux-3.10-compat.h
 require_grep 'BR2_PACKAGE_ATOMCAM2_COMPAT_HEADERS=y' nerves_defconfig
