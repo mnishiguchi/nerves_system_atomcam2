@@ -105,19 +105,13 @@ persistent-test.txt
 The updated kernel retained the required protected SHA-256, and the updated
 root filesystem matched the final application-merged SquashFS.
 
-## Remaining gap
+## Firmware metadata finding
 
-The fwup `complete` task does not currently write:
+The fwup `complete` task does not currently write `nerves-firmware-metadata.conf`.
 
-```text
-nerves-firmware-metadata.conf
-```
+An isolated fwup 1.16.0 probe confirmed that `${FWUP_META_UUID}` remains literal in ordinary file-resource contents. The generated `.fw` bundle therefore remains the authoritative source of firmware identity.
 
-This did not prevent boot, networking, or SSH. However, it remains a
-compatibility difference from `mix atomcam2.install`.
-
-The compatibility installer should remain available until firmware metadata
-handling is aligned with the fwup workflow.
+The FAT-side metadata file is optional. The implementation will not require unsafe fwup commands or post-write media mutation solely to synthesize it. Its absence did not prevent boot, networking, SSH, or IEx.
 
 ## Conclusion
 
