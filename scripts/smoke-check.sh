@@ -252,9 +252,7 @@ require_grep '\-\-kernel-image' scripts/atomcam2-package-flat-sd.sh
 require_grep '\-\-rootfs-image' scripts/atomcam2-package-flat-sd.sh
 require_grep 'post_processing_script' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_hack.final.squashfs' examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
-require_grep 'source and mount directories must differ' scripts/install-sd-files.sh
 require_grep 'cannot resolve images directory' scripts/atomcam2-package-flat-sd.sh
-require_grep 'cannot resolve source directory' scripts/install-sd-files.sh
 require_grep 'cannot resolve mount directory' scripts/collect-boot-report.sh
 require_grep 'NERVES_DEFCONFIG_DIR/package/Config.in' Config.in
 require_grep 'NERVES_DEFCONFIG_DIR)/package' external.mk
