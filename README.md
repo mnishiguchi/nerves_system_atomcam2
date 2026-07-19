@@ -138,6 +138,29 @@ nerves-provisioning.conf
 
 The first four files participate in the Atom Cam 2 boot handoff. `nerves-provisioning.conf` is consumed by the Nerves application after rootfs handoff.
 
+## Relationship to atomcam_tools
+
+This project began by using [`mnakada/atomcam_tools`](https://github.com/mnakada/atomcam_tools) as a hardware reference. The supported system no longer uses its root filesystem, application services, or on-device update flow.
+
+The remaining direct dependencies are deliberately narrow:
+
+- the verified `factory_t31_ZMC6tiIDQN` control kernel, including its active vendor initramfs
+- the matching `atbm603x_wifi_sdio.ko` Wi-Fi module
+
+The project also retains adapted hardware conventions from `atomcam_tools`:
+
+- the `factory_t31_ZMC6tiIDQN` and `rootfs_hack.squashfs` boot filenames
+- the loop-mounted SquashFS and `switch_root` handoff
+- the vendor kernel configuration as a baseline for future custom-kernel work
+
+Apart from the retained Wi-Fi module, everything after the root filesystem handoff is owned by this project: the Nerves root filesystem, Elixir application, custom Nerves toolchain, VintageNet provisioning, SSH runtime, fwup media workflows, and safety checks. The supported firmware is therefore intentionally hybrid:
+
+```text
+verified Atom Cam 2 control kernel
++
+Nerves-generated root filesystem and application
+```
+
 The application build preserves the final merged SquashFS at:
 
 ```text
