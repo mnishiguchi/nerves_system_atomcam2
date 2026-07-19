@@ -4,6 +4,17 @@ config :nerves, :firmware,
   rootfs_overlay: Path.expand("../rootfs_overlay", __DIR__),
   post_processing_script: Path.expand("../scripts/preserve-final-rootfs.sh", __DIR__)
 
+firmware_metadata = %{
+  "nerves_fw_active" => "a",
+  "a.nerves_fw_product" => Atom.to_string(Mix.Project.config()[:app]),
+  "a.nerves_fw_version" => Mix.Project.config()[:version],
+  "a.nerves_fw_platform" => "atomcam2",
+  "a.nerves_fw_architecture" => "mipsel"
+}
+
+config :nerves_runtime,
+  kv_backend: {Nerves.Runtime.KVBackend.InMemory, contents: firmware_metadata}
+
 config :shoehorn,
   init: [:nerves_runtime, :vintage_net, :mdns_lite, :nerves_ssh],
   app: Mix.Project.config()[:app]

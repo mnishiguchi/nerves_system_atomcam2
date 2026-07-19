@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -40,11 +40,30 @@ required to boot a newly prepared device:
 - The SquashFS root filesystem
 - Hostname and authorized-key provisioning
 - Wi-Fi provisioning
-- Firmware metadata
 - The partition and filesystem layout required by the current platform design
 
 The task may initialize or clear application data, consistent with standard
 Nerves complete-install semantics.
+
+The generated `.fw` bundle is authoritative for the exact firmware identity,
+including its fwup metadata UUID.
+
+At runtime, product, version, platform, and architecture are derived from the
+compiled application configuration and exposed through an in-memory
+`Nerves.Runtime.KV` backend. The runtime must not read or trust
+`nerves-firmware-metadata.conf` from the FAT filesystem because an upgrade
+preserves non-firmware files and may therefore retain stale metadata from an
+older installation.
+
+The flat-SD runtime cannot safely recover the exact bundle UUID after
+installation. The MOTD therefore reports `UUID unavailable` and identifies the
+active layout as `Flat SD` rather than implying an A/B partition state.
+
+The FAT-side metadata file remains optional and is not part of the safe fwup
+media contract. Fwup calculates `meta-uuid` from the completed archive metadata,
+while ordinary file-resource contents are fixed when the archive is created.
+The implementation must not require unsafe commands or post-write mutation
+solely to synthesize that compatibility file.
 
 ### `upgrade`
 
@@ -125,7 +144,8 @@ Test the following independently:
 
 - Run `mix firmware.burn` against blank or disposable media.
 - Confirm every required boot and provisioning resource.
-- Boot and verify Wi-Fi, SSH, discovery, metadata, and time.
+- Boot and verify Wi-Fi, SSH, discovery, and time.
+- Verify firmware identity directly from the generated `.fw` bundle.
 
 ### Upgrade installation
 
@@ -146,6 +166,8 @@ Test the following independently:
 - `mix firmware.burn` prepares bootable Atom Cam 2 media.
 - `mix burn --task upgrade` preserves non-firmware state.
 - `mix firmware.image` creates a bootable raw image.
+- Firmware identity remains queryable from the generated `.fw` bundle.
+- The FAT-side metadata compatibility file is not required for media parity.
 - The protected kernel verification remains enforced.
 - The custom installer delegates to fwup or is removed after a documented
   deprecation period.

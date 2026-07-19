@@ -59,6 +59,7 @@ reject_grep() {
 }
 
 require_file README.md
+require_file fwup.conf
 require_file mix.exs
 require_file nerves_defconfig
 require_file linux-3.10.14.defconfig
@@ -121,8 +122,12 @@ require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'nerves-firmware-metadata.conf' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'Nerves.Runtime.KVBackend.InMemory' examples/atomcam2_nerves_app/config/runtime.exs
+reject_grep 'nerves-firmware-metadata.conf' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'Nerves.Runtime.KVBackend.InMemory' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'a.nerves_fw_product' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'a.nerves_fw_version' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'a.nerves_fw_platform' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'a.nerves_fw_architecture' examples/atomcam2_nerves_app/config/target.exs
 require_grep '"wlan0"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'wps: false' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
@@ -133,6 +138,11 @@ require_grep 'defmodule Atomcam2NervesApp.MOTDLogo' examples/atomcam2_nerves_app
 require_grep 'config_target() != :host' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'runtime_mod: Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/config/runtime.exs
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'defmodule Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'def active_partition, do: "Flat SD"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'def firmware_id, do: "UUID unavailable"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
 
 if grep -Fq 'MOTDLogo.render' "$iex_file"; then
@@ -147,12 +157,8 @@ require_grep 'protocol: "sftp-ssh"' examples/atomcam2_nerves_app/config/target.e
 require_grep 'NervesMOTD.print()' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'use Toolshed' examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs
 require_grep 'defmodule Mix.Tasks.Atomcam2.Install' lib/mix/tasks/atomcam2.install.ex
-require_grep 'LABEL=ATOMCAM2' lib/mix/tasks/atomcam2.install.ex
-require_grep 'scripts/install-sd-files.sh' lib/mix/tasks/atomcam2.install.ex
-require_grep '"--force"' lib/mix/tasks/atomcam2.install.ex
-require_grep 'nerves-firmware-metadata.conf' lib/mix/tasks/atomcam2.install.ex
-require_grep 'meta-uuid' lib/mix/tasks/atomcam2.install.ex
-require_grep 'nerves-firmware-metadata.conf' scripts/install-sd-files.sh
+require_grep 'Mix.Task.run("burn", arguments)' lib/mix/tasks/atomcam2.install.ex
+require_grep 'deprecated; delegating to mix burn' lib/mix/tasks/atomcam2.install.ex
 require_grep 'a.nerves_fw_uuid' scripts/atomcam2-check-sd-payload.sh
 require_grep '#define IFA_MAX IFA_FLAGS' package/atomcam2-compat-headers/atomcam2-linux-3.10-compat.h
 require_grep 'BR2_PACKAGE_ATOMCAM2_COMPAT_HEADERS=y' nerves_defconfig
@@ -171,6 +177,9 @@ require_grep 'github: @system_repository' examples/atomcam2_nerves_app/mix.exs
 require_grep 'nerves: \[compile: true\]' examples/atomcam2_nerves_app/mix.exs
 require_grep 'precheck_callback:' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_grep 'mix firmware.burn' README.md
+require_grep 'mix firmware.burn' examples/atomcam2_nerves_app/README.md
+require_grep 'power down the camera and use mix firmware.burn' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
 reject_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
 require_grep 'mix setup' scripts/build-firmware-log.sh
 require_grep 'check_command python3' scripts/check-prereqs.sh
@@ -200,6 +209,43 @@ reject_grep 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y' nerves_defconfig
 reject_grep 'CONFIG_INITRAMFS_SOURCE=""' linux-3.10.14.defconfig
 reject_grep '# CONFIG_BLK_DEV_INITRD is not set' linux-3.10.14.defconfig
 require_grep 'file-resource nerves-provisioning.conf' fwup.conf
+
+fwup_upgrade_task="$(
+  sed -n '/^task upgrade {/,/^}/p' "$repo_dir/fwup.conf"
+)"
+
+if [ -n "$fwup_upgrade_task" ]; then
+  echo "ok: fwup.conf contains upgrade task"
+else
+  echo "missing upgrade task in fwup.conf" >&2
+  exit 1
+fi
+
+for required_line in \
+  'require-partition-offset(0, ${BOOT_PART_OFFSET})' \
+  'on-resource factory_t31_ZMC6tiIDQN { fat_write(${BOOT_PART_OFFSET}, "factory_t31_ZMC6tiIDQN") }' \
+  'on-resource rootfs_hack.squashfs { fat_write(${BOOT_PART_OFFSET}, "rootfs_hack.squashfs") }'; do
+  if printf '%s\n' "$fwup_upgrade_task" | grep -Fq -- "$required_line"; then
+    echo "ok: fwup upgrade task contains $required_line"
+  else
+    echo "missing fwup upgrade requirement: $required_line" >&2
+    exit 1
+  fi
+done
+
+for preserved_resource in \
+  authorized_keys \
+  hostname \
+  nerves-provisioning.conf; do
+  if printf '%s\n' "$fwup_upgrade_task" |
+      grep -Fq -- "on-resource $preserved_resource "; then
+    echo "fwup upgrade task replaces preserved resource: $preserved_resource" >&2
+    exit 1
+  else
+    echo "ok: fwup upgrade task preserves $preserved_resource"
+  fi
+done
+
 require_grep '.nerves' scripts/smoke-check.sh
 require_grep '.nerves' scripts/atomcam2-check-minimal-ssh-scope.sh
 require_grep 'tmp/log' scripts/logging.sh
@@ -218,9 +264,7 @@ require_grep '\-\-kernel-image' scripts/atomcam2-package-flat-sd.sh
 require_grep '\-\-rootfs-image' scripts/atomcam2-package-flat-sd.sh
 require_grep 'post_processing_script' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'rootfs_hack.final.squashfs' examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
-require_grep 'source and mount directories must differ' scripts/install-sd-files.sh
 require_grep 'cannot resolve images directory' scripts/atomcam2-package-flat-sd.sh
-require_grep 'cannot resolve source directory' scripts/install-sd-files.sh
 require_grep 'cannot resolve mount directory' scripts/collect-boot-report.sh
 require_grep 'NERVES_DEFCONFIG_DIR/package/Config.in' Config.in
 require_grep 'NERVES_DEFCONFIG_DIR)/package' external.mk

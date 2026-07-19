@@ -4,6 +4,9 @@
 
 Accepted on July 16, 2026.
 
+The installation workflow in this ADR is superseded by
+[ADR 0004](0004-adopt-fwup-for-standard-media-workflows.md).
+
 Implementation is prepared in source. Closure requires successful local compilation,
 publishing the `v0.1.0` release artifacts, and verifying a clean-checkout build
 and hardware boot.

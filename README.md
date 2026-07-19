@@ -53,23 +53,23 @@ export MIX_TARGET=atomcam2
 export MIX_ENV=prod
 
 mix setup
-mix firmware
-mix atomcam2.install
+mix firmware.burn
 ```
 
 `mix setup` only retrieves dependencies. Target compatibility is supplied by the
 system artifact; application dependency source is not modified.
 
-The install task detects a mounted FAT filesystem labeled `ATOMCAM2`, validates
-the generated flat-SD payload, backs up the current files, installs the new
-payload, verifies it, and synchronizes writes.
+`mix firmware.burn` builds the firmware and writes it through the fwup
+`complete` task. After running `mix firmware`, use `mix burn` to write the
+existing firmware bundle without rebuilding it.
 
 ## Remote update policy
 
 `mix upload` is intentionally unsupported. Atom Cam 2 boots from files on a FAT
 partition that remains mounted by the running system, so writing that partition
 through the fwup SSH subsystem has not been proven safe. The target rejects
-remote fwup connections. Power down the camera and use `mix atomcam2.install`.
+remote fwup connections. Power down the camera and use `mix firmware.burn`, or
+`mix burn` when the firmware is already built.
 
 ## System-maintainer workflow
 
