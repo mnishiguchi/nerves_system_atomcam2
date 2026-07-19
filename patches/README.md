@@ -1,5 +1,5 @@
 # Patches
 
-Put Buildroot, Linux, and package patches here only after each one is traced back to a concrete AtomCam2 boot or camera requirement.
+Put Buildroot, Linux, and package patches here only after each one is traced to a concrete Atom Cam 2 boot, hardware, or runtime requirement.
 
-Start by importing the minimum patch set from `atomcam_tools` and removing anything not needed for the first boot.
+Do not import a generic `atomcam_tools` patch set. Add the smallest independently reviewed patch required by current hardware evidence, and document its source and purpose.
