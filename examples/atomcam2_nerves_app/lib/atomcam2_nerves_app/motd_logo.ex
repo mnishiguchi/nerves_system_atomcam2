@@ -1,33 +1,29 @@
 defmodule Atomcam2NervesApp.MOTDLogo do
   @moduledoc false
 
-  @width 40
+  @width 25
   @height 30
   @label "ATOM CAM 2"
 
   # Geometry
 
-  @lens_center {20, 13}
-  @lens_highlight {18, 11}
-  @camera_holes [{20, 5}, {20, 21}]
+  @lens_center {12, 13}
+  @lens_highlight {10, 11}
+  @camera_holes [{12, 5}, {12, 21}]
 
-  @camera_outer {8, 1, 32, 25}
-  @camera_inner {9, 2, 31, 24}
+  @camera_outer {0, 1, 24, 25}
+  @camera_inner {1, 2, 23, 24}
   @camera_corner_radius 3
 
-  @leg {9, 26, 31, 29}
-
-  @body_shadow_start_y 22
+  @leg {1, 26, 23, 29}
   @leg_seam_y 26
   @leg_shadow_y 29
 
   # Palette
 
-  @background 234
   @white 255
   @silver 250
   @body 239
-  @body_shadow 238
   @disc 233
   @black 16
 
@@ -44,6 +40,7 @@ defmodule Atomcam2NervesApp.MOTDLogo do
   @lens_dark 234
   @lens_center_color 153
 
+  @transparent nil
   @reset "\e[0m"
 
   @spec render() :: IO.ANSI.ansidata()
@@ -62,9 +59,12 @@ defmodule Atomcam2NervesApp.MOTDLogo do
   defp render_camera do
     0..(@height - 1)
     |> Enum.map(&render_source_row/1)
-    |> Enum.chunk_every(2)
+    |> Enum.chunk_every(2, 2, [List.duplicate(@transparent, @width)])
     |> Enum.map(fn [upper_row, lower_row] ->
-      render_terminal_row(upper_row, lower_row)
+      [
+        render_terminal_row(upper_row, lower_row),
+        @reset
+      ]
     end)
     |> Enum.intersperse("\n")
   end
@@ -79,24 +79,48 @@ defmodule Atomcam2NervesApp.MOTDLogo do
     upper_row
     |> Enum.zip(lower_row)
     |> Enum.chunk_by(& &1)
-    |> Enum.map(fn pixel_run ->
-      {upper_color, lower_color} = hd(pixel_run)
-
-      [
-        ansi_half_block(upper_color, lower_color),
-        List.duplicate("▀", length(pixel_run))
-      ]
-    end)
+    |> Enum.map(&render_pixel_run/1)
   end
 
-  defp centered_label do
-    padding = div(@width - String.length(@label), 2)
-
+  defp render_pixel_run([{upper_color, lower_color} | _] = pixel_run) do
     [
-      String.duplicate(" ", padding),
-      @label
+      ansi_for_cell(upper_color, lower_color),
+      List.duplicate(
+        cell_character(upper_color, lower_color),
+        length(pixel_run)
+      )
     ]
   end
+
+  defp ansi_for_cell(nil, nil) do
+    @reset
+  end
+
+  defp ansi_for_cell(upper_color, nil) do
+    [
+      @reset,
+      foreground(upper_color)
+    ]
+  end
+
+  defp ansi_for_cell(nil, lower_color) do
+    [
+      @reset,
+      foreground(lower_color)
+    ]
+  end
+
+  defp ansi_for_cell(upper_color, lower_color) do
+    [
+      @reset,
+      ansi_half_block(upper_color, lower_color)
+    ]
+  end
+
+  defp cell_character(nil, nil), do: " "
+  defp cell_character(_upper_color, nil), do: "▀"
+  defp cell_character(nil, _lower_color), do: "▄"
+  defp cell_character(_upper_color, _lower_color), do: "▀"
 
   defp foreground(color) do
     [
@@ -113,6 +137,15 @@ defmodule Atomcam2NervesApp.MOTDLogo do
       ";48;5;",
       Integer.to_string(lower_color),
       "m"
+    ]
+  end
+
+  defp centered_label do
+    padding = div(@width - String.length(@label), 2)
+
+    [
+      String.duplicate(" ", padding),
+      @label
     ]
   end
 
@@ -160,7 +193,7 @@ defmodule Atomcam2NervesApp.MOTDLogo do
         @camera_inner,
         @camera_corner_radius
       ) ->
-        body_color(y)
+        @body
 
       inside_rounded_rectangle?(
         x,
@@ -174,7 +207,7 @@ defmodule Atomcam2NervesApp.MOTDLogo do
         leg_color(y)
 
       true ->
-        @background
+        @transparent
     end
   end
 
@@ -190,15 +223,12 @@ defmodule Atomcam2NervesApp.MOTDLogo do
   end
 
   defp camera_hole?(x, y) do
-    Enum.any?(@camera_holes, fn center ->
-      inside_circle?(x, y, center, 1)
+    Enum.any?(@camera_holes, fn {center_x, center_y} ->
+      x == center_x and y == center_y
     end)
   end
 
-  defp body_color(y) when y >= @body_shadow_start_y, do: @body_shadow
-  defp body_color(_y), do: @body
-
-  defp leg_color(@leg_seam_y), do: @body_shadow
+  defp leg_color(@leg_seam_y), do: @body
   defp leg_color(@leg_shadow_y), do: @silver
   defp leg_color(_y), do: @white
 
@@ -235,8 +265,7 @@ defmodule Atomcam2NervesApp.MOTDLogo do
       nearest_x = clamp(x, left + radius, right - radius)
       nearest_y = clamp(y, top + radius, bottom - radius)
 
-      squared_distance(x - nearest_x, y - nearest_y) <=
-        radius * radius
+      squared_distance(x - nearest_x, y - nearest_y) <= radius * radius
     else
       false
     end
