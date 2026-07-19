@@ -84,41 +84,136 @@ fwup complete
 
 ## Upgrade task verification
 
-The fwup `upgrade` task was tested against a complete raw image.
+### Physical MicroSD upgrade
 
-The task updated:
+A locally built branch firmware was applied directly to physical MicroSD media
+with the fwup `upgrade` task.
 
-```text
-factory_t31_ZMC6tiIDQN
-rootfs_hack.squashfs
-```
-
-The task preserved:
+The firmware bundle had:
 
 ```text
-hostname
-authorized_keys
-nerves-provisioning.conf
-persistent-test.txt
+SHA-256: b7e6e0a77018672297686b77dfc9d94425e79d19ae8ac3ce9c3939618cef0cd4
+UUID: 9703ea4b-45e8-530b-0d06-790e44a4b1b2
 ```
 
-The updated kernel retained the required protected SHA-256, and the updated
-root filesystem matched the final application-merged SquashFS.
+The upgrade completed successfully:
+
+```sh
+sudo fwup \
+  -a \
+  -d /dev/sda \
+  -i atomcam2_nerves_app.fw \
+  -t upgrade
+```
+
+The root filesystem changed from:
+
+```text
+592bb6b05f3d93e068aa4b12e39ca1ffc602edbc4a37b78c1a032edb562f2519
+```
+
+to the root filesystem from the branch firmware:
+
+```text
+1316d3883b6fa96fffcbc6b8067c0de30b770e5037813f5044b21cd415a8116c
+```
+
+The protected control kernel remained unchanged:
+
+```text
+b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc
+```
+
+Complete pre-upgrade and post-upgrade manifests were generated for every file
+other than the kernel and root filesystem. All 83 non-firmware files were
+preserved byte-for-byte.
+
+The upgraded device booted successfully. The application started, Wi-Fi
+reached the Internet, SSH and IEx remained available, and the preservation
+sentinel remained present.
+
+### Standard Mix upgrade command
+
+The standard Nerves command path was verified independently against a
+disposable raw-image copy:
+
+```sh
+mix burn \
+  --device /tmp/atomcam2-mix-burn-upgrade-test.img \
+  --task upgrade \
+  --firmware atomcam2_nerves_app.fw
+```
+
+The command completed successfully.
+
+The original image root filesystem:
+
+```text
+426493f1fb01b7611a27ccac22f1396da578521b7e8f08a556bb916d1a3e4a2c
+```
+
+was replaced with:
+
+```text
+1316d3883b6fa96fffcbc6b8067c0de30b770e5037813f5044b21cd415a8116c
+```
+
+The protected kernel remained unchanged, and all four non-firmware files in
+the test image, including an explicit preservation sentinel, were preserved
+byte-for-byte.
 
 ## Firmware metadata finding
 
-The fwup `complete` task does not currently write `nerves-firmware-metadata.conf`.
+The generated `.fw` bundle remains authoritative for the exact firmware
+identity and fwup metadata UUID.
 
-An isolated fwup 1.16.0 probe confirmed that `${FWUP_META_UUID}` remains literal in ordinary file-resource contents. The generated `.fw` bundle therefore remains the authoritative source of firmware identity.
+A physical card used for upgrade contained a legacy
+`nerves-firmware-metadata.conf` file. The complete pre-upgrade and post-upgrade
+manifests proved that fwup preserved this file as non-firmware state.
 
-The FAT-side metadata file is optional. The implementation will not require unsafe fwup commands or post-write media mutation solely to synthesize it. Its absence did not prevent boot, networking, SSH, or IEx.
+The application does not trust this FAT-side compatibility file. Product,
+version, platform, and architecture are derived from the compiled application
+configuration and exposed through an in-memory `Nerves.Runtime.KV` backend.
+
+The active runtime metadata was:
+
+```text
+product: atomcam2_nerves_app
+version: 0.1.0
+platform: atomcam2
+architecture: mipsel
+```
+
+The MOTD correctly reported:
+
+```text
+atomcam2_nerves_app 0.1.0 - UUID unavailable
+Firmware     : Flat SD
+Platform     : atomcam2 mipsel
+```
+
+The exact bundle UUID is intentionally reported as unavailable at runtime
+because there is no safe fwup-native source for recovering it from the current
+flat-SD media layout.
+
+The implementation does not require unsafe fwup commands or post-write media
+mutation solely to synthesize FAT-side metadata.
 
 ## Conclusion
 
-The fwup `complete` task has achieved physical boot parity for the current
-AtomCam2 application workflow.
+ADR 0004 acceptance criteria are satisfied.
 
-The fwup `upgrade` task has achieved the required media-preservation behavior
-in raw-image testing.
+The fwup `complete` task prepares bootable physical media, and
+`mix firmware.image` produces a bootable raw image.
 
-Remote firmware upload remains rejected.
+The fwup `upgrade` task preserves non-firmware state on physical MicroSD media.
+All 83 non-firmware files were preserved byte-for-byte, and the upgraded device
+booted successfully with application startup, networking, SSH, IEx, and runtime
+firmware metadata verified.
+
+The standard `mix burn --task upgrade` command path was also verified against a
+disposable raw image. It replaced the firmware-owned resources while preserving
+all non-firmware files.
+
+`fwup.conf` is now the authoritative media-writing contract. Remote firmware
+upload remains rejected.

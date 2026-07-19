@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -45,12 +45,25 @@ required to boot a newly prepared device:
 The task may initialize or clear application data, consistent with standard
 Nerves complete-install semantics.
 
-Firmware identity remains authoritative in the generated `.fw` bundle. The
-FAT-side `nerves-firmware-metadata.conf` file is optional and is not part of the
-safe fwup media contract. Fwup calculates `meta-uuid` from the completed archive
-metadata, while ordinary file-resource contents are fixed when the archive is
-created. The implementation must not require unsafe commands or post-write
-mutation solely to synthesize that compatibility file.
+The generated `.fw` bundle is authoritative for the exact firmware identity,
+including its fwup metadata UUID.
+
+At runtime, product, version, platform, and architecture are derived from the
+compiled application configuration and exposed through an in-memory
+`Nerves.Runtime.KV` backend. The runtime must not read or trust
+`nerves-firmware-metadata.conf` from the FAT filesystem because an upgrade
+preserves non-firmware files and may therefore retain stale metadata from an
+older installation.
+
+The flat-SD runtime cannot safely recover the exact bundle UUID after
+installation. The MOTD therefore reports `UUID unavailable` and identifies the
+active layout as `Flat SD` rather than implying an A/B partition state.
+
+The FAT-side metadata file remains optional and is not part of the safe fwup
+media contract. Fwup calculates `meta-uuid` from the completed archive metadata,
+while ordinary file-resource contents are fixed when the archive is created.
+The implementation must not require unsafe commands or post-write mutation
+solely to synthesize that compatibility file.
 
 ### `upgrade`
 
