@@ -3,6 +3,17 @@ set -eu
 
 TARGET_DIR="$1"
 
+if [ -L "$TARGET_DIR/data" ]; then
+  rm "$TARGET_DIR/data"
+elif [ -d "$TARGET_DIR/data" ]; then
+  :
+elif [ -e "$TARGET_DIR/data" ]; then
+  echo "data mount point is not a directory: $TARGET_DIR/data" >&2
+  exit 1
+else
+  :
+fi
+
 mkdir -p "$TARGET_DIR/data"
 mkdir -p "$TARGET_DIR/root"
 mkdir -p "$TARGET_DIR/atom"

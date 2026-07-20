@@ -14,6 +14,66 @@ report_file="${ATOMCAM2_PRE_RUN_REPORT:-/media/mmc/atomcam2-pre-run.env}"
 default_hostname="${ATOMCAM2_DEFAULT_HOSTNAME:-nerves}"
 hostname_file="${ATOMCAM2_HOSTNAME_FILE:-/media/mmc/hostname}"
 
+find_boot_partition() {
+  awk -v boot_mount="$boot_mount" '
+    $2 == boot_mount {
+      print $1
+      exit
+    }
+  ' /proc/mounts
+}
+
+create_rootdisk_links() {
+  boot_partition="$(find_boot_partition)"
+
+  case "$boot_partition" in
+    /dev/mmcblk[0-9]p[0-9]*)
+      root_disk="${boot_partition%p[0-9]*}"
+      ;;
+    /dev/mmcblk[0-9])
+      root_disk="$boot_partition"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  data_partition="${root_disk}p2"
+
+  if [ ! -b "$root_disk" ]; then
+    return 1
+  fi
+
+  if ! ln -sf "$root_disk" /dev/rootdisk0; then
+    return 1
+  fi
+
+  case "$boot_partition" in
+    /dev/mmcblk[0-9]p[0-9]*)
+      if ! ln -sf "$boot_partition" /dev/rootdisk0p1; then
+        return 1
+      fi
+      ;;
+    *)
+      if ! rm -f /dev/rootdisk0p1; then
+        return 1
+      fi
+      ;;
+  esac
+
+  if [ -b "$data_partition" ]; then
+    if ! ln -sf "$data_partition" /dev/rootdisk0p2; then
+      return 1
+    fi
+  else
+    if ! rm -f /dev/rootdisk0p2; then
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
 valid_hostname() {
   case "$1" in
     ""|.*|-*|*-|*..*|*.-*|*-.*|*[!A-Za-z0-9.-]*) return 1 ;;
@@ -30,6 +90,15 @@ read_hostname() {
 }
 
 mkdir -p "$boot_mount" /tmp || true
+
+root_disk=""
+boot_partition=""
+data_partition=""
+rootdisk_links=0
+
+if create_rootdisk_links; then
+  rootdisk_links=1
+fi
 
 desired_hostname="$(read_hostname)"
 if ! valid_hostname "$desired_hostname"; then
@@ -50,6 +119,10 @@ atomcam2-network-check >/dev/null 2>&1 || true
 
 {
   echo "stage=pre_run_complete"
+  echo "rootdisk_links=$rootdisk_links"
+  echo "root_disk=$root_disk"
+  echo "boot_partition=$boot_partition"
+  echo "data_partition=$data_partition"
   echo "hostname=$(hostname 2>/dev/null || true)"
   echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
 } > "$report_file" 2>/dev/null || true
