@@ -19,7 +19,12 @@ modes:
 - The protected kernel has no verified atomic device-side replacement path.
 
 Standard Nerves systems commonly use inactive-slot updates and provide fwup
-operations for status, validation, revert, prevent-revert, and factory reset.
+operations for status, validation, revert, and prevent-revert.
+
+ADR 0005 separately defines the persistent application-data partition and the
+factory-reset semantics that clear application data while preserving firmware,
+provisioning, and the protected kernel. This decision must integrate that
+operation with the future A/B layout without redefining its data lifecycle.
 
 The Atom Cam 2 already boots through a fixed control kernel with an initramfs,
 which can participate in root-filesystem slot selection without changing the
@@ -70,7 +75,11 @@ Provide `/usr/share/fwup/ops.fw` tasks compatible with Nerves Runtime:
 - `validate`
 - `revert`
 - `prevent-revert`
-- `factory-reset`
+
+Retain the ADR 0005 `factory-reset` operation in the same standard fwup
+operations interface. It must continue to clear only `/data` and must not change
+slot selection, validation state, firmware contents, provisioning, or the
+protected kernel.
 
 Use `Nerves.Runtime.FwupOps` and `Nerves.Runtime.validate_firmware/0` rather than
 project-specific application APIs when the standard interfaces are available.
@@ -97,6 +106,7 @@ NervesHub is outside the scope of this decision.
 - `mix upload` can eventually use the same fwup upgrade contract as host-side
   updates.
 - Persistent application data remains independent of firmware-slot activation.
+- Factory-reset behavior remains consistent across the flat and A/B layouts.
 
 ### Negative
 
@@ -106,6 +116,26 @@ NervesHub is outside the scope of this decision.
 - Validation policy must balance fast rollout against false success.
 - Failure testing is extensive and requires repeated destructive hardware
   experiments.
+
+## Scope boundary with ADR 0005
+
+ADR 0006 owns:
+
+- A/B root-filesystem layout and activation
+- Active, pending, and validated slot state
+- Boot-attempt accounting and automatic rollback
+- `status`, `validate`, `revert`, and `prevent-revert`
+- The decision to enable remote firmware upload
+
+ADR 0006 does not own:
+
+- Filesystem selection for `/data`
+- First-boot initialization of `/data`
+- Which application and service state belongs under `/data`
+- Factory-reset preservation semantics
+
+Those application-data decisions remain in ADR 0005. ADR 0006 must preserve and
+verify them when both firmware slots are present.
 
 ## Update lifecycle
 
@@ -155,8 +185,10 @@ No test may leave the media with neither slot bootable.
 - Interrupted writes leave the active slot bootable.
 - New firmware is initially pending rather than immediately permanent.
 - Failed validation automatically returns to the previous slot.
-- `status`, `validate`, `revert`, `prevent-revert`, and `factory-reset` work
-  through standard Nerves Runtime APIs.
+- `status`, `validate`, `revert`, and `prevent-revert` work through standard
+  Nerves Runtime APIs.
+- The ADR 0005 `factory-reset` operation continues to clear only `/data` with
+  both firmware slots present.
 - `/data` survives successful upgrade and rollback.
 - `mix upload` remains disabled until the complete failure matrix passes.
 - After enablement, `mix upload` uses the standard fwup `upgrade` task.
