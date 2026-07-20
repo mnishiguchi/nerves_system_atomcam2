@@ -2,12 +2,12 @@ import Config
 
 if config_target() != :host do
   config :nerves_time,
-    time_file: "/media/mmc/.nerves_time",
+    time_file: "/data/.nerves_time",
     await_initialization_timeout: 5_000
 
   config :nerves_ssh,
-    system_dir: "/media/mmc/nerves_ssh",
-    user_dir: "/media/mmc/nerves_ssh/default_user"
+    system_dir: "/data/nerves_ssh",
+    user_dir: "/data/nerves_ssh/default_user"
 
   provisioning_path = "/media/mmc/nerves-provisioning.conf"
 
