@@ -8,6 +8,7 @@ grep_files() {
   find "$repo_dir" \
     -path '*/.git' -prune -o \
     -path '*/.nerves' -prune -o \
+    -path '*/docs/worklog' -prune -o \
     -path '*/vendor' -prune -o \
     -path '*/target' -prune -o \
     -path '*/_build' -prune -o \

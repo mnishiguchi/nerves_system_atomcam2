@@ -128,6 +128,15 @@ require_grep 'a.nerves_fw_product' examples/atomcam2_nerves_app/config/target.ex
 require_grep 'a.nerves_fw_version' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_platform' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_architecture' examples/atomcam2_nerves_app/config/target.exs
+require_grep '"a.nerves_fw_application_part0_devpath" => "/dev/rootdisk0p2"' examples/atomcam2_nerves_app/config/target.exs
+require_grep '"a.nerves_fw_application_part0_fstype" => "ext2"' examples/atomcam2_nerves_app/config/target.exs
+require_grep '"a.nerves_fw_application_part0_target" => "/data"' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'time_file: "/data/.nerves_time"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'system_dir: "/data/nerves_ssh"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'user_dir: "/data/nerves_ssh/default_user"' examples/atomcam2_nerves_app/config/runtime.exs
+require_grep 'if \[ -L "\$TARGET_DIR/data" \]; then' board/atomcam2/post-build.sh
+require_grep 'rm "\$TARGET_DIR/data"' board/atomcam2/post-build.sh
+require_grep 'mkdir -p "\$TARGET_DIR/data"' board/atomcam2/post-build.sh
 require_grep '"wlan0"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'wps: false' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep ':vintage_net, :mdns_lite, :nerves_ssh' examples/atomcam2_nerves_app/config/target.exs
@@ -195,6 +204,9 @@ require_grep 'CONFIG_CMDLINE_OVERRIDE=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_AWK=y' busybox.fragment
 require_grep 'CONFIG_DD=y' busybox.fragment
 require_grep 'CONFIG_DEVMEM=y' busybox.fragment
+require_grep 'CONFIG_LN=y' busybox.fragment
+require_grep 'CONFIG_RM=y' busybox.fragment
+require_grep 'BR2_PACKAGE_E2FSPROGS=y' nerves_defconfig
 require_grep 'BR2_TOOLCHAIN_EXTERNAL=y' nerves_defconfig
 require_grep 'atomcam2-mips32r2-nerves-toolchain.tar.xz' nerves_defconfig
 require_grep 'atomcam2-mips32r2-nerves-toolchain.tar.xz' scripts/prepare-toolchain-archive.sh
@@ -209,6 +221,12 @@ reject_grep 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y' nerves_defconfig
 reject_grep 'CONFIG_INITRAMFS_SOURCE=""' linux-3.10.14.defconfig
 reject_grep '# CONFIG_BLK_DEV_INITRD is not set' linux-3.10.14.defconfig
 require_grep 'file-resource nerves-provisioning.conf' fwup.conf
+require_grep 'define-eval(DATA_PART_OFFSET' fwup.conf
+require_grep 'define(DATA_PART_COUNT, 1048576)' fwup.conf
+require_grep 'partition 1 {' fwup.conf
+require_grep 'block-offset = .*DATA_PART_OFFSET' fwup.conf
+require_grep 'type = 0x83 # Linux' fwup.conf
+require_grep 'raw_memset.*DATA_PART_OFFSET.*256.*0xff' fwup.conf
 
 fwup_upgrade_task="$(
   sed -n '/^task upgrade {/,/^}/p' "$repo_dir/fwup.conf"
@@ -223,6 +241,7 @@ fi
 
 for required_line in \
   'require-partition-offset(0, ${BOOT_PART_OFFSET})' \
+  'require-partition-offset(1, ${DATA_PART_OFFSET})' \
   'on-resource factory_t31_ZMC6tiIDQN { fat_write(${BOOT_PART_OFFSET}, "factory_t31_ZMC6tiIDQN") }' \
   'on-resource rootfs_hack.squashfs { fat_write(${BOOT_PART_OFFSET}, "rootfs_hack.squashfs") }'; do
   if printf '%s\n' "$fwup_upgrade_task" | grep -Fq -- "$required_line"; then
@@ -232,6 +251,14 @@ for required_line in \
     exit 1
   fi
 done
+
+if printf '%s\n' "$fwup_upgrade_task" |
+    grep -Fq -- 'raw_memset(${DATA_PART_OFFSET}'; then
+  echo "fwup upgrade task invalidates the data partition" >&2
+  exit 1
+else
+  echo "ok: fwup upgrade task preserves data partition contents"
+fi
 
 for preserved_resource in \
   authorized_keys \
@@ -281,6 +308,12 @@ reject_grep 'atomcam2-wifi-driver.log' rootfs_overlay/usr/bin/atomcam2-wifi-driv
 reject_grep 'atomcam2-erlinit.log' board/atomcam2/post-build.sh
 reject_grep 'ATOMCAM2_WIFI_DRIVER_LOG' rootfs_overlay/etc/atomcam2.env
 
+require_grep 'find_boot_partition' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'create_rootdisk_links' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep '/dev/rootdisk0p1' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep '/dev/rootdisk0p2' rootfs_overlay/usr/bin/atomcam2-pre-run
+reject_grep 'create_rootdisk_links' board/atomcam2/initramfs/init
+
 for symlink_path in \
   board/atomcam2/initramfs/bin/sh \
   board/atomcam2/initramfs/bin/mount \
@@ -319,11 +352,8 @@ require_grep 'port: 0' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/disc
 "$repo_dir/scripts/atomcam2-check-minimal-ssh-scope.sh" "$repo_dir"
 
 require_grep 'nerves_time' examples/atomcam2_nerves_app/mix.exs
-require_grep 'time_file: "/media/mmc/.nerves_time"' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'await_initialization_timeout: 5_000' examples/atomcam2_nerves_app/config/runtime.exs
 
-require_grep 'system_dir: "/media/mmc/nerves_ssh"' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'user_dir: "/media/mmc/nerves_ssh/default_user"' examples/atomcam2_nerves_app/config/runtime.exs
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
 require_grep 'Atomcam2NervesApp.TimeSync' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_grep 'VintageNet.subscribe(@connection_property)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex

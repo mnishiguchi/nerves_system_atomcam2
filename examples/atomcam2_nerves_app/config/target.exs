@@ -9,11 +9,15 @@ firmware_metadata = %{
   "a.nerves_fw_product" => Atom.to_string(Mix.Project.config()[:app]),
   "a.nerves_fw_version" => Mix.Project.config()[:version],
   "a.nerves_fw_platform" => "atomcam2",
-  "a.nerves_fw_architecture" => "mipsel"
+  "a.nerves_fw_architecture" => "mipsel",
+  "a.nerves_fw_application_part0_devpath" => "/dev/rootdisk0p2",
+  "a.nerves_fw_application_part0_fstype" => "ext2",
+  "a.nerves_fw_application_part0_target" => "/data"
 }
 
 config :nerves_runtime,
-  kv_backend: {Nerves.Runtime.KVBackend.InMemory, contents: firmware_metadata}
+  kv_backend: {Nerves.Runtime.KVBackend.InMemory, contents: firmware_metadata},
+  init_module: Atomcam2NervesApp.FilesystemInit
 
 config :shoehorn,
   init: [:nerves_runtime, :vintage_net, :mdns_lite, :nerves_ssh],
