@@ -130,7 +130,7 @@ require_grep 'a.nerves_fw_product' examples/atomcam2_nerves_app/config/target.ex
 require_grep 'a.nerves_fw_version' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_platform' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_architecture' examples/atomcam2_nerves_app/config/target.exs
-require_grep '"a.nerves_fw_application_part0_devpath" => "/dev/rootdisk0p2"' examples/atomcam2_nerves_app/config/target.exs
+require_grep '"a.nerves_fw_application_part0_devpath" => "/dev/rootdisk0p3"' examples/atomcam2_nerves_app/config/target.exs
 require_grep '"a.nerves_fw_application_part0_fstype" => "ext2"' examples/atomcam2_nerves_app/config/target.exs
 require_grep '"a.nerves_fw_application_part0_target" => "/data"' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'time_file: "/data/.nerves_time"' examples/atomcam2_nerves_app/config/runtime.exs
@@ -152,7 +152,7 @@ require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerve
 require_grep 'runtime_mod: Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/config/runtime.exs
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 require_grep 'defmodule Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'def active_partition, do: "Flat SD"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'def active_partition, do: "Prototype p2"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 require_grep 'def firmware_id, do: "UUID unavailable"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
 
@@ -225,55 +225,52 @@ reject_grep 'BR2_TOOLCHAIN_BUILDROOT_GLIBC=y' nerves_defconfig
 reject_grep 'CONFIG_INITRAMFS_SOURCE=""' linux-3.10.14.defconfig
 reject_grep '# CONFIG_BLK_DEV_INITRD is not set' linux-3.10.14.defconfig
 require_grep 'file-resource nerves-provisioning.conf' fwup.conf
+require_grep 'file-resource rootfs_hack.squashfs' fwup.conf
+require_grep 'host-path = ${BOOT_MANAGER}' fwup.conf
+require_grep 'file-resource rootfs.img' fwup.conf
+require_grep 'assert-size-lte = ${APPLICATION_PART_COUNT}' fwup.conf
+require_grep 'define-eval(APPLICATION_PART_OFFSET' fwup.conf
+require_grep 'define(APPLICATION_PART_COUNT, 262144)' fwup.conf
 require_grep 'define-eval(DATA_PART_OFFSET' fwup.conf
 require_grep 'define(DATA_PART_COUNT, 1048576)' fwup.conf
 require_grep 'partition 1 {' fwup.conf
+require_grep 'block-offset = .*APPLICATION_PART_OFFSET' fwup.conf
+require_grep 'partition 2 {' fwup.conf
 require_grep 'block-offset = .*DATA_PART_OFFSET' fwup.conf
 require_grep 'type = 0x83 # Linux' fwup.conf
+require_grep 'on-resource rootfs_hack.squashfs { fat_write' fwup.conf
+require_grep 'on-resource rootfs.img { raw_write(${APPLICATION_PART_OFFSET}) }' fwup.conf
 require_grep 'raw_memset.*DATA_PART_OFFSET.*256.*0xff' fwup.conf
+require_grep 'ADR 0006 boot-manager prototype supports complete installations only' fwup.conf
 
 fwup_upgrade_task="$(
   sed -n '/^task upgrade {/,/^}/p' "$repo_dir/fwup.conf"
 )"
 
 if [ -n "$fwup_upgrade_task" ]; then
-  echo "ok: fwup.conf contains upgrade task"
+  echo "ok: fwup.conf contains disabled upgrade task"
 else
-  echo "missing upgrade task in fwup.conf" >&2
+  echo "missing disabled upgrade task in fwup.conf" >&2
   exit 1
 fi
 
-for required_line in \
-  'require-partition-offset(0, ${BOOT_PART_OFFSET})' \
-  'require-partition-offset(1, ${DATA_PART_OFFSET})' \
-  'on-resource factory_t31_ZMC6tiIDQN { fat_write(${BOOT_PART_OFFSET}, "factory_t31_ZMC6tiIDQN") }' \
-  'on-resource rootfs_hack.squashfs { fat_write(${BOOT_PART_OFFSET}, "rootfs_hack.squashfs") }'; do
-  if printf '%s\n' "$fwup_upgrade_task" | grep -Fq -- "$required_line"; then
-    echo "ok: fwup upgrade task contains $required_line"
-  else
-    echo "missing fwup upgrade requirement: $required_line" >&2
-    exit 1
-  fi
-done
-
-if printf '%s\n' "$fwup_upgrade_task" |
-    grep -Fq -- 'raw_memset(${DATA_PART_OFFSET}'; then
-  echo "fwup upgrade task invalidates the data partition" >&2
-  exit 1
+if printf '%s\n' "$fwup_upgrade_task" | grep -Fq -- 'error('; then
+  echo "ok: fwup upgrade task rejects prototype updates"
 else
-  echo "ok: fwup upgrade task preserves data partition contents"
+  echo "fwup upgrade task does not reject prototype updates" >&2
+  exit 1
 fi
 
-for preserved_resource in \
-  authorized_keys \
-  hostname \
-  nerves-provisioning.conf; do
-  if printf '%s\n' "$fwup_upgrade_task" |
-      grep -Fq -- "on-resource $preserved_resource "; then
-    echo "fwup upgrade task replaces preserved resource: $preserved_resource" >&2
+for forbidden_operation in \
+  fat_write \
+  raw_write \
+  raw_memset \
+  mbr_write; do
+  if printf '%s\n' "$fwup_upgrade_task" | grep -Fq -- "$forbidden_operation"; then
+    echo "fwup upgrade task performs forbidden operation: $forbidden_operation" >&2
     exit 1
   else
-    echo "ok: fwup upgrade task preserves $preserved_resource"
+    echo "ok: fwup upgrade task omits $forbidden_operation"
   fi
 done
 
@@ -323,6 +320,9 @@ require_grep 'find_boot_partition' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep 'create_rootdisk_links' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep '/dev/rootdisk0p1' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep '/dev/rootdisk0p2' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep '/dev/rootdisk0p3' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'application_partition="${root_disk}p2"' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'data_partition="${root_disk}p3"' rootfs_overlay/usr/bin/atomcam2-pre-run
 reject_grep 'create_rootdisk_links' board/atomcam2/initramfs/init
 
 for symlink_path in \

@@ -38,7 +38,8 @@ create_rootdisk_links() {
       ;;
   esac
 
-  data_partition="${root_disk}p2"
+  application_partition="${root_disk}p2"
+  data_partition="${root_disk}p3"
 
   if [ ! -b "$root_disk" ]; then
     return 1
@@ -61,12 +62,22 @@ create_rootdisk_links() {
       ;;
   esac
 
-  if [ -b "$data_partition" ]; then
-    if ! ln -sf "$data_partition" /dev/rootdisk0p2; then
+  if [ -b "$application_partition" ]; then
+    if ! ln -sf "$application_partition" /dev/rootdisk0p2; then
       return 1
     fi
   else
     if ! rm -f /dev/rootdisk0p2; then
+      return 1
+    fi
+  fi
+
+  if [ -b "$data_partition" ]; then
+    if ! ln -sf "$data_partition" /dev/rootdisk0p3; then
+      return 1
+    fi
+  else
+    if ! rm -f /dev/rootdisk0p3; then
       return 1
     fi
   fi
@@ -93,6 +104,7 @@ mkdir -p "$boot_mount" /tmp || true
 
 root_disk=""
 boot_partition=""
+application_partition=""
 data_partition=""
 rootdisk_links=0
 
@@ -122,6 +134,7 @@ atomcam2-network-check >/dev/null 2>&1 || true
   echo "rootdisk_links=$rootdisk_links"
   echo "root_disk=$root_disk"
   echo "boot_partition=$boot_partition"
+  echo "application_partition=$application_partition"
   echo "data_partition=$data_partition"
   echo "hostname=$(hostname 2>/dev/null || true)"
   echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
