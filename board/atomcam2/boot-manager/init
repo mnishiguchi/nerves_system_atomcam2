@@ -1,0 +1,222 @@
+#!/bin/sh
+set -eu
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+boot_mount="/media/mmc"
+application_mount="/mnt/application"
+report_name="atomcam2-boot-manager.env"
+
+boot_bind_moved=0
+boot_mount_moved=0
+dev_moved=0
+proc_moved=0
+sys_moved=0
+
+is_mounted() {
+  mount_point="$1"
+
+  awk -v mount_point="$mount_point" '
+    $2 == mount_point {
+      found = 1
+      exit
+    }
+
+    END {
+      exit(found ? 0 : 1)
+    }
+  ' /proc/mounts
+}
+
+write_report_to() {
+  output_path="$1"
+  stage="$2"
+
+  if {
+    echo "stage=$stage"
+    echo "boot_partition=${boot_partition:-}"
+    echo "root_disk=${root_disk:-}"
+    echo "application_partition=${application_partition:-}"
+  } > "$output_path" 2>/dev/null; then
+    return 0
+  fi
+
+  return 1
+}
+
+write_report() {
+  stage="$1"
+
+  if write_report_to "$boot_mount/$report_name" "$stage"; then
+    return 0
+  fi
+
+  if write_report_to "$application_mount/media/mmc/$report_name" "$stage"; then
+    return 0
+  fi
+
+  if write_report_to "/tmp/$report_name" "$stage"; then
+    return 0
+  fi
+
+  return 0
+}
+
+restore_mounts() {
+  if [ "$proc_moved" -eq 1 ]; then
+    if mount --move "$application_mount/proc" /proc; then
+      proc_moved=0
+    fi
+  fi
+
+  if [ "$boot_mount_moved" -eq 1 ]; then
+    if mount --move "$application_mount/media/mmc" "$boot_mount"; then
+      boot_mount_moved=0
+    fi
+  fi
+
+  if [ "$sys_moved" -eq 1 ]; then
+    if mount --move "$application_mount/sys" /sys; then
+      sys_moved=0
+    fi
+  fi
+
+  if [ "$dev_moved" -eq 1 ]; then
+    if mount --move "$application_mount/dev" /dev; then
+      dev_moved=0
+    fi
+  fi
+
+  if [ "$boot_bind_moved" -eq 1 ]; then
+    if mount --move "$application_mount/boot" /boot; then
+      boot_bind_moved=0
+    fi
+  fi
+}
+
+enter_recovery() {
+  stage="$1"
+
+  restore_mounts
+  write_report "$stage"
+  echo "atomcam2 boot manager: $stage" >&2
+  exec sh
+}
+
+find_boot_partition() {
+  awk -v boot_mount="$boot_mount" '
+    $2 == boot_mount {
+      print $1
+      exit
+    }
+  ' /proc/mounts
+}
+
+derive_root_disk() {
+  case "$boot_partition" in
+    /dev/mmcblk[0-9]p[0-9]*)
+      root_disk="${boot_partition%p[0-9]*}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
+  if [ ! -b "$root_disk" ]; then
+    return 1
+  fi
+
+  return 0
+}
+
+mkdir -p "$application_mount" /tmp
+
+boot_partition="$(find_boot_partition)"
+if [ -z "$boot_partition" ]; then
+  enter_recovery "boot_partition_not_found"
+fi
+
+root_disk=""
+if ! derive_root_disk; then
+  enter_recovery "root_disk_not_found"
+fi
+
+application_partition="${root_disk}p2"
+if [ ! -b "$application_partition" ]; then
+  enter_recovery "application_partition_not_found"
+fi
+
+if ! command -v pivot_root >/dev/null 2>&1; then
+  enter_recovery "pivot_root_unavailable"
+fi
+
+if ! mount -t squashfs -o ro "$application_partition" "$application_mount"; then
+  enter_recovery "application_mount_failed"
+fi
+
+if [ ! -x "$application_mount/sbin/init" ]; then
+  enter_recovery "application_init_missing"
+fi
+
+for required_directory in boot dev media/mmc proc sys; do
+  if [ ! -d "$application_mount/$required_directory" ]; then
+    enter_recovery "application_mountpoint_missing"
+  fi
+done
+
+write_report "application_mounted"
+
+if is_mounted /boot; then
+  if mount --move /boot "$application_mount/boot"; then
+    boot_bind_moved=1
+  else
+    enter_recovery "boot_bind_move_failed"
+  fi
+fi
+
+if mount --move /dev "$application_mount/dev"; then
+  dev_moved=1
+else
+  enter_recovery "dev_move_failed"
+fi
+
+if mount --move /sys "$application_mount/sys"; then
+  sys_moved=1
+else
+  enter_recovery "sys_move_failed"
+fi
+
+if mount --move "$boot_mount" "$application_mount/media/mmc"; then
+  boot_mount_moved=1
+else
+  enter_recovery "boot_mount_move_failed"
+fi
+
+if mount --move /proc "$application_mount/proc"; then
+  proc_moved=1
+else
+  enter_recovery "proc_move_failed"
+fi
+
+write_report "pivot_root"
+
+cd "$application_mount"
+if pivot_root . .; then
+  :
+else
+  cd /
+  enter_recovery "pivot_root_failed"
+fi
+
+if umount -l .; then
+  cd /
+else
+  cd /
+  write_report "old_root_unmount_failed"
+  echo "atomcam2 boot manager: old root remains mounted" >&2
+  exec sh
+fi
+
+write_report "application_root"
+exec /sbin/init

@@ -78,6 +78,7 @@ require_file patches/kernel/0003-linux-3.10-force-gnu89-for-gcc-15.patch
 require_file external.desc
 require_file external.mk
 require_file board/atomcam2/initramfs/init
+require_executable board/atomcam2/boot-manager/init
 require_file board/atomcam2/initramfs/bin/busybox
 require_file board/atomcam2/initramfs/usr/lib/libc.so
 require_file rootfs_overlay/etc/erlinit.config
@@ -86,6 +87,7 @@ require_executable rootfs_overlay/usr/bin/atomcam2-env
 require_executable rootfs_overlay/usr/bin/atomcam2-pre-run
 require_executable rootfs_overlay/usr/bin/atomcam2-wifi-driver
 require_executable rootfs_overlay/usr/bin/atomcam2-network-check
+require_executable scripts/atomcam2-build-boot-manager.sh
 require_executable scripts/atomcam2-package-flat-sd.sh
 require_executable scripts/atomcam2-check-sd-payload.sh
 require_executable scripts/atomcam2-check-minimal-ssh-scope.sh
@@ -197,6 +199,8 @@ require_grep 'CONFIG_INITRAMFS_SOURCE="${NERVES_DEFCONFIG_DIR}/board/atomcam2/in
 require_grep 'CONFIG_BLK_DEV_LOOP=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_NLS_CODEPAGE_437=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_FEATURE_MOUNT_LOOP=y' busybox.fragment
+require_grep 'CONFIG_PIVOT_ROOT=y' busybox.fragment
+require_grep 'CONFIG_SWITCH_ROOT=y' busybox.fragment
 require_grep 'CONFIG_JZMMC_V12_MMC1=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_JZMMC_V12_MMC1_PC_4BIT=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_SQUASHFS_ZLIB=y' linux-3.10.14.defconfig
@@ -282,6 +286,13 @@ require_grep 'refusing to write SD payload to /' scripts/atomcam2-package-flat-s
 require_grep 'output directory must differ from images directory' scripts/atomcam2-package-flat-sd.sh
 require_grep 'kernel image is too large for the AtomCam2 boot contract' scripts/atomcam2-package-flat-sd.sh
 require_grep 'ATOMCAM2_KERNEL_IMAGE must point to the verified AtomCam2 control kernel' scripts/post-image.sh
+require_grep 'atomcam2-build-boot-manager.sh' scripts/post-image.sh
+require_grep 'atomcam2-boot-manager.squashfs' scripts/post-image.sh
+require_grep 'application_partition="${root_disk}p2"' board/atomcam2/boot-manager/init
+require_grep 'mount -t squashfs -o ro' board/atomcam2/boot-manager/init
+require_grep 'pivot_root . .' board/atomcam2/boot-manager/init
+require_grep 'umount -l .' board/atomcam2/boot-manager/init
+require_grep 'exec /sbin/init' board/atomcam2/boot-manager/init
 require_grep 'b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc' scripts/post-image.sh
 require_grep 'ATOMCAM2_KERNEL_IMAGE' scripts/release-artifacts.sh
 require_grep 'unexpected AtomCam2 control kernel SHA256' scripts/release-artifacts.sh
@@ -337,7 +348,7 @@ find "$repo_dir" \
   -path '*/vendor' -prune -o \
   -name '*.log' -prune -o \
   -name '*.dump' -prune -o \
-  \( -name '*.sh' -o -path '*/usr/bin/atomcam2-*' -o -path '*/initramfs/init' \) \
+  \( -name '*.sh' -o -path '*/usr/bin/atomcam2-*' -o -path '*/initramfs/init' -o -path '*/boot-manager/init' \) \
   -type f -print | while IFS= read -r shell_file; do
   check_script_syntax "$shell_file"
 done
