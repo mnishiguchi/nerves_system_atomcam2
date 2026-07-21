@@ -279,6 +279,7 @@ require_grep '.nerves' scripts/atomcam2-check-minimal-ssh-scope.sh
 require_grep 'tmp/log' scripts/logging.sh
 require_grep 'logging.sh' scripts/build-firmware-log.sh
 require_grep 'logging.sh' scripts/collect-boot-report.sh
+require_grep 'atomcam2-boot-manager.env' scripts/collect-boot-report.sh
 require_grep 'refusing to write SD payload to /' scripts/atomcam2-package-flat-sd.sh
 require_grep 'output directory must differ from images directory' scripts/atomcam2-package-flat-sd.sh
 require_grep 'kernel image is too large for the AtomCam2 boot contract' scripts/atomcam2-package-flat-sd.sh
