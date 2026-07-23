@@ -1,0 +1,426 @@
+#!/bin/sh
+set -eu
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH
+
+metadata_magic="ATOMCAM2_BOOT_METADATA_V1"
+metadata_record_size=4096
+metadata_error=""
+metadata_selected_record=""
+
+validate_values() {
+  if awk \
+    -v generation="$metadata_generation" \
+    -v confirmed="$metadata_confirmed_slot" \
+    -v pending="$metadata_pending_slot" \
+    -v attempts="$metadata_pending_attempts" \
+    -v maximum="$metadata_max_attempts" \
+    -v a_status="$metadata_slot_a_status" \
+    -v a_id="$metadata_slot_a_firmware_id" \
+    -v a_sha="$metadata_slot_a_sha256" \
+    -v b_status="$metadata_slot_b_status" \
+    -v b_id="$metadata_slot_b_firmware_id" \
+    -v b_sha="$metadata_slot_b_sha256" '
+    function decimal(value, width) {
+      return length(value) == width && value !~ /[^0-9]/
+    }
+
+    function hexadecimal(value) {
+      return value != "" && value !~ /[^0-9a-f]/
+    }
+
+    function firmware_id(value) {
+      if (value == "-") {
+        return 1
+      }
+
+      return length(value) == 36 &&
+        substr(value, 9, 1) == "-" &&
+        substr(value, 14, 1) == "-" &&
+        substr(value, 19, 1) == "-" &&
+        substr(value, 24, 1) == "-" &&
+        hexadecimal(substr(value, 1, 8)) &&
+        hexadecimal(substr(value, 10, 4)) &&
+        hexadecimal(substr(value, 15, 4)) &&
+        hexadecimal(substr(value, 20, 4)) &&
+        hexadecimal(substr(value, 25, 12))
+    }
+
+    function sha256(value) {
+      if (value == "-") {
+        return 1
+      }
+
+      return length(value) == 64 && value !~ /[^0-9a-f]/
+    }
+
+    function slot(status, id, sha) {
+      if (status == "empty") {
+        return id == "-" && sha == "-"
+      }
+
+      if (status != "valid" && status != "bad") {
+        return 0
+      }
+
+      return firmware_id(id) && sha256(sha)
+    }
+
+    BEGIN {
+      if (!decimal(generation, 20)) exit 1
+      if (confirmed != "A" && confirmed != "B") exit 1
+      if (pending != "-" && pending != "A" && pending != "B") exit 1
+      if (!decimal(attempts, 3)) exit 1
+      if (!decimal(maximum, 3) || maximum == "000") exit 1
+      if (pending == "-" && attempts != "000") exit 1
+      if (pending != "-" && (attempts + 0) > (maximum + 0)) exit 1
+      if (!slot(a_status, a_id, a_sha)) exit 1
+      if (!slot(b_status, b_id, b_sha)) exit 1
+      if (confirmed == "A" && a_status != "valid") exit 1
+      if (confirmed == "B" && b_status != "valid") exit 1
+      if (pending == "A" && a_status != "valid") exit 1
+      if (pending == "B" && b_status != "valid") exit 1
+    }
+  '; then
+    return 0
+  else
+    metadata_error="invalid_values"
+    return 1
+  fi
+}
+
+write_payload() {
+  printf '%s\n' "$metadata_magic"
+  printf 'generation=%s\n' "$metadata_generation"
+  printf 'confirmed_slot=%s\n' "$metadata_confirmed_slot"
+  printf 'pending_slot=%s\n' "$metadata_pending_slot"
+  printf 'pending_attempts=%s\n' "$metadata_pending_attempts"
+  printf 'max_attempts=%s\n' "$metadata_max_attempts"
+  printf 'slot_a_status=%s\n' "$metadata_slot_a_status"
+  printf 'slot_a_firmware_id=%s\n' "$metadata_slot_a_firmware_id"
+  printf 'slot_a_sha256=%s\n' "$metadata_slot_a_sha256"
+  printf 'slot_b_status=%s\n' "$metadata_slot_b_status"
+  printf 'slot_b_firmware_id=%s\n' "$metadata_slot_b_firmware_id"
+  printf 'slot_b_sha256=%s\n' "$metadata_slot_b_sha256"
+}
+
+metadata_write() {
+  if [ "$#" -ne 12 ]; then
+    metadata_error="write_argument_count"
+    return 1
+  fi
+
+  output_path="$1"
+  metadata_generation="$2"
+  metadata_confirmed_slot="$3"
+  metadata_pending_slot="$4"
+  metadata_pending_attempts="$5"
+  metadata_max_attempts="$6"
+  metadata_slot_a_status="$7"
+  metadata_slot_a_firmware_id="$8"
+  metadata_slot_a_sha256="$9"
+  shift 9
+  metadata_slot_b_status="$1"
+  metadata_slot_b_firmware_id="$2"
+  metadata_slot_b_sha256="$3"
+  metadata_error=""
+
+  if ! validate_values; then
+    return 1
+  fi
+
+  metadata_checksum="$(
+    write_payload |
+      sha256sum |
+      awk '{print $1}'
+  )"
+
+  payload_path="${output_path}.payload.$$"
+  temporary_path="${output_path}.tmp.$$"
+
+  if ! {
+    write_payload
+    printf 'checksum_sha256=%s\n' "$metadata_checksum"
+  } > "$payload_path"; then
+
+    rm -f "$payload_path"
+    metadata_error="payload_write_failed"
+    return 1
+  fi
+
+  if ! printf '%4096s' '' > "$temporary_path"; then
+    rm -f "$payload_path"
+    metadata_error="record_allocation_failed"
+    return 1
+  fi
+
+  if ! dd \
+    if="$payload_path" \
+    of="$temporary_path" \
+    bs="$metadata_record_size" \
+    count=1 \
+    conv=notrunc \
+    2>/dev/null; then
+
+    rm -f "$payload_path" "$temporary_path"
+    metadata_error="record_write_failed"
+    return 1
+  fi
+
+  rm -f "$payload_path"
+
+  if mv -f "$temporary_path" "$output_path"; then
+    return 0
+  else
+    rm -f "$temporary_path"
+    metadata_error="record_replace_failed"
+    return 1
+  fi
+}
+
+metadata_read() {
+  record_path="$1"
+  metadata_error=""
+
+  if [ ! -f "$record_path" ]; then
+    metadata_error="record_missing"
+    return 1
+  fi
+
+  metadata_values="$(
+    awk -v magic="$metadata_magic" '
+      BEGIN {
+        keys[2] = "generation"
+        keys[3] = "confirmed_slot"
+        keys[4] = "pending_slot"
+        keys[5] = "pending_attempts"
+        keys[6] = "max_attempts"
+        keys[7] = "slot_a_status"
+        keys[8] = "slot_a_firmware_id"
+        keys[9] = "slot_a_sha256"
+        keys[10] = "slot_b_status"
+        keys[11] = "slot_b_firmware_id"
+        keys[12] = "slot_b_sha256"
+        keys[13] = "checksum_sha256"
+      }
+
+      NR == 1 {
+        if ($0 != magic) exit 1
+        next
+      }
+
+      NR >= 2 && NR <= 13 {
+        prefix = keys[NR] "="
+
+        if (index($0, prefix) != 1) {
+          exit 1
+        }
+
+        values[NR] = substr($0, length(prefix) + 1)
+        next
+      }
+
+      NR >= 14 && $0 !~ /^ *$/ {
+        exit 1
+      }
+
+      END {
+        if (NR < 13) {
+          exit 1
+        }
+
+        for (line_number = 2; line_number <= 13; line_number++) {
+          if (line_number > 2) {
+            printf " "
+          }
+
+          printf "%s", values[line_number]
+        }
+      }
+    ' "$record_path"
+  )" || {
+    metadata_error="record_invalid"
+    return 1
+  }
+
+  set -- $metadata_values
+
+  if [ "$#" -ne 12 ]; then
+    metadata_error="record_invalid"
+    return 1
+  fi
+
+  metadata_generation="$1"
+  metadata_confirmed_slot="$2"
+  metadata_pending_slot="$3"
+  metadata_pending_attempts="$4"
+  metadata_max_attempts="$5"
+  metadata_slot_a_status="$6"
+  metadata_slot_a_firmware_id="$7"
+  metadata_slot_a_sha256="$8"
+  metadata_slot_b_status="$9"
+  shift 9
+  metadata_slot_b_firmware_id="$1"
+  metadata_slot_b_sha256="$2"
+  metadata_checksum="$3"
+
+  if ! validate_values; then
+    return 1
+  fi
+
+  expected_checksum="$(
+    write_payload |
+      sha256sum |
+      awk '{print $1}'
+  )"
+
+  if [ "$metadata_checksum" != "$expected_checksum" ]; then
+    metadata_error="checksum_mismatch"
+    return 1
+  fi
+
+  return 0
+}
+
+metadata_print() {
+  write_payload
+  printf 'checksum_sha256=%s\n' "$metadata_checksum"
+}
+
+use_selected_record() {
+  selected_record="$1"
+
+  if metadata_read "$selected_record"; then
+    metadata_selected_record="$selected_record"
+    metadata_error=""
+    return 0
+  else
+    metadata_selected_record=""
+    metadata_error="selected_record_invalid"
+    return 1
+  fi
+}
+
+metadata_select() {
+  first_record="$1"
+  second_record="$2"
+  metadata_selected_record=""
+  first_valid=0
+  second_valid=0
+
+  if metadata_read "$first_record"; then
+    first_valid=1
+    first_generation="$metadata_generation"
+    first_checksum="$metadata_checksum"
+  fi
+
+  if metadata_read "$second_record"; then
+    second_valid=1
+    second_generation="$metadata_generation"
+    second_checksum="$metadata_checksum"
+  fi
+
+  if [ "$first_valid" -eq 0 ]; then
+    if [ "$second_valid" -eq 0 ]; then
+      metadata_error="no_valid_record"
+      return 1
+    fi
+
+    if use_selected_record "$second_record"; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+
+  if [ "$second_valid" -eq 0 ]; then
+    if use_selected_record "$first_record"; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+
+  if [ "$first_generation" = "$second_generation" ]; then
+    if [ "$first_checksum" = "$second_checksum" ]; then
+      if use_selected_record "$first_record"; then
+        return 0
+      else
+        return 1
+      fi
+    fi
+
+    metadata_error="equal_generation_conflict"
+    return 1
+  fi
+
+  if awk \
+    -v first="g$first_generation" \
+    -v second="g$second_generation" \
+    'BEGIN { exit !(first > second) }'; then
+
+    if use_selected_record "$first_record"; then
+      return 0
+    else
+      return 1
+    fi
+  else
+    if use_selected_record "$second_record"; then
+      return 0
+    else
+      return 1
+    fi
+  fi
+}
+
+usage() {
+  printf '%s\n' \
+    "Usage:" \
+    "  $0 write OUTPUT GENERATION CONFIRMED PENDING ATTEMPTS MAX_ATTEMPTS A_STATUS A_UUID A_SHA256 B_STATUS B_UUID B_SHA256" \
+    "  $0 read RECORD" \
+    "  $0 select RECORD_A RECORD_B"
+}
+
+command_name="${1:-}"
+
+case "$command_name" in
+  write)
+    shift
+
+    if ! metadata_write "$@"; then
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  read)
+    if [ "$#" -ne 2 ]; then
+      usage >&2
+      exit 1
+    fi
+
+    if metadata_read "$2"; then
+      metadata_print
+    else
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  select)
+    if [ "$#" -ne 3 ]; then
+      usage >&2
+      exit 1
+    fi
+
+    if metadata_select "$2" "$3"; then
+      printf '%s\n' "$metadata_selected_record"
+    else
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac
