@@ -240,7 +240,11 @@ require_grep 'block-offset = .*DATA_PART_OFFSET' fwup.conf
 require_grep 'type = 0x83 # Linux' fwup.conf
 require_grep 'on-resource rootfs_hack.squashfs { fat_write' fwup.conf
 require_grep 'on-resource rootfs.img { raw_write(${APPLICATION_PART_OFFSET}) }' fwup.conf
-require_grep 'raw_memset.*DATA_PART_OFFSET.*256.*0xff' fwup.conf
+reject_grep 'raw_memset.*DATA_PART_OFFSET' fwup.conf
+require_grep 'file-resource atomcam2-data-init' fwup.conf
+require_grep 'contents = "format-if-missing\\n"' fwup.conf
+require_grep 'on-resource atomcam2-data-init' fwup.conf
+require_grep 'fat_write.*"atomcam2-data-init"' fwup.conf
 require_grep 'ADR 0006 boot-manager prototype supports complete installations only' fwup.conf
 
 fwup_upgrade_task="$(
@@ -285,12 +289,47 @@ require_grep 'output directory must differ from images directory' scripts/atomca
 require_grep 'kernel image is too large for the AtomCam2 boot contract' scripts/atomcam2-package-flat-sd.sh
 require_grep 'ATOMCAM2_KERNEL_IMAGE must point to the verified AtomCam2 control kernel' scripts/post-image.sh
 require_grep 'atomcam2-build-boot-manager.sh' scripts/post-image.sh
+require_grep '"$root_dir/mnt/application"' scripts/atomcam2-build-boot-manager.sh
+require_grep '"$root_dir/mnt/boot-manager"' scripts/atomcam2-build-boot-manager.sh
+require_grep 'mkdir -p "$TARGET_DIR/mnt/boot-manager"' board/atomcam2/post-build.sh
 require_grep 'atomcam2-boot-manager.squashfs' scripts/post-image.sh
+require_grep 'find_boot_mount' board/atomcam2/boot-manager/init
+require_grep 'ensure_boot_mount_writable' board/atomcam2/boot-manager/init
+require_grep 'mount -o remount,rw' board/atomcam2/boot-manager/init
+require_grep 'boot_manager_entered' board/atomcam2/boot-manager/init
+require_grep 'bootstrap_kernel_filesystems' board/atomcam2/boot-manager/init
+require_grep 'mount -t proc proc /proc' board/atomcam2/boot-manager/init
+require_grep 'mount -t sysfs sysfs /sys' board/atomcam2/boot-manager/init
+require_grep 'find_prototype_data_partition' board/atomcam2/boot-manager/init
+require_grep 'ATOMCAM2_BOOT_STAGE=' board/atomcam2/boot-manager/init
 require_grep 'application_partition="${root_disk}p2"' board/atomcam2/boot-manager/init
 require_grep 'mount -t squashfs -o ro' board/atomcam2/boot-manager/init
-require_grep 'pivot_root . .' board/atomcam2/boot-manager/init
-require_grep 'umount -l .' board/atomcam2/boot-manager/init
+require_grep 'pivot_root_command="/sbin/pivot_root"' board/atomcam2/boot-manager/init
+require_grep '"\$pivot_root_command" \. "\$old_root_relative_mount"' board/atomcam2/boot-manager/init
 require_grep 'exec /sbin/init' board/atomcam2/boot-manager/init
+require_grep 'moved_raw_stage_partition=' board/atomcam2/boot-manager/init
+require_grep 'exec 9>/dev/null' board/atomcam2/boot-manager/init
+require_grep '2>&9' board/atomcam2/boot-manager/init
+require_grep 'conv=sync,notrunc' board/atomcam2/boot-manager/init
+require_grep 'exec 9>&-' board/atomcam2/boot-manager/init
+require_grep 'temporary_output_path=' board/atomcam2/boot-manager/init
+require_grep 'dev_move' board/atomcam2/boot-manager/init
+require_grep 'dev_moved' board/atomcam2/boot-manager/init
+require_grep 'sys_move' board/atomcam2/boot-manager/init
+require_grep 'boot_mount_move' board/atomcam2/boot-manager/init
+require_grep 'proc_move' board/atomcam2/boot-manager/init
+require_grep 'proc_moved' board/atomcam2/boot-manager/init
+require_grep 'pivot_root_error_path=' board/atomcam2/boot-manager/init
+require_grep 'old_root_mount="/mnt/boot-manager"' board/atomcam2/boot-manager/init
+require_grep 'old_root_relative_mount="mnt/boot-manager"' board/atomcam2/boot-manager/init
+require_grep 'application_umount_command=' board/atomcam2/boot-manager/init
+require_grep '"\$application_umount_command"' board/atomcam2/boot-manager/init
+require_grep 'old_root_unmount_error_path=' board/atomcam2/boot-manager/init
+require_grep '"\$old_root_mount"' board/atomcam2/boot-manager/init
+require_grep 'write_raw_stage "pivot_root_returned"' board/atomcam2/boot-manager/init
+require_grep 'pivot_root_failed_${pivot_root_status}' board/atomcam2/boot-manager/init
+require_grep 'write_raw_stage "old_root_unmount"' board/atomcam2/boot-manager/init
+require_grep 'write_raw_stage "old_root_unmounted"' board/atomcam2/boot-manager/init
 require_grep 'b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc' scripts/post-image.sh
 require_grep 'ATOMCAM2_KERNEL_IMAGE' scripts/release-artifacts.sh
 require_grep 'unexpected AtomCam2 control kernel SHA256' scripts/release-artifacts.sh
@@ -324,6 +363,16 @@ require_grep '/dev/rootdisk0p2' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep '/dev/rootdisk0p3' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep 'application_partition="${root_disk}p2"' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep 'data_partition="${root_disk}p3"' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'data_init_marker=' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'data_initialization_requested' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'format-if-missing' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep '/sbin/dumpe2fs -h' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep '/sbin/mkfs.ext2' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep '/bin/mount' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep '.atomcam2-write-probe' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'rm -f "$data_init_marker"' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'write_report "pre_run_failed"' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'write_report "pre_run_complete"' rootfs_overlay/usr/bin/atomcam2-pre-run
 reject_grep 'create_rootdisk_links' board/atomcam2/initramfs/init
 
 for symlink_path in \

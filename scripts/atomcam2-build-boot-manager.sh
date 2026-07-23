@@ -79,6 +79,17 @@ fi
 
 rm -f "$root_dir/sbin/init" "$root_dir/sbin/init.real"
 rm -rf "$root_dir/srv/erlang"
+
+mkdir -p \
+  "$root_dir/dev" \
+  "$root_dir/proc" \
+  "$root_dir/sys" \
+  "$root_dir/tmp" \
+  "$root_dir/boot" \
+  "$root_dir/media/mmc" \
+  "$root_dir/mnt/application" \
+  "$root_dir/mnt/boot-manager"
+
 install -m 0755 "$init_script" "$root_dir/sbin/init"
 
 rm -f "$output_image"

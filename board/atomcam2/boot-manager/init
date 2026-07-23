@@ -4,9 +4,95 @@ set -eu
 PATH=/sbin:/bin:/usr/sbin:/usr/bin
 export PATH
 
-boot_mount="/media/mmc"
+boot_mount=""
+final_boot_mount="/media/mmc"
 application_mount="/mnt/application"
+old_root_mount="/mnt/boot-manager"
+old_root_relative_mount="mnt/boot-manager"
 report_name="atomcam2-boot-manager.env"
+boot_mount_writable=0
+prototype_data_partition=""
+
+bootstrap_kernel_filesystems() {
+  mkdir -p /dev /proc /sys /tmp "$final_boot_mount" "$application_mount"
+
+  if [ ! -r /proc/mounts ]; then
+    if mount -t proc proc /proc 2>/dev/null; then
+      :
+    else
+      true
+    fi
+  fi
+
+  if [ ! -d /sys/class/block ]; then
+    if mount -t sysfs sysfs /sys 2>/dev/null; then
+      :
+    else
+      true
+    fi
+  fi
+
+  if [ ! -b /dev/mmcblk0 ]; then
+    if [ ! -b /dev/mmcblk1 ]; then
+      if mount -t devtmpfs devtmpfs /dev 2>/dev/null; then
+        :
+      else
+        true
+      fi
+    fi
+  fi
+}
+
+find_prototype_data_partition() {
+  for candidate_partition in /dev/mmcblk*p3; do
+    if [ -b "$candidate_partition" ]; then
+      prototype_data_partition="$candidate_partition"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+write_raw_stage() {
+  raw_stage="$1"
+
+  if [ -z "$prototype_data_partition" ]; then
+    if ! find_prototype_data_partition; then
+      return 0
+    fi
+  fi
+
+  raw_stage_partition="$prototype_data_partition"
+
+  if [ ! -b "$raw_stage_partition" ]; then
+    moved_raw_stage_partition="$application_mount$prototype_data_partition"
+
+    if [ -b "$moved_raw_stage_partition" ]; then
+      raw_stage_partition="$moved_raw_stage_partition"
+    else
+      return 0
+    fi
+  fi
+
+  if printf 'ATOMCAM2_BOOT_STAGE=%s\n' "$raw_stage" |
+    dd \
+      of="$raw_stage_partition" \
+      bs=256 \
+      count=1 \
+      conv=sync,notrunc \
+      2>&9; then
+    :
+  else
+    true
+  fi
+
+  if sync 2>&9; then
+    :
+  else
+    true
+  fi
+}
 
 boot_bind_moved=0
 boot_mount_moved=0
@@ -32,14 +118,27 @@ is_mounted() {
 write_report_to() {
   output_path="$1"
   stage="$2"
+  temporary_output_path="${output_path}.tmp"
 
   if {
     echo "stage=$stage"
     echo "boot_partition=${boot_partition:-}"
+    echo "boot_mount=${boot_mount:-}"
+    echo "boot_mount_writable=$boot_mount_writable"
     echo "root_disk=${root_disk:-}"
     echo "application_partition=${application_partition:-}"
-  } > "$output_path" 2>/dev/null; then
-    return 0
+  } > "$temporary_output_path" 2>&9; then
+    if mv -f "$temporary_output_path" "$output_path" 2>&9; then
+      return 0
+    fi
+  fi
+
+  if [ -e "$temporary_output_path" ]; then
+    if rm -f "$temporary_output_path" 2>&9; then
+      :
+    else
+      true
+    fi
   fi
 
   return 1
@@ -48,11 +147,27 @@ write_report_to() {
 write_report() {
   stage="$1"
 
-  if write_report_to "$boot_mount/$report_name" "$stage"; then
+  write_raw_stage "$stage"
+
+  if [ "$boot_mount_moved" -eq 1 ]; then
+    moved_report_path="$application_mount$final_boot_mount/$report_name"
+
+    if write_report_to "$moved_report_path" "$stage"; then
+      return 0
+    fi
+  fi
+
+  if [ -n "${boot_mount:-}" ]; then
+    if write_report_to "$boot_mount/$report_name" "$stage"; then
+      return 0
+    fi
+  fi
+
+  if write_report_to "$application_mount$final_boot_mount/$report_name" "$stage"; then
     return 0
   fi
 
-  if write_report_to "$application_mount/media/mmc/$report_name" "$stage"; then
+  if write_report_to "$final_boot_mount/$report_name" "$stage"; then
     return 0
   fi
 
@@ -71,7 +186,7 @@ restore_mounts() {
   fi
 
   if [ "$boot_mount_moved" -eq 1 ]; then
-    if mount --move "$application_mount/media/mmc" "$boot_mount"; then
+    if mount --move "$application_mount$final_boot_mount" "$boot_mount"; then
       boot_mount_moved=0
     fi
   fi
@@ -98,19 +213,44 @@ restore_mounts() {
 enter_recovery() {
   stage="$1"
 
-  restore_mounts
   write_report "$stage"
+  restore_mounts
+  write_report "${stage}_recovered"
   echo "atomcam2 boot manager: $stage" >&2
+  exec 9>&-
   exec sh
 }
 
-find_boot_partition() {
-  awk -v boot_mount="$boot_mount" '
-    $2 == boot_mount {
-      print $1
-      exit
-    }
-  ' /proc/mounts
+find_boot_mount() {
+  while read -r source_mount mount_point filesystem_type mount_options dump pass; do
+    if [ -f "$mount_point/rootfs_hack.squashfs" ]; then
+      if [ -f "$mount_point/factory_t31_ZMC6tiIDQN" ]; then
+        boot_partition="$source_mount"
+        boot_mount="$mount_point"
+        return 0
+      fi
+    fi
+  done < /proc/mounts
+
+  return 1
+}
+
+ensure_boot_mount_writable() {
+  write_probe="$boot_mount/.atomcam2-boot-manager-write-test"
+
+  if : > "$write_probe" 2>&9; then
+    rm -f "$write_probe"
+    return 0
+  fi
+
+  if mount -o remount,rw "$boot_partition" "$boot_mount" 2>&9; then
+    if : > "$write_probe" 2>&9; then
+      rm -f "$write_probe"
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 derive_root_disk() {
@@ -132,10 +272,20 @@ derive_root_disk() {
 
 mkdir -p "$application_mount" /tmp
 
-boot_partition="$(find_boot_partition)"
-if [ -z "$boot_partition" ]; then
-  enter_recovery "boot_partition_not_found"
+bootstrap_kernel_filesystems
+exec 9>/dev/null
+write_raw_stage "boot_manager_entered"
+
+boot_partition=""
+if ! find_boot_mount; then
+  enter_recovery "boot_mount_not_found"
 fi
+
+if ensure_boot_mount_writable; then
+  boot_mount_writable=1
+fi
+
+write_report "boot_manager_entered"
 
 root_disk=""
 if ! derive_root_disk; then
@@ -147,7 +297,9 @@ if [ ! -b "$application_partition" ]; then
   enter_recovery "application_partition_not_found"
 fi
 
-if ! command -v pivot_root >/dev/null 2>&1; then
+pivot_root_command="/sbin/pivot_root"
+
+if [ ! -x "$pivot_root_command" ]; then
   enter_recovery "pivot_root_unavailable"
 fi
 
@@ -159,7 +311,20 @@ if [ ! -x "$application_mount/sbin/init" ]; then
   enter_recovery "application_init_missing"
 fi
 
-for required_directory in boot dev media/mmc proc sys; do
+application_umount_command=""
+
+for candidate_command in /bin/umount /sbin/umount; do
+  if [ -x "$application_mount$candidate_command" ]; then
+    application_umount_command="$candidate_command"
+    break
+  fi
+done
+
+if [ -z "$application_umount_command" ]; then
+  enter_recovery "application_umount_missing"
+fi
+
+for required_directory in boot dev media/mmc mnt/boot-manager proc sys; do
   if [ ! -d "$application_mount/$required_directory" ]; then
     enter_recovery "application_mountpoint_missing"
   fi
@@ -168,55 +333,95 @@ done
 write_report "application_mounted"
 
 if is_mounted /boot; then
+  write_report "boot_bind_move"
+
   if mount --move /boot "$application_mount/boot"; then
     boot_bind_moved=1
+    write_report "boot_bind_moved"
   else
     enter_recovery "boot_bind_move_failed"
   fi
+else
+  write_report "boot_bind_not_mounted"
 fi
+
+write_report "dev_move"
 
 if mount --move /dev "$application_mount/dev"; then
   dev_moved=1
+  write_report "dev_moved"
 else
   enter_recovery "dev_move_failed"
 fi
 
+write_report "sys_move"
+
 if mount --move /sys "$application_mount/sys"; then
   sys_moved=1
+  write_report "sys_moved"
 else
   enter_recovery "sys_move_failed"
 fi
 
-if mount --move "$boot_mount" "$application_mount/media/mmc"; then
+write_report "boot_mount_move"
+
+if mount --move "$boot_mount" "$application_mount$final_boot_mount"; then
   boot_mount_moved=1
+  write_report "boot_mount_moved"
 else
   enter_recovery "boot_mount_move_failed"
 fi
 
+write_report "proc_move"
+
 if mount --move /proc "$application_mount/proc"; then
   proc_moved=1
+  write_report "proc_moved"
 else
   enter_recovery "proc_move_failed"
 fi
 
 write_report "pivot_root"
 
-cd "$application_mount"
-if pivot_root . .; then
-  :
-else
-  cd /
-  enter_recovery "pivot_root_failed"
-fi
+pivot_root_error_path="$application_mount$final_boot_mount/atomcam2-pivot-root.err"
 
-if umount -l .; then
+cd "$application_mount"
+if "$pivot_root_command" . "$old_root_relative_mount" 2>"$pivot_root_error_path"; then
   cd /
+  write_raw_stage "pivot_root_returned"
 else
+  pivot_root_status="$?"
   cd /
-  write_report "old_root_unmount_failed"
-  echo "atomcam2 boot manager: old root remains mounted" >&2
+  write_report "pivot_root_failed_${pivot_root_status}"
+  restore_mounts
+  write_report "pivot_root_recovered_${pivot_root_status}"
+  echo "atomcam2 boot manager: pivot_root failed with status $pivot_root_status" >&2
+  exec 9>&-
   exec sh
 fi
 
+write_raw_stage "old_root_unmount"
+
+old_root_unmount_error_path="$final_boot_mount/atomcam2-old-root-unmount.err"
+
+if "$application_umount_command"   -l   "$old_root_mount"   2>"$old_root_unmount_error_path"; then
+
+  write_raw_stage "old_root_unmounted"
+else
+  old_root_unmount_status="$?"
+  write_report "old_root_unmount_failed_${old_root_unmount_status}"
+  echo     "atomcam2 boot manager: old root unmount failed with status $old_root_unmount_status"     >&2
+  exec 9>&-
+  exec sh
+fi
+
+boot_mount="$final_boot_mount"
+boot_bind_moved=0
+boot_mount_moved=0
+dev_moved=0
+proc_moved=0
+sys_moved=0
+
 write_report "application_root"
+exec 9>&-
 exec /sbin/init

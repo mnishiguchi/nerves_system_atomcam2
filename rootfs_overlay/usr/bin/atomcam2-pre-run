@@ -13,6 +13,8 @@ boot_mount="${ATOMCAM2_BOOT_MOUNT:-/media/mmc}"
 report_file="${ATOMCAM2_PRE_RUN_REPORT:-/media/mmc/atomcam2-pre-run.env}"
 default_hostname="${ATOMCAM2_DEFAULT_HOSTNAME:-nerves}"
 hostname_file="${ATOMCAM2_HOSTNAME_FILE:-/media/mmc/hostname}"
+data_mount="${ATOMCAM2_DATA_MOUNT:-/data}"
+data_init_marker="${ATOMCAM2_DATA_INIT_MARKER:-$boot_mount/atomcam2-data-init}"
 
 find_boot_partition() {
   awk -v boot_mount="$boot_mount" '
@@ -100,13 +102,154 @@ read_hostname() {
   fi
 }
 
-mkdir -p "$boot_mount" /tmp || true
+data_initialization_requested() {
+  if [ ! -f "$data_init_marker" ]; then
+    return 1
+  fi
+
+  data_init_marker_value="$(
+    sed -n '1{s/\r$//;p;}' "$data_init_marker"
+  )"
+
+  if [ "$data_init_marker_value" = "format-if-missing" ]; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+data_partition_has_ext2() {
+  if /sbin/dumpe2fs -h "$data_partition" >/dev/null 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+prepare_data_partition() {
+  if [ ! -b "$data_partition" ]; then
+    data_status="partition_missing"
+    return 1
+  fi
+
+  if [ ! -x /sbin/dumpe2fs ]; then
+    data_status="dumpe2fs_missing"
+    return 1
+  fi
+
+  if [ ! -x /sbin/mkfs.ext2 ]; then
+    data_status="mkfs_ext2_missing"
+    return 1
+  fi
+
+  if [ ! -x /bin/mount ]; then
+    data_status="mount_missing"
+    return 1
+  fi
+
+  if data_initialization_requested; then
+    data_init_requested=1
+  fi
+
+  if data_partition_has_ext2; then
+    data_status="existing_ext2"
+  elif [ "$data_init_requested" = "1" ]; then
+    if /sbin/mkfs.ext2 \
+      -q \
+      -F \
+      -m 0 \
+      -L ATOMCAM2_DATA \
+      "$data_partition"; then
+
+      data_status="formatted_ext2"
+    else
+      data_status="format_failed"
+      return 1
+    fi
+  else
+    data_status="filesystem_missing"
+    return 1
+  fi
+
+  if grep -F " $data_mount " /proc/mounts >/dev/null; then
+    data_status="${data_status}_mounted"
+  elif /bin/mount \
+    -t ext2 \
+    "$data_partition" \
+    "$data_mount"; then
+
+    data_status="${data_status}_mounted"
+  else
+    data_status="mount_failed"
+    return 1
+  fi
+
+  data_probe_file="$data_mount/.atomcam2-write-probe"
+
+  if : > "$data_probe_file"; then
+    data_writable=1
+  else
+    data_status="write_probe_failed"
+    return 1
+  fi
+
+  if rm -f "$data_probe_file"; then
+    :
+  else
+    data_status="write_probe_remove_failed"
+    return 1
+  fi
+
+  if [ "$data_init_requested" = "1" ]; then
+    if rm -f "$data_init_marker"; then
+      data_init_requested=0
+    else
+      data_status="init_marker_remove_failed"
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
+write_report() {
+  report_stage="$1"
+
+  if {
+    echo "stage=$report_stage"
+    echo "rootdisk_links=$rootdisk_links"
+    echo "root_disk=$root_disk"
+    echo "boot_partition=$boot_partition"
+    echo "application_partition=$application_partition"
+    echo "data_partition=$data_partition"
+    echo "data_mount=$data_mount"
+    echo "data_status=$data_status"
+    echo "data_writable=$data_writable"
+    echo "data_init_requested=$data_init_requested"
+    echo "hostname=$(hostname 2>/dev/null || true)"
+    echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
+  } > "$report_file" 2>/dev/null; then
+    :
+  else
+    echo "atomcam2 pre-run: could not write $report_file" >&2
+  fi
+}
+
+if mkdir -p "$boot_mount" "$data_mount" /tmp; then
+  :
+else
+  echo "atomcam2 pre-run: could not prepare mount directories" >&2
+  exit 1
+fi
 
 root_disk=""
 boot_partition=""
 application_partition=""
 data_partition=""
 rootdisk_links=0
+data_status="not_started"
+data_writable=0
+data_init_requested=0
 
 if create_rootdisk_links; then
   rootdisk_links=1
@@ -123,21 +266,20 @@ fi
 
 hostname "$desired_hostname" 2>/dev/null || true
 
+if prepare_data_partition; then
+  :
+else
+  write_report "pre_run_failed"
+  echo "atomcam2 pre-run: $data_status" >&2
+  exit 1
+fi
+
 if [ "${ATOMCAM2_PRE_RUN_WIFI_DRIVER:-1}" = "1" ]; then
   atomcam2-wifi-driver || true
 fi
 
 atomcam2-network-check >/dev/null 2>&1 || true
 
-{
-  echo "stage=pre_run_complete"
-  echo "rootdisk_links=$rootdisk_links"
-  echo "root_disk=$root_disk"
-  echo "boot_partition=$boot_partition"
-  echo "application_partition=$application_partition"
-  echo "data_partition=$data_partition"
-  echo "hostname=$(hostname 2>/dev/null || true)"
-  echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
-} > "$report_file" 2>/dev/null || true
+write_report "pre_run_complete"
 
 exit 0

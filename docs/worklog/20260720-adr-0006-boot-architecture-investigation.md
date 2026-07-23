@@ -332,3 +332,122 @@ watchdog assumptions.
 
 No A/B metadata, update, or remote-upload implementation should begin before
 that prototype succeeds.
+
+## Prototype boot handoff and data persistence verification
+
+The physical handoff prototype was verified on an Atom Cam 2 using the protected vendor control kernel.
+
+Verified boot path:
+
+```text
+protected vendor kernel
+-> vendor initramfs
+-> immutable boot-manager SquashFS
+-> application SquashFS on partition 2
+-> pivot_root
+-> old boot-manager root detached
+-> Nerves release
+```
+
+The boot manager dynamically discovered the FAT boot mount, moved the required kernel filesystems into the application root, completed `pivot_root`, unmounted the old root, and started `/sbin/init`.
+
+Early boot progress was captured through FAT reports and raw stage breadcrumbs written to the reserved beginning of prototype partition 3.
+
+### Data partition initialization
+
+A complete installation writes the following one-time authorization marker to the FAT partition:
+
+```text
+atomcam2-data-init
+format-if-missing
+```
+
+On first boot, `atomcam2-pre-run`:
+
+- detected that partition 3 did not contain ext2
+- formatted it as ext2 with label `ATOMCAM2_DATA`
+- mounted it read-write at `/data`
+- verified write access
+- removed the initialization marker
+
+The resulting report contained:
+
+```text
+stage=pre_run_complete
+data_status=formatted_ext2_mounted
+data_writable=1
+data_init_requested=0
+```
+
+### Destructive raw write finding
+
+The initial prototype used:
+
+```text
+raw_memset(${DATA_PART_OFFSET}, 256, 0xff)
+```
+
+The count was interpreted as 256 sectors rather than 256 bytes. This erased 131072 bytes and destroyed the ext2 superblock at byte 1024.
+
+The destructive operation was removed. The smoke test now rejects any `raw_memset` targeting `DATA_PART_OFFSET`.
+
+### Existing filesystem preservation
+
+A preservation probe was written and synchronized:
+
+```text
+/data/adr0006-preservation-probe
+preserve across complete
+```
+
+Its SHA-256 before the corrected complete installation was:
+
+```text
+6c27f92a01ddbbd369731e1020ab5f268499c30634b1ef126e8251fa76c8f78c
+```
+
+After installing the corrected firmware with the `complete` task:
+
+- partition 3 remained ext2
+- the `ATOMCAM2_DATA` label remained
+- the partition table remained unchanged
+- the probe remained present
+- the probe SHA-256 remained identical
+
+After reboot, the report contained:
+
+```text
+stage=pre_run_complete
+data_status=existing_ext2_mounted
+data_writable=1
+data_init_requested=0
+```
+
+The runtime mount was:
+
+```text
+/dev/mmcblk0p3 /data ext2 rw,relatime,errors=continue
+```
+
+The initialization marker was removed after successful mounting.
+
+### Verified firmware
+
+```text
+Nickname: mimic-lonely
+UUID: 898ac04d-2f4b-57a7-22a9-daddbea2fd6f
+Version: 0.1.0
+Platform: atomcam2
+```
+
+### Result
+
+The prototype now proves:
+
+- reliable handoff from the immutable boot manager to application partition 2
+- detachment of the old boot-manager root
+- explicit first-boot authorization before formatting partition 3
+- automatic read-write mounting of `/data`
+- preservation of an existing healthy `/data` filesystem across complete installation
+
+The prototype does not yet implement A/B slot selection, rollback metadata, confirmation, attempt counting, or watchdog-driven rollback.
