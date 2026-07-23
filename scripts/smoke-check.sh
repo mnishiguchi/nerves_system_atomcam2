@@ -325,9 +325,20 @@ require_grep 'boot_manager_entered' board/atomcam2/boot-manager/init
 require_grep 'bootstrap_kernel_filesystems' board/atomcam2/boot-manager/init
 require_grep 'mount -t proc proc /proc' board/atomcam2/boot-manager/init
 require_grep 'mount -t sysfs sysfs /sys' board/atomcam2/boot-manager/init
+require_grep 'mount -t tmpfs tmpfs /tmp' board/atomcam2/boot-manager/init
 require_grep 'find_prototype_data_partition' board/atomcam2/boot-manager/init
 require_grep 'ATOMCAM2_BOOT_STAGE=' board/atomcam2/boot-manager/init
 require_grep 'application_partition="${root_disk}p2"' board/atomcam2/boot-manager/init
+require_grep 'metadata_command="/usr/bin/atomcam2-boot-metadata"' board/atomcam2/boot-manager/init
+require_grep 'read_boot_metadata' board/atomcam2/boot-manager/init
+require_grep 'select-device' board/atomcam2/boot-manager/init
+require_grep 'boot_metadata_status="unavailable"' board/atomcam2/boot-manager/init
+require_grep 'boot_metadata_status="selected"' board/atomcam2/boot-manager/init
+require_grep 'boot_metadata_selected_copy=' board/atomcam2/boot-manager/init
+require_grep 'boot_metadata_generation=' board/atomcam2/boot-manager/init
+require_grep 'boot_metadata_confirmed_slot=' board/atomcam2/boot-manager/init
+require_grep 'write_report "boot_metadata_selected"' board/atomcam2/boot-manager/init
+require_grep 'write_report "boot_metadata_unavailable"' board/atomcam2/boot-manager/init
 require_grep 'mount -t squashfs -o ro' board/atomcam2/boot-manager/init
 require_grep 'pivot_root_command="/sbin/pivot_root"' board/atomcam2/boot-manager/init
 require_grep '"\$pivot_root_command" \. "\$old_root_relative_mount"' board/atomcam2/boot-manager/init
