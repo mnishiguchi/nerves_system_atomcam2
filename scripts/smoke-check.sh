@@ -291,6 +291,12 @@ require_grep 'ATOMCAM2_KERNEL_IMAGE must point to the verified AtomCam2 control 
 require_grep 'atomcam2-build-boot-manager.sh' scripts/post-image.sh
 require_grep '"$root_dir/mnt/application"' scripts/atomcam2-build-boot-manager.sh
 require_grep '"$root_dir/mnt/boot-manager"' scripts/atomcam2-build-boot-manager.sh
+require_grep 'atomcam2-boot-metadata.sh' scripts/atomcam2-build-boot-manager.sh
+require_grep '"$root_dir/usr/bin/atomcam2-boot-metadata"' scripts/atomcam2-build-boot-manager.sh
+require_grep 'metadata_magic="ATOMCAM2_BOOT_METADATA_V1"' scripts/atomcam2-boot-metadata.sh
+require_grep 'metadata_record_size=4096' scripts/atomcam2-boot-metadata.sh
+require_grep 'equal_generation_conflict' scripts/atomcam2-boot-metadata.sh
+require_grep 'reject malformed firmware UUID' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'mkdir -p "$TARGET_DIR/mnt/boot-manager"' board/atomcam2/post-build.sh
 require_grep 'atomcam2-boot-manager.squashfs' scripts/post-image.sh
 require_grep 'find_boot_mount' board/atomcam2/boot-manager/init
@@ -419,3 +425,16 @@ require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
 require_grep 'Atomcam2NervesApp.TimeSync' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_grep 'VintageNet.subscribe(@connection_property)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
 require_grep 'NervesTime.restart_ntpd()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/time_sync.ex
+
+# Verify the boot metadata codec behavior.
+metadata_test="$(
+  CDPATH= cd -- "$(dirname "$0")" &&
+    pwd
+)/test-atomcam2-boot-metadata.sh"
+
+if [ ! -x "$metadata_test" ]; then
+  echo "error: metadata test is not executable: $metadata_test" >&2
+  exit 1
+fi
+
+"$metadata_test"

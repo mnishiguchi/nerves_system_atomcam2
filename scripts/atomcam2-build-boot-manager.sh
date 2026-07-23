@@ -88,9 +88,23 @@ mkdir -p \
   "$root_dir/boot" \
   "$root_dir/media/mmc" \
   "$root_dir/mnt/application" \
-  "$root_dir/mnt/boot-manager"
+  "$root_dir/mnt/boot-manager" \
+  "$root_dir/usr/bin"
+
+metadata_script="$(
+  CDPATH= cd -- "$(dirname "$0")" &&
+    pwd
+)/atomcam2-boot-metadata.sh"
+
+if [ ! -f "$metadata_script" ]; then
+  echo "error: boot metadata codec not found: $metadata_script" >&2
+  exit 1
+fi
 
 install -m 0755 "$init_script" "$root_dir/sbin/init"
+install -m 0755 \
+  "$metadata_script" \
+  "$root_dir/usr/bin/atomcam2-boot-metadata"
 
 rm -f "$output_image"
 "$mksquashfs_command" \
