@@ -305,6 +305,17 @@ require_grep 'select-device' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'BOOT_METADATA_RECORD_BLOCK_COUNT, 8' fwup.conf
 require_grep 'BOOT_METADATA_RECORD_A_OFFSET, 2032' fwup.conf
 require_grep 'BOOT_METADATA_RECORD_B_OFFSET, 2040' fwup.conf
+require_grep 'metadata_write_initial_record' scripts/atomcam2-boot-metadata.sh
+require_grep 'firmware-id' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'initial-record' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'initial boot metadata record' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'atomcam2-boot-metadata.bin' examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
+require_grep 'initial-record' examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
+require_grep 'define(BOOT_METADATA' fwup.conf
+require_grep 'file-resource boot-metadata-a' fwup.conf
+require_grep 'file-resource boot-metadata-b' fwup.conf
+require_grep 'raw_write(${BOOT_METADATA_RECORD_A_OFFSET})' fwup.conf
+require_grep 'raw_write(${BOOT_METADATA_RECORD_B_OFFSET})' fwup.conf
 require_grep 'mkdir -p "$TARGET_DIR/mnt/boot-manager"' board/atomcam2/post-build.sh
 require_grep 'atomcam2-boot-manager.squashfs' scripts/post-image.sh
 require_grep 'find_boot_mount' board/atomcam2/boot-manager/init

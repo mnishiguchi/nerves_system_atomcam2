@@ -30,6 +30,8 @@ output_dir="$build_path/nerves/images"
 preserved_rootfs="$output_dir/rootfs_hack.final.squashfs"
 summary_path="$preserved_rootfs.summary.txt"
 payload_dir="$output_dir/atomcam2-sd"
+initial_boot_metadata="$output_dir/atomcam2-boot-metadata.bin"
+boot_metadata_script="$repo_root/scripts/atomcam2-boot-metadata.sh"
 listing_file="$(mktemp)"
 
 cleanup() {
@@ -46,6 +48,16 @@ if ! grep -q 'squashfs-root/srv/erlang' "$listing_file"; then
   echo "preserved rootfs does not contain /srv/erlang" >&2
   exit 1
 fi
+
+if [ ! -x "$boot_metadata_script" ]; then
+  echo "boot metadata script is unavailable: $boot_metadata_script" >&2
+  exit 1
+fi
+
+"$boot_metadata_script" \
+  initial-record \
+  "$initial_boot_metadata" \
+  "$preserved_rootfs"
 
 hostname_value="nerves"
 if [ -s "$system_path/images/hostname" ]; then
@@ -74,6 +86,9 @@ base_rootfs="$system_path/images/rootfs.squashfs"
   echo "preserved_rootfs=$preserved_rootfs"
   echo "preserved_rootfs_size_bytes=$final_size_bytes"
   echo "preserved_rootfs_sha256=$(sha256sum "$preserved_rootfs" | awk '{print $1}')"
+  echo "initial_boot_metadata=$initial_boot_metadata"
+  echo "initial_boot_metadata_size_bytes=$(wc -c < "$initial_boot_metadata" | tr -d '[:space:]')"
+  echo "initial_boot_metadata_sha256=$(sha256sum "$initial_boot_metadata" | awk '{print $1}')"
 
   if [ -f "$base_rootfs" ]; then
     echo "base_rootfs=$base_rootfs"
@@ -85,5 +100,6 @@ base_rootfs="$system_path/images/rootfs.squashfs"
 } > "$summary_path"
 
 echo "Preserved merged rootfs: $preserved_rootfs"
+echo "Initial boot metadata: $initial_boot_metadata"
 echo "Rootfs inspection summary: $summary_path"
 echo "Final AtomCam2 SD payload: $payload_dir"

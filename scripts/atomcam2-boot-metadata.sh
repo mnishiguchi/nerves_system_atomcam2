@@ -380,6 +380,89 @@ metadata_select() {
 }
 
 
+metadata_firmware_id_from_sha256() {
+  if [ "$#" -ne 1 ]; then
+    metadata_error="firmware_id_argument_count"
+    return 1
+  fi
+
+  firmware_sha256="$1"
+
+  firmware_id="$(
+    awk -v sha256="$firmware_sha256" '
+      BEGIN {
+        if (length(sha256) != 64) {
+          exit 1
+        }
+
+        if (sha256 ~ /[^0-9a-f]/) {
+          exit 1
+        }
+
+        printf "%s-%s-5%s-8%s-%s\n",
+          substr(sha256, 1, 8),
+          substr(sha256, 9, 4),
+          substr(sha256, 14, 3),
+          substr(sha256, 18, 3),
+          substr(sha256, 21, 12)
+      }
+    '
+  )" || {
+    metadata_error="invalid_firmware_sha256"
+    return 1
+  }
+
+  printf '%s\n' "$firmware_id"
+}
+
+metadata_write_initial_record() {
+  if [ "$#" -ne 2 ]; then
+    metadata_error="initial_record_argument_count"
+    return 1
+  fi
+
+  output_path="$1"
+  rootfs_path="$2"
+
+  if [ ! -f "$rootfs_path" ]; then
+    metadata_error="rootfs_missing"
+    return 1
+  fi
+
+  if [ ! -r "$rootfs_path" ]; then
+    metadata_error="rootfs_not_readable"
+    return 1
+  fi
+
+  slot_a_sha256="$(
+    sha256sum "$rootfs_path" |
+      awk '{print $1}'
+  )" || {
+    metadata_error="rootfs_checksum_failed"
+    return 1
+  }
+
+  slot_a_firmware_id="$(
+    metadata_firmware_id_from_sha256 "$slot_a_sha256"
+  )" || {
+    return 1
+  }
+
+  metadata_write \
+    "$output_path" \
+    00000000000000000001 \
+    A \
+    - \
+    000 \
+    003 \
+    valid \
+    "$slot_a_firmware_id" \
+    "$slot_a_sha256" \
+    empty \
+    - \
+    -
+}
+
 metadata_validate_device_layout() {
   record_a_end="$(
     awk \
@@ -519,6 +602,8 @@ usage() {
   printf '%s\n' \
     "Usage:" \
     "  $0 write OUTPUT GENERATION CONFIRMED PENDING ATTEMPTS MAX_ATTEMPTS A_STATUS A_UUID A_SHA256 B_STATUS B_UUID B_SHA256" \
+    "  $0 firmware-id SHA256" \
+    "  $0 initial-record OUTPUT ROOTFS" \
     "  $0 read RECORD" \
     "  $0 select RECORD_A RECORD_B"     "  $0 select-device DEVICE [WORK_DIRECTORY]"
 }
@@ -526,6 +611,28 @@ usage() {
 command_name="${1:-}"
 
 case "$command_name" in
+  firmware-id)
+    if [ "$#" -ne 2 ]; then
+      usage >&2
+      exit 1
+    fi
+
+    if ! metadata_firmware_id_from_sha256 "$2"; then
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  initial-record)
+    if [ "$#" -ne 3 ]; then
+      usage >&2
+      exit 1
+    fi
+
+    if ! metadata_write_initial_record "$2" "$3"; then
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
   write)
     shift
 

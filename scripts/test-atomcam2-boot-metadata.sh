@@ -204,6 +204,103 @@ else
 fi
 
 
+known_sha256="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+assert_equal \
+  "aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa" \
+  "$("$metadata_script" firmware-id "$known_sha256")" \
+  "derive deterministic firmware ID"
+
+initial_rootfs="$test_root/initial-rootfs.squashfs"
+initial_record="$test_root/initial-record.bin"
+
+printf 'AtomCam2 initial rootfs test\n' > "$initial_rootfs"
+
+"$metadata_script" \
+  initial-record \
+  "$initial_record" \
+  "$initial_rootfs"
+
+initial_output="$(
+  "$metadata_script" read "$initial_record"
+)"
+
+initial_generation="$(
+  printf '%s\n' "$initial_output" |
+    awk -F= '$1 == "generation" { print $2 }'
+)"
+
+initial_confirmed_slot="$(
+  printf '%s\n' "$initial_output" |
+    awk -F= '$1 == "confirmed_slot" { print $2 }'
+)"
+
+initial_pending_slot="$(
+  printf '%s\n' "$initial_output" |
+    awk -F= '$1 == "pending_slot" { print $2 }'
+)"
+
+initial_slot_a_sha256="$(
+  printf '%s\n' "$initial_output" |
+    awk -F= '$1 == "slot_a_sha256" { print $2 }'
+)"
+
+initial_slot_a_firmware_id="$(
+  printf '%s\n' "$initial_output" |
+    awk -F= '$1 == "slot_a_firmware_id" { print $2 }'
+)"
+
+initial_slot_b_status="$(
+  printf '%s\n' "$initial_output" |
+    awk -F= '$1 == "slot_b_status" { print $2 }'
+)"
+
+expected_initial_sha256="$(
+  sha256sum "$initial_rootfs" |
+    awk '{print $1}'
+)"
+
+expected_initial_firmware_id="$(
+  "$metadata_script" firmware-id "$expected_initial_sha256"
+)"
+
+assert_equal \
+  4096 \
+  "$(wc -c < "$initial_record" | awk '{print $1}')" \
+  "initial record size"
+
+assert_equal \
+  00000000000000000001 \
+  "$initial_generation" \
+  "initial generation"
+
+assert_equal \
+  A \
+  "$initial_confirmed_slot" \
+  "initial confirmed slot"
+
+assert_equal \
+  - \
+  "$initial_pending_slot" \
+  "initial pending slot"
+
+assert_equal \
+  "$expected_initial_sha256" \
+  "$initial_slot_a_sha256" \
+  "initial slot A checksum"
+
+assert_equal \
+  "$expected_initial_firmware_id" \
+  "$initial_slot_a_firmware_id" \
+  "initial slot A firmware ID"
+
+assert_equal \
+  empty \
+  "$initial_slot_b_status" \
+  "initial slot B status"
+
+echo "ok: initial boot metadata record"
+
 device_image="$test_root/device.bin"
 device_work_directory="$test_root/device-work"
 
