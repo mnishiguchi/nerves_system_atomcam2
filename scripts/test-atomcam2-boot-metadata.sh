@@ -203,4 +203,87 @@ else
   echo "ok: reject malformed firmware UUID"
 fi
 
+
+device_image="$test_root/device.bin"
+device_work_directory="$test_root/device-work"
+
+dd \
+  if=/dev/zero \
+  of="$device_image" \
+  bs=512 \
+  count=2048 \
+  2>/dev/null
+
+dd \
+  if="$record_a" \
+  of="$device_image" \
+  bs=512 \
+  seek=2032 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+dd \
+  if="$record_b" \
+  of="$device_image" \
+  bs=512 \
+  seek=2040 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+device_output="$(
+  "$metadata_script" \
+    select-device \
+    "$device_image" \
+    "$device_work_directory"
+)"
+
+selected_copy="$(
+  printf '%s\n' "$device_output" |
+    awk -F= '$1 == "selected_copy" { print $2 }'
+)"
+
+selected_generation="$(
+  printf '%s\n' "$device_output" |
+    awk -F= '$1 == "generation" { print $2 }'
+)"
+
+assert_equal \
+  B \
+  "$selected_copy" \
+  "select newer raw-device copy"
+
+assert_equal \
+  00000000000000000002 \
+  "$selected_generation" \
+  "read raw-device generation"
+
+printf X |
+  dd \
+    of="$device_image" \
+    bs=512 \
+    seek=2040 \
+    count=1 \
+    conv=notrunc \
+    2>/dev/null
+
+device_output="$(
+  "$metadata_script" \
+    select-device \
+    "$device_image" \
+    "$device_work_directory"
+)"
+
+selected_copy="$(
+  printf '%s\n' "$device_output" |
+    awk -F= '$1 == "selected_copy" { print $2 }'
+)"
+
+assert_equal \
+  A \
+  "$selected_copy" \
+  "fall back from corrupt raw-device copy"
+
+echo "ok: raw-device metadata selection"
 echo "ok: rollback metadata tests"

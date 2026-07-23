@@ -297,6 +297,14 @@ require_grep 'metadata_magic="ATOMCAM2_BOOT_METADATA_V1"' scripts/atomcam2-boot-
 require_grep 'metadata_record_size=4096' scripts/atomcam2-boot-metadata.sh
 require_grep 'equal_generation_conflict' scripts/atomcam2-boot-metadata.sh
 require_grep 'reject malformed firmware UUID' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'metadata_record_a_sector=2032' scripts/atomcam2-boot-metadata.sh
+require_grep 'metadata_record_b_sector=2040' scripts/atomcam2-boot-metadata.sh
+require_grep 'metadata_boot_partition_sector=2048' scripts/atomcam2-boot-metadata.sh
+require_grep 'metadata_select_device' scripts/atomcam2-boot-metadata.sh
+require_grep 'select-device' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'BOOT_METADATA_RECORD_BLOCK_COUNT, 8' fwup.conf
+require_grep 'BOOT_METADATA_RECORD_A_OFFSET, 2032' fwup.conf
+require_grep 'BOOT_METADATA_RECORD_B_OFFSET, 2040' fwup.conf
 require_grep 'mkdir -p "$TARGET_DIR/mnt/boot-manager"' board/atomcam2/post-build.sh
 require_grep 'atomcam2-boot-manager.squashfs' scripts/post-image.sh
 require_grep 'find_boot_mount' board/atomcam2/boot-manager/init

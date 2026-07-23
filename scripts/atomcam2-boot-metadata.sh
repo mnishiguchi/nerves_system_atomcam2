@@ -6,6 +6,11 @@ export PATH
 
 metadata_magic="ATOMCAM2_BOOT_METADATA_V1"
 metadata_record_size=4096
+metadata_sector_size=512
+metadata_record_sector_count=8
+metadata_record_a_sector=2032
+metadata_record_b_sector=2040
+metadata_boot_partition_sector=2048
 metadata_error=""
 metadata_selected_record=""
 
@@ -374,12 +379,148 @@ metadata_select() {
   fi
 }
 
+
+metadata_validate_device_layout() {
+  record_a_end="$(
+    awk \
+      -v start="$metadata_record_a_sector" \
+      -v count="$metadata_record_sector_count" \
+      'BEGIN { print start + count }'
+  )"
+
+  record_b_end="$(
+    awk \
+      -v start="$metadata_record_b_sector" \
+      -v count="$metadata_record_sector_count" \
+      'BEGIN { print start + count }'
+  )"
+
+  if [ "$record_a_end" -ne "$metadata_record_b_sector" ]; then
+    metadata_error="record_layout_not_contiguous"
+    return 1
+  elif [ "$record_b_end" -ne "$metadata_boot_partition_sector" ]; then
+    metadata_error="record_layout_overlaps_boot_partition"
+    return 1
+  else
+    return 0
+  fi
+}
+
+metadata_extract_device_copy() {
+  if [ "$#" -ne 3 ]; then
+    metadata_error="extract_argument_count"
+    return 1
+  fi
+
+  device_path="$1"
+  copy_name="$2"
+  output_path="$3"
+
+  if ! metadata_validate_device_layout; then
+    return 1
+  fi
+
+  case "$copy_name" in
+    A)
+      record_sector="$metadata_record_a_sector"
+      ;;
+    B)
+      record_sector="$metadata_record_b_sector"
+      ;;
+    *)
+      metadata_error="invalid_copy_name"
+      return 1
+      ;;
+  esac
+
+  if dd \
+    if="$device_path" \
+    of="$output_path" \
+    bs="$metadata_sector_size" \
+    skip="$record_sector" \
+    count="$metadata_record_sector_count" \
+    conv=sync \
+    2>/dev/null; then
+
+    return 0
+  else
+    metadata_error="device_record_read_failed"
+    return 1
+  fi
+}
+
+metadata_select_device() {
+  if [ "$#" -ne 2 ]; then
+    metadata_error="select_device_argument_count"
+    return 1
+  fi
+
+  device_path="$1"
+  work_directory="$2"
+  metadata_selected_copy=""
+  metadata_selected_record=""
+  metadata_error=""
+
+  if [ ! -r "$device_path" ]; then
+    metadata_error="device_not_readable"
+    return 1
+  fi
+
+  if ! mkdir -p "$work_directory"; then
+    metadata_error="work_directory_failed"
+    return 1
+  fi
+
+  device_record_a="$work_directory/atomcam2-boot-metadata-a.$$"
+  device_record_b="$work_directory/atomcam2-boot-metadata-b.$$"
+
+  if ! metadata_extract_device_copy \
+    "$device_path" \
+    A \
+    "$device_record_a"; then
+
+    rm -f "$device_record_a" "$device_record_b"
+    return 1
+  fi
+
+  if ! metadata_extract_device_copy \
+    "$device_path" \
+    B \
+    "$device_record_b"; then
+
+    rm -f "$device_record_a" "$device_record_b"
+    return 1
+  fi
+
+  if ! metadata_select "$device_record_a" "$device_record_b"; then
+    rm -f "$device_record_a" "$device_record_b"
+    return 1
+  fi
+
+  if [ "$metadata_selected_record" = "$device_record_a" ]; then
+    metadata_selected_copy="A"
+  elif [ "$metadata_selected_record" = "$device_record_b" ]; then
+    metadata_selected_copy="B"
+  else
+    rm -f "$device_record_a" "$device_record_b"
+    metadata_selected_record=""
+    metadata_error="selected_record_unknown"
+    return 1
+  fi
+
+  rm -f "$device_record_a" "$device_record_b"
+  metadata_selected_record=""
+  metadata_error=""
+
+  return 0
+}
+
 usage() {
   printf '%s\n' \
     "Usage:" \
     "  $0 write OUTPUT GENERATION CONFIRMED PENDING ATTEMPTS MAX_ATTEMPTS A_STATUS A_UUID A_SHA256 B_STATUS B_UUID B_SHA256" \
     "  $0 read RECORD" \
-    "  $0 select RECORD_A RECORD_B"
+    "  $0 select RECORD_A RECORD_B"     "  $0 select-device DEVICE [WORK_DIRECTORY]"
 }
 
 command_name="${1:-}"
@@ -414,6 +555,24 @@ case "$command_name" in
 
     if metadata_select "$2" "$3"; then
       printf '%s\n' "$metadata_selected_record"
+    else
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  select-device)
+    if [ "$#" -eq 2 ]; then
+      work_directory="${ATOMCAM2_BOOT_METADATA_WORK_DIR:-/tmp}"
+    elif [ "$#" -eq 3 ]; then
+      work_directory="$3"
+    else
+      usage >&2
+      exit 1
+    fi
+
+    if metadata_select_device "$2" "$work_directory"; then
+      printf 'selected_copy=%s\n' "$metadata_selected_copy"
+      metadata_print
     else
       printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
       exit 1
