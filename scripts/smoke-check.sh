@@ -308,6 +308,9 @@ require_grep 'BOOT_METADATA_RECORD_B_OFFSET, 2040' fwup.conf
 require_grep 'metadata_write_initial_record' scripts/atomcam2-boot-metadata.sh
 require_grep 'firmware-id' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'initial-record' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'metadata_choose_slot' scripts/atomcam2-boot-metadata.sh
+require_grep 'choose-slot' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'pending_attempt_limit' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'initial boot metadata record' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'atomcam2-boot-metadata.bin' examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh
 require_grep 'initial-record' examples/atomcam2_nerves_app/scripts/preserve-final-rootfs.sh

@@ -301,6 +301,114 @@ assert_equal \
 
 echo "ok: initial boot metadata record"
 
+
+confirmed_policy_record="$test_root/policy-confirmed.bin"
+
+"$metadata_script" write \
+  "$confirmed_policy_record" \
+  00000000000000000006 \
+  B - 000 003 \
+  valid "$slot_a_uuid" "$slot_a_sha" \
+  valid "$slot_b_uuid" "$slot_b_sha"
+
+confirmed_policy_output="$(
+  "$metadata_script" \
+    choose-slot \
+    "$confirmed_policy_record"
+)"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$confirmed_policy_output" |
+      awk -F= '$1 == "selected_slot" { print $2 }'
+  )" \
+  "choose confirmed slot"
+
+assert_equal \
+  confirmed \
+  "$(
+    printf '%s\n' "$confirmed_policy_output" |
+      awk -F= '$1 == "selection_reason" { print $2 }'
+  )" \
+  "report confirmed selection reason"
+
+pending_policy_record="$test_root/policy-pending.bin"
+
+"$metadata_script" write \
+  "$pending_policy_record" \
+  00000000000000000007 \
+  A B 002 003 \
+  valid "$slot_a_uuid" "$slot_a_sha" \
+  valid "$slot_b_uuid" "$slot_b_sha"
+
+pending_policy_output="$(
+  "$metadata_script" \
+    choose-slot \
+    "$pending_policy_record"
+)"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$pending_policy_output" |
+      awk -F= '$1 == "selected_slot" { print $2 }'
+  )" \
+  "choose pending slot"
+
+assert_equal \
+  pending \
+  "$(
+    printf '%s\n' "$pending_policy_output" |
+      awk -F= '$1 == "selection_reason" { print $2 }'
+  )" \
+  "report pending selection reason"
+
+attempt_limit_record="$test_root/policy-attempt-limit.bin"
+
+"$metadata_script" write \
+  "$attempt_limit_record" \
+  00000000000000000008 \
+  A B 003 003 \
+  valid "$slot_a_uuid" "$slot_a_sha" \
+  valid "$slot_b_uuid" "$slot_b_sha"
+
+attempt_limit_output="$(
+  "$metadata_script" \
+    choose-slot \
+    "$attempt_limit_record"
+)"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$attempt_limit_output" |
+      awk -F= '$1 == "selected_slot" { print $2 }'
+  )" \
+  "fall back to confirmed slot"
+
+assert_equal \
+  pending_attempt_limit \
+  "$(
+    printf '%s\n' "$attempt_limit_output" |
+      awk -F= '$1 == "selection_reason" { print $2 }'
+  )" \
+  "report pending attempt limit"
+
+if "$metadata_script" \
+  choose-slot \
+  "$corrupt_a" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: chose a slot from corrupt metadata" >&2
+  exit 1
+else
+  echo "ok: reject corrupt slot-selection metadata"
+fi
+
+echo "ok: boot slot selection policy"
+
 device_image="$test_root/device.bin"
 device_work_directory="$test_root/device-work"
 

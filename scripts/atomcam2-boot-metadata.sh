@@ -13,6 +13,8 @@ metadata_record_b_sector=2040
 metadata_boot_partition_sector=2048
 metadata_error=""
 metadata_selected_record=""
+metadata_selected_slot=""
+metadata_selection_reason=""
 
 validate_values() {
   if awk \
@@ -380,6 +382,42 @@ metadata_select() {
 }
 
 
+metadata_choose_slot() {
+  if [ "$#" -ne 1 ]; then
+    metadata_error="choose_slot_argument_count"
+    return 1
+  fi
+
+  record_path="$1"
+  metadata_selected_slot=""
+  metadata_selection_reason=""
+  metadata_error=""
+
+  if ! metadata_read "$record_path"; then
+    return 1
+  fi
+
+  if [ "$metadata_pending_slot" = "-" ]; then
+    metadata_selected_slot="$metadata_confirmed_slot"
+    metadata_selection_reason="confirmed"
+    return 0
+  fi
+
+  if awk \
+    -v attempts="$metadata_pending_attempts" \
+    -v maximum="$metadata_max_attempts" \
+    'BEGIN { exit !((attempts + 0) < (maximum + 0)) }'
+  then
+    metadata_selected_slot="$metadata_pending_slot"
+    metadata_selection_reason="pending"
+  else
+    metadata_selected_slot="$metadata_confirmed_slot"
+    metadata_selection_reason="pending_attempt_limit"
+  fi
+
+  return 0
+}
+
 metadata_firmware_id_from_sha256() {
   if [ "$#" -ne 1 ]; then
     metadata_error="firmware_id_argument_count"
@@ -605,7 +643,9 @@ usage() {
     "  $0 firmware-id SHA256" \
     "  $0 initial-record OUTPUT ROOTFS" \
     "  $0 read RECORD" \
-    "  $0 select RECORD_A RECORD_B"     "  $0 select-device DEVICE [WORK_DIRECTORY]"
+    "  $0 choose-slot RECORD" \
+    "  $0 select RECORD_A RECORD_B" \
+    "  $0 select-device DEVICE [WORK_DIRECTORY]"
 }
 
 command_name="${1:-}"
@@ -649,6 +689,20 @@ case "$command_name" in
 
     if metadata_read "$2"; then
       metadata_print
+    else
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  choose-slot)
+    if [ "$#" -ne 2 ]; then
+      usage >&2
+      exit 1
+    fi
+
+    if metadata_choose_slot "$2"; then
+      printf 'selected_slot=%s\n' "$metadata_selected_slot"
+      printf 'selection_reason=%s\n' "$metadata_selection_reason"
     else
       printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
       exit 1
