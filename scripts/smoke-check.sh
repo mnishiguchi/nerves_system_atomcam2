@@ -319,6 +319,12 @@ require_grep 'prepare-pending-image' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'preserve previously selected metadata copy' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'fall back after corrupt metadata mutation' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'reject metadata generation overflow' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'metadata_confirm_pending_image' scripts/atomcam2-boot-metadata.sh
+require_grep 'confirm-pending-image' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'promote pending slot to confirmed' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'preserve previous metadata during confirmation' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject confirmation of non-pending slot' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject confirmation generation overflow' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'read_boot_policy' board/atomcam2/boot-manager/init
 require_grep 'metadata_line#selected_slot=' board/atomcam2/boot-manager/init
 require_grep 'metadata_line#selection_reason=' board/atomcam2/boot-manager/init

@@ -863,4 +863,330 @@ assert_equal \
   "preserve image after generation overflow"
 
 echo "ok: fake-image metadata mutation"
+
+confirmation_image="$test_root/confirmation-device.bin"
+confirmation_work_directory="$test_root/confirmation-work"
+
+dd \
+  if=/dev/zero \
+  of="$confirmation_image" \
+  bs=512 \
+  count=2048 \
+  2>/dev/null
+
+dd \
+  if="$record_a" \
+  of="$confirmation_image" \
+  bs=512 \
+  seek=2032 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+dd \
+  if="$record_b" \
+  of="$confirmation_image" \
+  bs=512 \
+  seek=2040 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+"$metadata_script" \
+  prepare-pending-image \
+  "$confirmation_image" \
+  "$confirmation_work_directory" \
+  >/dev/null
+
+previous_confirmation_copy="$test_root/confirmation-previous.bin"
+previous_confirmation_copy_after="$test_root/confirmation-previous-after.bin"
+
+dd \
+  if="$confirmation_image" \
+  of="$previous_confirmation_copy" \
+  bs=512 \
+  skip=2032 \
+  count=8 \
+  2>/dev/null
+
+previous_confirmation_sha256="$(
+  sha256sum "$previous_confirmation_copy" |
+    awk '{print $1}'
+)"
+
+confirmation_output="$(
+  "$metadata_script" \
+    confirm-pending-image \
+    "$confirmation_image" \
+    B \
+    "$confirmation_work_directory"
+)"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$confirmation_output" |
+      awk -F= '$1 == "previous_copy" { print $2 }'
+  )" \
+  "identify metadata copy before confirmation"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$confirmation_output" |
+      awk -F= '$1 == "written_copy" { print $2 }'
+  )" \
+  "write confirmation to inactive metadata copy"
+
+assert_equal \
+  00000000000000000004 \
+  "$(
+    printf '%s\n' "$confirmation_output" |
+      awk -F= '$1 == "generation" { print $2 }'
+  )" \
+  "increment confirmation generation"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$confirmation_output" |
+      awk -F= '$1 == "confirmed_slot" { print $2 }'
+  )" \
+  "promote pending slot to confirmed"
+
+assert_equal \
+  - \
+  "$(
+    printf '%s\n' "$confirmation_output" |
+      awk -F= '$1 == "pending_slot" { print $2 }'
+  )" \
+  "clear pending slot after confirmation"
+
+assert_equal \
+  000 \
+  "$(
+    printf '%s\n' "$confirmation_output" |
+      awk -F= '$1 == "pending_attempts" { print $2 }'
+  )" \
+  "reset pending attempts after confirmation"
+
+dd \
+  if="$confirmation_image" \
+  of="$previous_confirmation_copy_after" \
+  bs=512 \
+  skip=2032 \
+  count=8 \
+  2>/dev/null
+
+previous_confirmation_sha256_after="$(
+  sha256sum "$previous_confirmation_copy_after" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$previous_confirmation_sha256" \
+  "$previous_confirmation_sha256_after" \
+  "preserve previous metadata during confirmation"
+
+confirmed_selection_output="$(
+  "$metadata_script" \
+    select-device \
+    "$confirmation_image" \
+    "$confirmation_work_directory"
+)"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$confirmed_selection_output" |
+      awk -F= '$1 == "selected_copy" { print $2 }'
+  )" \
+  "select confirmed metadata copy"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$confirmed_selection_output" |
+      awk -F= '$1 == "selected_slot" { print $2 }'
+  )" \
+  "select newly confirmed slot"
+
+assert_equal \
+  confirmed \
+  "$(
+    printf '%s\n' "$confirmed_selection_output" |
+      awk -F= '$1 == "selection_reason" { print $2 }'
+  )" \
+  "report confirmed policy after validation"
+
+printf X |
+  dd \
+    of="$confirmation_image" \
+    bs=512 \
+    seek=2040 \
+    count=1 \
+    conv=notrunc \
+    2>/dev/null
+
+confirmation_fallback_output="$(
+  "$metadata_script" \
+    select-device \
+    "$confirmation_image" \
+    "$confirmation_work_directory"
+)"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$confirmation_fallback_output" |
+      awk -F= '$1 == "selected_copy" { print $2 }'
+  )" \
+  "fall back after corrupt confirmation record"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$confirmation_fallback_output" |
+      awk -F= '$1 == "pending_slot" { print $2 }'
+  )" \
+  "preserve pending state after failed confirmation write"
+
+wrong_slot_image="$test_root/wrong-confirmation-slot-device.bin"
+wrong_slot_work_directory="$test_root/wrong-confirmation-slot-work"
+
+dd \
+  if=/dev/zero \
+  of="$wrong_slot_image" \
+  bs=512 \
+  count=2048 \
+  2>/dev/null
+
+dd \
+  if="$record_a" \
+  of="$wrong_slot_image" \
+  bs=512 \
+  seek=2032 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+dd \
+  if="$record_b" \
+  of="$wrong_slot_image" \
+  bs=512 \
+  seek=2040 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+wrong_slot_sha256_before="$(
+  sha256sum "$wrong_slot_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  confirm-pending-image \
+  "$wrong_slot_image" \
+  A \
+  "$wrong_slot_work_directory" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: confirmed a slot that was not pending" >&2
+  exit 1
+else
+  echo "ok: reject confirmation of non-pending slot"
+fi
+
+wrong_slot_sha256_after="$(
+  sha256sum "$wrong_slot_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$wrong_slot_sha256_before" \
+  "$wrong_slot_sha256_after" \
+  "preserve image after wrong-slot confirmation"
+
+no_pending_confirmation_sha256_before="$(
+  sha256sum "$no_pending_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  confirm-pending-image \
+  "$no_pending_image" \
+  B \
+  "$test_root/no-pending-confirmation-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: confirmed metadata without a pending slot" >&2
+  exit 1
+else
+  echo "ok: reject confirmation without pending slot"
+fi
+
+no_pending_confirmation_sha256_after="$(
+  sha256sum "$no_pending_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$no_pending_confirmation_sha256_before" \
+  "$no_pending_confirmation_sha256_after" \
+  "preserve image after missing-pending confirmation"
+
+if "$metadata_script" \
+  confirm-pending-image \
+  /dev/null \
+  B \
+  "$test_root/non-regular-confirmation-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: confirmed metadata on a non-regular image" >&2
+  exit 1
+else
+  echo "ok: reject confirmation on non-regular image"
+fi
+
+confirmation_overflow_sha256_before="$(
+  sha256sum "$overflow_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  confirm-pending-image \
+  "$overflow_image" \
+  B \
+  "$test_root/confirmation-overflow-work" \
+  >/dev/null \
+  2>"$test_root/confirmation-overflow.err"
+then
+  echo "error: accepted confirmation generation overflow" >&2
+  exit 1
+fi
+
+if grep -q 'generation_overflow' \
+  "$test_root/confirmation-overflow.err"
+then
+  echo "ok: reject confirmation generation overflow"
+else
+  echo "error: confirmation overflow was not reported" >&2
+  cat "$test_root/confirmation-overflow.err" >&2
+  exit 1
+fi
+
+confirmation_overflow_sha256_after="$(
+  sha256sum "$overflow_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$confirmation_overflow_sha256_before" \
+  "$confirmation_overflow_sha256_after" \
+  "preserve image after confirmation overflow"
+
+echo "ok: fake-image pending confirmation"
 echo "ok: rollback metadata tests"
