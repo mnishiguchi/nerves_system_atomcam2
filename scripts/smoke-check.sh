@@ -381,7 +381,31 @@ require_grep 'mount -t tmpfs tmpfs /tmp' board/atomcam2/boot-manager/init
 require_grep 'slot_a_partition="${root_disk}p2"' board/atomcam2/boot-manager/init
 require_grep 'slot_b_partition="${root_disk}p3"' board/atomcam2/boot-manager/init
 require_grep 'data_partition="${root_disk}p4"' board/atomcam2/boot-manager/init
+require_grep 'select_application_partition' board/atomcam2/boot-manager/init
+require_grep 'validate_application_partition' board/atomcam2/boot-manager/init
 require_grep 'application_partition="$slot_a_partition"' board/atomcam2/boot-manager/init
+require_grep 'application_partition="$slot_b_partition"' board/atomcam2/boot-manager/init
+require_grep 'application_partition_selected' board/atomcam2/boot-manager/init
+require_grep 'application_partition_unavailable' board/atomcam2/boot-manager/init
+require_grep 'application_partition_validated' board/atomcam2/boot-manager/init
+require_grep 'application_partition_invalid' board/atomcam2/boot-manager/init
+require_grep 'application_partition_error="partition_not_found"' board/atomcam2/boot-manager/init
+require_grep 'echo "application_partition=${application_partition:-}"' board/atomcam2/boot-manager/init
+require_grep 'echo "application_partition_error=${application_partition_error:-}"' board/atomcam2/boot-manager/init
+
+require_grep 'record-pending-attempt-device' \
+  board/atomcam2/boot-manager/init \
+  "boot manager records pending attempts on the live device"
+
+require_grep 'pending_boot_attempt_status=${pending_boot_attempt_status:-}' \
+  board/atomcam2/boot-manager/init \
+  "boot report includes pending attempt status"
+
+require_grep 'pending_boot_attempt_error=${pending_boot_attempt_error:-}' \
+  board/atomcam2/boot-manager/init \
+  "boot report includes pending attempt errors"
+
+reject_grep '^application_partition="$slot_a_partition"$' board/atomcam2/boot-manager/init
 reject_grep 'find_prototype_data_partition' board/atomcam2/boot-manager/init
 reject_grep 'prototype_data_partition' board/atomcam2/boot-manager/init
 reject_grep 'moved_raw_stage_partition' board/atomcam2/boot-manager/init

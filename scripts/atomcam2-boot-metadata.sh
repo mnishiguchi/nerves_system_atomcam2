@@ -721,12 +721,14 @@ metadata_write_device_copy() {
   record_path="$3"
 
   if [ ! -f "$image_path" ]; then
-    metadata_error="image_not_regular_file"
-    return 1
+    if [ ! -b "$image_path" ]; then
+      metadata_error="media_not_regular_file_or_block_device"
+      return 1
+    fi
   fi
 
   if [ ! -w "$image_path" ]; then
-    metadata_error="image_not_writable"
+    metadata_error="media_not_writable"
     return 1
   fi
 
@@ -775,9 +777,9 @@ metadata_write_device_copy() {
   fi
 }
 
-metadata_load_writable_image() {
+metadata_load_writable_media() {
   if [ "$#" -ne 2 ]; then
-    metadata_error="load_writable_image_argument_count"
+    metadata_error="load_writable_media_argument_count"
     return 1
   fi
 
@@ -787,18 +789,13 @@ metadata_load_writable_image() {
   metadata_written_copy=""
   metadata_error=""
 
-  if [ ! -f "$image_path" ]; then
-    metadata_error="image_not_regular_file"
-    return 1
-  fi
-
   if [ ! -r "$image_path" ]; then
-    metadata_error="image_not_readable"
+    metadata_error="media_not_readable"
     return 1
   fi
 
   if [ ! -w "$image_path" ]; then
-    metadata_error="image_not_writable"
+    metadata_error="media_not_writable"
     return 1
   fi
 
@@ -821,6 +818,72 @@ metadata_load_writable_image() {
       return 1
       ;;
   esac
+
+  return 0
+}
+
+metadata_load_writable_image() {
+  if [ "$#" -ne 2 ]; then
+    metadata_error="load_writable_image_argument_count"
+    return 1
+  fi
+
+  image_path="$1"
+  work_directory="$2"
+
+  if [ ! -f "$image_path" ]; then
+    metadata_error="image_not_regular_file"
+    return 1
+  fi
+
+  if ! metadata_load_writable_media \
+    "$image_path" \
+    "$work_directory"
+  then
+    case "$metadata_error" in
+      media_not_readable)
+        metadata_error="image_not_readable"
+        ;;
+      media_not_writable)
+        metadata_error="image_not_writable"
+        ;;
+    esac
+
+    return 1
+  fi
+
+  return 0
+}
+
+metadata_load_writable_device() {
+  if [ "$#" -ne 2 ]; then
+    metadata_error="load_writable_device_argument_count"
+    return 1
+  fi
+
+  device_path="$1"
+  work_directory="$2"
+
+  if [ ! -b "$device_path" ]; then
+    metadata_error="device_not_block_device"
+    return 1
+  fi
+
+  if ! metadata_load_writable_media \
+    "$device_path" \
+    "$work_directory"
+  then
+    case "$metadata_error" in
+      media_not_readable)
+        metadata_error="device_not_readable"
+        ;;
+      media_not_writable)
+        metadata_error="device_not_writable"
+        ;;
+    esac
+
+    return 1
+  fi
 
   return 0
 }
@@ -977,21 +1040,14 @@ metadata_commit_loaded_image() {
   return 0
 }
 
-metadata_prepare_pending_image() {
+metadata_record_loaded_pending_attempt() {
   if [ "$#" -ne 2 ]; then
-    metadata_error="prepare_pending_image_argument_count"
+    metadata_error="record_loaded_pending_attempt_argument_count"
     return 1
   fi
 
   image_path="$1"
   work_directory="$2"
-
-  if ! metadata_load_writable_image \
-    "$image_path" \
-    "$work_directory"
-  then
-    return 1
-  fi
 
   if [ "$metadata_pending_slot" = "-" ]; then
     metadata_error="pending_slot_missing"
@@ -1043,6 +1099,49 @@ metadata_prepare_pending_image() {
 
   return 0
 }
+
+metadata_prepare_pending_image() {
+  if [ "$#" -ne 2 ]; then
+    metadata_error="prepare_pending_image_argument_count"
+    return 1
+  fi
+
+  image_path="$1"
+  work_directory="$2"
+
+  if ! metadata_load_writable_image \
+    "$image_path" \
+    "$work_directory"
+  then
+    return 1
+  fi
+
+  metadata_record_loaded_pending_attempt \
+    "$image_path" \
+    "$work_directory"
+}
+
+metadata_record_pending_attempt_device() {
+  if [ "$#" -ne 2 ]; then
+    metadata_error="record_pending_attempt_device_argument_count"
+    return 1
+  fi
+
+  device_path="$1"
+  work_directory="$2"
+
+  if ! metadata_load_writable_device \
+    "$device_path" \
+    "$work_directory"
+  then
+    return 1
+  fi
+
+  metadata_record_loaded_pending_attempt \
+    "$device_path" \
+    "$work_directory"
+}
+
 metadata_confirm_pending_image() {
   if [ "$#" -ne 3 ]; then
     metadata_error="confirm_pending_image_argument_count"
@@ -1286,6 +1385,7 @@ usage() {
     "  $0 select RECORD_A RECORD_B" \
     "  $0 select-device DEVICE [WORK_DIRECTORY]" \
     "  $0 prepare-pending-image IMAGE [WORK_DIRECTORY]" \
+    "  $0 record-pending-attempt-device DEVICE [WORK_DIRECTORY]" \
     "  $0 confirm-pending-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]" \
     "  $0 revert-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]" \
     "  $0 prevent-revert-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]"
@@ -1395,6 +1495,30 @@ case "$command_name" in
     fi
 
     if metadata_prepare_pending_image "$2" "$work_directory"; then
+      printf 'previous_copy=%s\n' "$metadata_previous_copy"
+      printf 'written_copy=%s\n' "$metadata_written_copy"
+      printf 'selected_slot=%s\n' "$metadata_selected_slot"
+      printf 'selection_reason=%s\n' "$metadata_selection_reason"
+      metadata_print
+    else
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  record-pending-attempt-device)
+    if [ "$#" -eq 2 ]; then
+      work_directory="${ATOMCAM2_BOOT_METADATA_WORK_DIR:-/tmp}"
+    elif [ "$#" -eq 3 ]; then
+      work_directory="$3"
+    else
+      usage >&2
+      exit 1
+    fi
+
+    if metadata_record_pending_attempt_device \
+      "$2" \
+      "$work_directory"
+    then
       printf 'previous_copy=%s\n' "$metadata_previous_copy"
       printf 'written_copy=%s\n' "$metadata_written_copy"
       printf 'selected_slot=%s\n' "$metadata_selected_slot"

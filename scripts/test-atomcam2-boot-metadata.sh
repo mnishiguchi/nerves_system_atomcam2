@@ -791,6 +791,19 @@ else
   echo "ok: reject non-regular metadata image"
 fi
 
+if "$metadata_script" \
+  record-pending-attempt-device \
+  "$mutation_device_image" \
+  "$test_root/non-device-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: accepted a regular file as a live metadata device" >&2
+  exit 1
+else
+  echo "ok: reject regular file as live metadata device"
+fi
+
 overflow_record="$test_root/generation-overflow.bin"
 overflow_image="$test_root/generation-overflow-device.bin"
 overflow_work_directory="$test_root/generation-overflow-work"

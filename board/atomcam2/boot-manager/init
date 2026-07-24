@@ -39,6 +39,12 @@ boot_policy_status="not_read"
 boot_policy_error=""
 boot_policy_selected_slot=""
 boot_policy_selection_reason=""
+application_partition=""
+application_partition_error=""
+pending_boot_attempt_status="not_required"
+pending_boot_attempt_error=""
+pending_boot_attempt_previous_copy=""
+pending_boot_attempt_written_copy=""
 
 bootstrap_kernel_filesystems() {
   mkdir -p /dev /proc /sys /tmp "$final_boot_mount" "$application_mount"
@@ -122,6 +128,112 @@ read_boot_policy() {
 
   boot_policy_status="selected"
   return 0
+}
+
+select_application_partition() {
+  application_partition=""
+
+  case "$boot_policy_selected_slot" in
+    A)
+      if [ "$boot_metadata_slot_a_status" != "valid" ]; then
+        boot_policy_error="selected_slot_status_invalid"
+        return 1
+      fi
+
+      application_partition="$slot_a_partition"
+      ;;
+    B)
+      if [ "$boot_metadata_slot_b_status" != "valid" ]; then
+        boot_policy_error="selected_slot_status_invalid"
+        return 1
+      fi
+
+      application_partition="$slot_b_partition"
+      ;;
+    *)
+      boot_policy_error="selected_slot_invalid"
+      return 1
+      ;;
+  esac
+
+  return 0
+}
+
+validate_application_partition() {
+  application_partition_error=""
+
+  if [ ! -b "$application_partition" ]; then
+    application_partition_error="partition_not_found"
+    return 1
+  fi
+
+  return 0
+}
+
+record_pending_boot_attempt() {
+  pending_boot_attempt_status="failed"
+  pending_boot_attempt_error=""
+  pending_boot_attempt_previous_copy=""
+  pending_boot_attempt_written_copy=""
+
+  if rm -f "$metadata_error_path"; then
+    :
+  else
+    pending_boot_attempt_error="error_file_cleanup_failed"
+    return 1
+  fi
+
+  if pending_boot_attempt_output="$(
+    "$metadata_command" \
+      record-pending-attempt-device \
+      "$root_disk" \
+      "$metadata_work_dir" \
+      2> "$metadata_error_path"
+  )"
+  then
+    while IFS= read -r metadata_line; do
+      case "$metadata_line" in
+        previous_copy=*)
+          pending_boot_attempt_previous_copy="${metadata_line#previous_copy=}"
+          ;;
+        written_copy=*)
+          pending_boot_attempt_written_copy="${metadata_line#written_copy=}"
+          ;;
+        *)
+          :
+          ;;
+      esac
+    done <<EOF
+$pending_boot_attempt_output
+EOF
+
+    if [ -z "$pending_boot_attempt_previous_copy" ]; then
+      pending_boot_attempt_error="previous_copy_missing"
+      return 1
+    fi
+
+    if [ -z "$pending_boot_attempt_written_copy" ]; then
+      pending_boot_attempt_error="written_copy_missing"
+      return 1
+    fi
+
+    pending_boot_attempt_status="recorded"
+    return 0
+  fi
+
+  if [ -s "$metadata_error_path" ]; then
+    pending_boot_attempt_error="$(
+      sed -n \
+        '1s/^atomcam2 boot metadata: //p' \
+        "$metadata_error_path"
+    )"
+  fi
+
+  if [ -z "$pending_boot_attempt_error" ]; then
+    pending_boot_attempt_error="record_failed"
+  fi
+
+  return 1
 }
 
 read_boot_metadata() {
@@ -285,6 +397,11 @@ write_report_to() {
     echo "boot_mount_writable=$boot_mount_writable"
     echo "root_disk=${root_disk:-}"
     echo "application_partition=${application_partition:-}"
+    echo "application_partition_error=${application_partition_error:-}"
+    echo "pending_boot_attempt_status=${pending_boot_attempt_status:-}"
+    echo "pending_boot_attempt_error=${pending_boot_attempt_error:-}"
+    echo "pending_boot_attempt_previous_copy=${pending_boot_attempt_previous_copy:-}"
+    echo "pending_boot_attempt_written_copy=${pending_boot_attempt_written_copy:-}"
     echo "slot_a_partition=${slot_a_partition:-}"
     echo "slot_b_partition=${slot_b_partition:-}"
     echo "data_partition=${data_partition:-}"
@@ -471,22 +588,48 @@ fi
 
 if read_boot_metadata; then
   write_report "boot_metadata_selected"
-
-  if read_boot_policy; then
-    write_report "boot_policy_selected"
-  else
-    write_report "boot_policy_unavailable"
-  fi
 else
   boot_policy_status="unavailable"
   boot_policy_error="metadata_unavailable"
   write_report "boot_metadata_unavailable"
+  enter_recovery "boot_metadata_unavailable"
+fi
+
+if read_boot_policy; then
+  write_report "boot_policy_selected"
+else
+  write_report "boot_policy_unavailable"
+  enter_recovery "boot_policy_unavailable"
+fi
+
+if [ "$boot_policy_selection_reason" = "pending" ]; then
+  if record_pending_boot_attempt; then
+    write_report "pending_boot_attempt_recorded"
+  else
+    write_report "pending_boot_attempt_failed"
+    enter_recovery "pending_boot_attempt_failed"
+  fi
+else
+  pending_boot_attempt_status="not_required"
 fi
 
 slot_a_partition="${root_disk}p2"
 slot_b_partition="${root_disk}p3"
 data_partition="${root_disk}p4"
-application_partition="$slot_a_partition"
+
+if select_application_partition; then
+  write_report "application_partition_selected"
+else
+  write_report "application_partition_unavailable"
+  enter_recovery "application_partition_unavailable"
+fi
+
+if validate_application_partition; then
+  write_report "application_partition_validated"
+else
+  write_report "application_partition_invalid"
+  enter_recovery "application_partition_invalid"
+fi
 
 if [ ! -b "$slot_a_partition" ]; then
   enter_recovery "slot_a_partition_not_found"
