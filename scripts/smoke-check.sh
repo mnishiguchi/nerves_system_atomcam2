@@ -325,6 +325,14 @@ require_grep 'promote pending slot to confirmed' scripts/test-atomcam2-boot-meta
 require_grep 'preserve previous metadata during confirmation' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'reject confirmation of non-pending slot' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'reject confirmation generation overflow' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'metadata_revert_image' scripts/atomcam2-boot-metadata.sh
+require_grep 'revert-image' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'record previous slot as pending revert' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'preserve previous metadata during revert' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject revert while a slot is pending' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject revert to empty slot' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject revert to bad slot' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject revert generation overflow' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'read_boot_policy' board/atomcam2/boot-manager/init
 require_grep 'metadata_line#selected_slot=' board/atomcam2/boot-manager/init
 require_grep 'metadata_line#selection_reason=' board/atomcam2/boot-manager/init
