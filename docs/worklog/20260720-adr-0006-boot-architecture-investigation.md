@@ -450,4 +450,160 @@ The prototype now proves:
 - automatic read-write mounting of `/data`
 - preservation of an existing healthy `/data` filesystem across complete installation
 
-The prototype does not yet implement A/B slot selection, rollback metadata, confirmation, attempt counting, or watchdog-driven rollback.
+The prototype now implements redundant rollback metadata and a read-only logical slot-selection policy. It does not yet map slots to physical partitions, confirm successful boots, increment attempts, update metadata during boot, or provide watchdog-driven rollback.
+
+## Boot metadata and slot policy handoff verification
+
+The boot manager was extended incrementally to observe the redundant boot
+metadata and calculate the logical slot-selection policy without allowing that
+policy to control the physical boot partition.
+
+The verified startup flow is currently:
+
+```text
+read redundant metadata records
+-> select the newest valid record
+-> calculate the logical slot
+-> report the selection and reason
+-> continue booting the fixed prototype partition 2
+```
+
+### Writable temporary storage
+
+The first physical metadata-reading attempt failed with:
+
+```text
+boot_metadata_status=unavailable
+boot_metadata_error=work_directory_creation_failed
+```
+
+The boot manager runs from a read-only SquashFS image. The metadata codec
+requires a writable directory while extracting the two raw metadata records
+from the storage device.
+
+The boot manager now mounts `tmpfs` on `/tmp` when necessary before invoking
+the metadata codec. This provides temporary writable storage without modifying
+the boot-manager SquashFS or persistent application data.
+
+### Redundant metadata observation
+
+A complete installation writes identical 4096-byte metadata records at sectors
+2032 and 2040. These records remain outside the partition table and before the
+FAT partition beginning at sector 2048.
+
+A physical boot confirmed that the boot manager can read and select the initial
+record:
+
+```text
+boot_metadata_status=selected
+boot_metadata_error=
+boot_metadata_selected_copy=A
+boot_metadata_generation=00000000000000000001
+boot_metadata_confirmed_slot=A
+boot_metadata_pending_slot=-
+boot_metadata_pending_attempts=000
+boot_metadata_max_attempts=003
+boot_metadata_slot_a_status=valid
+boot_metadata_slot_b_status=empty
+```
+
+Metadata failure remains nonfatal during this prototype stage. The boot manager
+continues using the fixed application partition when metadata is unavailable.
+
+### Slot-selection policy
+
+The metadata codec now implements a pure slot-selection policy:
+
+- When no pending slot exists, select the confirmed slot.
+- When the pending attempt count is below the maximum, select the pending slot.
+- When the pending attempt count has reached the maximum, fall back to the
+  confirmed slot.
+
+The policy does not yet increment attempts, update metadata, map slots to
+partitions, or change the physical boot target.
+
+The host-side tests cover:
+
+- confirmed-slot selection
+- pending-slot selection
+- fallback after reaching the attempt limit
+- corrupt metadata rejection
+- policy output after redundant raw-device record selection
+- fallback to the remaining valid metadata copy
+
+### Boot-manager output parser correction
+
+The first physical policy-reporting attempt produced:
+
+```text
+boot_metadata_status=unavailable
+boot_metadata_error=unexpected_codec_output
+boot_metadata_selected_copy=A
+boot_policy_status=unavailable
+boot_policy_error=metadata_unavailable
+```
+
+The metadata codec had correctly added these output fields:
+
+```text
+selected_slot=A
+selection_reason=confirmed
+```
+
+However, the boot manager's strict output parser did not yet recognize them and
+rejected the otherwise valid codec output.
+
+The parser was corrected to read those fields explicitly. The policy validator
+then validates the parsed values rather than reading the codec output a second
+time.
+
+### Final physical proof
+
+The corrected firmware was built as:
+
+```text
+Firmware UUID: ready-ticket
+UUID: ace920f0-0a28-56f8-6813-e5b20e4664e8
+```
+
+The packaged boot-manager init and metadata codec matched their repository
+sources byte-for-byte by SHA-256.
+
+The corrected firmware was written to the MicroSD card using the complete task
+with write verification. The camera booted successfully and became reachable
+through `nerves.local`.
+
+The final boot report contained:
+
+```text
+stage=application_root
+root_disk=/dev/mmcblk0
+application_partition=/dev/mmcblk0p2
+
+boot_metadata_status=selected
+boot_metadata_error=
+boot_metadata_selected_copy=A
+boot_metadata_generation=00000000000000000001
+boot_metadata_confirmed_slot=A
+boot_metadata_pending_slot=-
+boot_metadata_pending_attempts=000
+boot_metadata_max_attempts=003
+boot_metadata_slot_a_status=valid
+boot_metadata_slot_b_status=empty
+
+boot_policy_status=selected
+boot_policy_error=
+boot_policy_selected_slot=A
+boot_policy_selection_reason=confirmed
+```
+
+This demonstrates the intended safety boundary:
+
+```text
+metadata selects logical slot A
+-> policy reports logical slot A
+-> physical boot still uses /dev/mmcblk0p2
+```
+
+The metadata and slot-selection policy therefore remain observational. They do
+not yet have authority over the application partition.
