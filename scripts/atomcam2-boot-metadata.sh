@@ -382,20 +382,10 @@ metadata_select() {
 }
 
 
-metadata_choose_slot() {
-  if [ "$#" -ne 1 ]; then
-    metadata_error="choose_slot_argument_count"
-    return 1
-  fi
-
-  record_path="$1"
+metadata_choose_loaded_slot() {
   metadata_selected_slot=""
   metadata_selection_reason=""
   metadata_error=""
-
-  if ! metadata_read "$record_path"; then
-    return 1
-  fi
 
   if [ "$metadata_pending_slot" = "-" ]; then
     metadata_selected_slot="$metadata_confirmed_slot"
@@ -416,6 +406,21 @@ metadata_choose_slot() {
   fi
 
   return 0
+}
+
+metadata_choose_slot() {
+  if [ "$#" -ne 1 ]; then
+    metadata_error="choose_slot_argument_count"
+    return 1
+  fi
+
+  record_path="$1"
+
+  if ! metadata_read "$record_path"; then
+    return 1
+  fi
+
+  metadata_choose_loaded_slot
 }
 
 metadata_firmware_id_from_sha256() {
@@ -629,6 +634,12 @@ metadata_select_device() {
     return 1
   fi
 
+  if ! metadata_choose_loaded_slot; then
+    rm -f "$device_record_a" "$device_record_b"
+    metadata_selected_record=""
+    return 1
+  fi
+
   rm -f "$device_record_a" "$device_record_b"
   metadata_selected_record=""
   metadata_error=""
@@ -733,6 +744,8 @@ case "$command_name" in
 
     if metadata_select_device "$2" "$work_directory"; then
       printf 'selected_copy=%s\n' "$metadata_selected_copy"
+      printf 'selected_slot=%s\n' "$metadata_selected_slot"
+      printf 'selection_reason=%s\n' "$metadata_selection_reason"
       metadata_print
     else
       printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2

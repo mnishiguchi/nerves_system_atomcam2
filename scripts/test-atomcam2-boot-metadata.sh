@@ -464,6 +464,27 @@ assert_equal \
   "$selected_generation" \
   "read raw-device generation"
 
+
+selected_slot="$(
+  printf '%s\n' "$device_output" |
+    awk -F= '$1 == "selected_slot" { print $2 }'
+)"
+
+selection_reason="$(
+  printf '%s\n' "$device_output" |
+    awk -F= '$1 == "selection_reason" { print $2 }'
+)"
+
+assert_equal \
+  B \
+  "$selected_slot" \
+  "choose pending slot from raw device"
+
+assert_equal \
+  pending \
+  "$selection_reason" \
+  "report raw-device pending reason"
+
 printf X |
   dd \
     of="$device_image" \
@@ -489,6 +510,27 @@ assert_equal \
   A \
   "$selected_copy" \
   "fall back from corrupt raw-device copy"
+
+
+selected_slot="$(
+  printf '%s\n' "$device_output" |
+    awk -F= '$1 == "selected_slot" { print $2 }'
+)"
+
+selection_reason="$(
+  printf '%s\n' "$device_output" |
+    awk -F= '$1 == "selection_reason" { print $2 }'
+)"
+
+assert_equal \
+  A \
+  "$selected_slot" \
+  "choose confirmed slot from fallback copy"
+
+assert_equal \
+  confirmed \
+  "$selection_reason" \
+  "report raw-device confirmed reason"
 
 echo "ok: raw-device metadata selection"
 echo "ok: rollback metadata tests"

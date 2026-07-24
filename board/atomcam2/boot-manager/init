@@ -33,6 +33,11 @@ boot_metadata_slot_b_firmware_id=""
 boot_metadata_slot_b_sha256=""
 boot_metadata_checksum_sha256=""
 
+boot_policy_status="not_read"
+boot_policy_error=""
+boot_policy_selected_slot=""
+boot_policy_selection_reason=""
+
 bootstrap_kernel_filesystems() {
   mkdir -p /dev /proc /sys /tmp "$final_boot_mount" "$application_mount"
 
@@ -142,6 +147,32 @@ is_mounted() {
   ' /proc/mounts
 }
 
+read_boot_policy() {
+  boot_policy_status="unavailable"
+  boot_policy_error=""
+
+  case "$boot_policy_selected_slot" in
+    A|B)
+      ;;
+    *)
+      boot_policy_error="selected_slot_invalid"
+      return 1
+      ;;
+  esac
+
+  case "$boot_policy_selection_reason" in
+    confirmed|pending|pending_attempt_limit)
+      ;;
+    *)
+      boot_policy_error="selection_reason_invalid"
+      return 1
+      ;;
+  esac
+
+  boot_policy_status="selected"
+  return 0
+}
+
 read_boot_metadata() {
   boot_metadata_status="unavailable"
   boot_metadata_error=""
@@ -159,6 +190,10 @@ read_boot_metadata() {
   boot_metadata_slot_b_firmware_id=""
   boot_metadata_slot_b_sha256=""
   boot_metadata_checksum_sha256=""
+  boot_policy_status="unavailable"
+  boot_policy_error=""
+  boot_policy_selected_slot=""
+  boot_policy_selection_reason=""
 
   if [ ! -x "$metadata_command" ]; then
     boot_metadata_error="codec_unavailable"
@@ -190,6 +225,12 @@ read_boot_metadata() {
       case "$metadata_line" in
         selected_copy=*)
           boot_metadata_selected_copy="${metadata_line#selected_copy=}"
+          ;;
+        selected_slot=*)
+          boot_policy_selected_slot="${metadata_line#selected_slot=}"
+          ;;
+        selection_reason=*)
+          boot_policy_selection_reason="${metadata_line#selection_reason=}"
           ;;
         ATOMCAM2_BOOT_METADATA_V1)
           boot_metadata_magic="$metadata_line"
@@ -308,6 +349,10 @@ write_report_to() {
     echo "boot_metadata_slot_b_firmware_id=$boot_metadata_slot_b_firmware_id"
     echo "boot_metadata_slot_b_sha256=$boot_metadata_slot_b_sha256"
     echo "boot_metadata_checksum_sha256=$boot_metadata_checksum_sha256"
+    echo "boot_policy_status=$boot_policy_status"
+    echo "boot_policy_error=$boot_policy_error"
+    echo "boot_policy_selected_slot=$boot_policy_selected_slot"
+    echo "boot_policy_selection_reason=$boot_policy_selection_reason"
   } > "$temporary_output_path" 2>&9; then
     if mv -f "$temporary_output_path" "$output_path" 2>&9; then
       return 0
@@ -475,7 +520,15 @@ fi
 
 if read_boot_metadata; then
   write_report "boot_metadata_selected"
+
+  if read_boot_policy; then
+    write_report "boot_policy_selected"
+  else
+    write_report "boot_policy_unavailable"
+  fi
 else
+  boot_policy_status="unavailable"
+  boot_policy_error="metadata_unavailable"
   write_report "boot_metadata_unavailable"
 fi
 

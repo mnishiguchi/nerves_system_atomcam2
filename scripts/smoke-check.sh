@@ -309,6 +309,17 @@ require_grep 'metadata_write_initial_record' scripts/atomcam2-boot-metadata.sh
 require_grep 'firmware-id' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'initial-record' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'metadata_choose_slot' scripts/atomcam2-boot-metadata.sh
+require_grep 'metadata_choose_loaded_slot' scripts/atomcam2-boot-metadata.sh
+require_grep "printf 'selected_slot=%s" scripts/atomcam2-boot-metadata.sh
+require_grep 'choose pending slot from raw device' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'read_boot_policy' board/atomcam2/boot-manager/init
+require_grep 'metadata_line#selected_slot=' board/atomcam2/boot-manager/init
+require_grep 'metadata_line#selection_reason=' board/atomcam2/boot-manager/init
+require_grep 'boot_policy_status=' board/atomcam2/boot-manager/init
+require_grep 'boot_policy_selected_slot=' board/atomcam2/boot-manager/init
+require_grep 'boot_policy_selection_reason=' board/atomcam2/boot-manager/init
+require_grep 'write_report "boot_policy_selected"' board/atomcam2/boot-manager/init
+require_grep 'write_report "boot_policy_unavailable"' board/atomcam2/boot-manager/init
 require_grep 'choose-slot' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'pending_attempt_limit' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'initial boot metadata record' scripts/test-atomcam2-boot-metadata.sh
