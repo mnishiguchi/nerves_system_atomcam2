@@ -533,4 +533,334 @@ assert_equal \
   "report raw-device confirmed reason"
 
 echo "ok: raw-device metadata selection"
+
+mutation_device_image="$test_root/mutation-device.bin"
+mutation_work_directory="$test_root/mutation-work"
+
+dd \
+  if=/dev/zero \
+  of="$mutation_device_image" \
+  bs=512 \
+  count=2048 \
+  2>/dev/null
+
+dd \
+  if="$record_a" \
+  of="$mutation_device_image" \
+  bs=512 \
+  seek=2032 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+dd \
+  if="$record_b" \
+  of="$mutation_device_image" \
+  bs=512 \
+  seek=2040 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+selected_copy_before="$test_root/mutation-selected-before.bin"
+selected_copy_after="$test_root/mutation-selected-after.bin"
+
+dd \
+  if="$mutation_device_image" \
+  of="$selected_copy_before" \
+  bs=512 \
+  skip=2040 \
+  count=8 \
+  2>/dev/null
+
+selected_copy_sha256_before="$(
+  sha256sum "$selected_copy_before" |
+    awk '{print $1}'
+)"
+
+mutation_output="$(
+  "$metadata_script" \
+    prepare-pending-image \
+    "$mutation_device_image" \
+    "$mutation_work_directory"
+)"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$mutation_output" |
+      awk -F= '$1 == "previous_copy" { print $2 }'
+  )" \
+  "identify previously selected metadata copy"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$mutation_output" |
+      awk -F= '$1 == "written_copy" { print $2 }'
+  )" \
+  "write inactive metadata copy"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$mutation_output" |
+      awk -F= '$1 == "selected_slot" { print $2 }'
+  )" \
+  "retain pending boot decision"
+
+assert_equal \
+  pending \
+  "$(
+    printf '%s\n' "$mutation_output" |
+      awk -F= '$1 == "selection_reason" { print $2 }'
+  )" \
+  "retain pending boot reason"
+
+assert_equal \
+  00000000000000000003 \
+  "$(
+    printf '%s\n' "$mutation_output" |
+      awk -F= '$1 == "generation" { print $2 }'
+  )" \
+  "increment metadata generation"
+
+assert_equal \
+  002 \
+  "$(
+    printf '%s\n' "$mutation_output" |
+      awk -F= '$1 == "pending_attempts" { print $2 }'
+  )" \
+  "increment pending attempts"
+
+dd \
+  if="$mutation_device_image" \
+  of="$selected_copy_after" \
+  bs=512 \
+  skip=2040 \
+  count=8 \
+  2>/dev/null
+
+selected_copy_sha256_after="$(
+  sha256sum "$selected_copy_after" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$selected_copy_sha256_before" \
+  "$selected_copy_sha256_after" \
+  "preserve previously selected metadata copy"
+
+mutation_selected_output="$(
+  "$metadata_script" \
+    select-device \
+    "$mutation_device_image" \
+    "$mutation_work_directory"
+)"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$mutation_selected_output" |
+      awk -F= '$1 == "selected_copy" { print $2 }'
+  )" \
+  "select newly written metadata copy"
+
+assert_equal \
+  00000000000000000003 \
+  "$(
+    printf '%s\n' "$mutation_selected_output" |
+      awk -F= '$1 == "generation" { print $2 }'
+  )" \
+  "verify newly written generation"
+
+assert_equal \
+  002 \
+  "$(
+    printf '%s\n' "$mutation_selected_output" |
+      awk -F= '$1 == "pending_attempts" { print $2 }'
+  )" \
+  "verify newly written pending attempts"
+
+printf X |
+  dd \
+    of="$mutation_device_image" \
+    bs=512 \
+    seek=2032 \
+    count=1 \
+    conv=notrunc \
+    2>/dev/null
+
+mutation_fallback_output="$(
+  "$metadata_script" \
+    select-device \
+    "$mutation_device_image" \
+    "$mutation_work_directory"
+)"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$mutation_fallback_output" |
+      awk -F= '$1 == "selected_copy" { print $2 }'
+  )" \
+  "fall back after corrupt metadata mutation"
+
+assert_equal \
+  00000000000000000002 \
+  "$(
+    printf '%s\n' "$mutation_fallback_output" |
+      awk -F= '$1 == "generation" { print $2 }'
+  )" \
+  "preserve fallback metadata generation"
+
+assert_equal \
+  001 \
+  "$(
+    printf '%s\n' "$mutation_fallback_output" |
+      awk -F= '$1 == "pending_attempts" { print $2 }'
+  )" \
+  "preserve fallback pending attempts"
+
+no_pending_image="$test_root/no-pending-device.bin"
+no_pending_work_directory="$test_root/no-pending-work"
+
+dd \
+  if=/dev/zero \
+  of="$no_pending_image" \
+  bs=512 \
+  count=2048 \
+  2>/dev/null
+
+dd \
+  if="$record_a" \
+  of="$no_pending_image" \
+  bs=512 \
+  seek=2032 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+dd \
+  if="$record_a" \
+  of="$no_pending_image" \
+  bs=512 \
+  seek=2040 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+no_pending_sha256_before="$(
+  sha256sum "$no_pending_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  prepare-pending-image \
+  "$no_pending_image" \
+  "$no_pending_work_directory" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: mutated metadata without a pending slot" >&2
+  exit 1
+else
+  echo "ok: reject metadata mutation without pending slot"
+fi
+
+no_pending_sha256_after="$(
+  sha256sum "$no_pending_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$no_pending_sha256_before" \
+  "$no_pending_sha256_after" \
+  "preserve image without pending slot"
+
+if "$metadata_script" \
+  prepare-pending-image \
+  /dev/null \
+  "$test_root/non-regular-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: accepted a non-regular metadata image" >&2
+  exit 1
+else
+  echo "ok: reject non-regular metadata image"
+fi
+
+overflow_record="$test_root/generation-overflow.bin"
+overflow_image="$test_root/generation-overflow-device.bin"
+overflow_work_directory="$test_root/generation-overflow-work"
+overflow_error="$test_root/generation-overflow.err"
+
+"$metadata_script" write \
+  "$overflow_record" \
+  99999999999999999999 \
+  A B 001 003 \
+  valid "$slot_a_uuid" "$slot_a_sha" \
+  valid "$slot_b_uuid" "$slot_b_sha"
+
+dd \
+  if=/dev/zero \
+  of="$overflow_image" \
+  bs=512 \
+  count=2048 \
+  2>/dev/null
+
+dd \
+  if="$overflow_record" \
+  of="$overflow_image" \
+  bs=512 \
+  seek=2032 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+dd \
+  if="$overflow_record" \
+  of="$overflow_image" \
+  bs=512 \
+  seek=2040 \
+  count=8 \
+  conv=notrunc \
+  2>/dev/null
+
+overflow_sha256_before="$(
+  sha256sum "$overflow_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  prepare-pending-image \
+  "$overflow_image" \
+  "$overflow_work_directory" \
+  >/dev/null \
+  2>"$overflow_error"
+then
+  echo "error: accepted metadata generation overflow" >&2
+  exit 1
+fi
+
+if grep -q 'generation_overflow' "$overflow_error"; then
+  echo "ok: reject metadata generation overflow"
+else
+  echo "error: generation overflow was not reported" >&2
+  cat "$overflow_error" >&2
+  exit 1
+fi
+
+overflow_sha256_after="$(
+  sha256sum "$overflow_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$overflow_sha256_before" \
+  "$overflow_sha256_after" \
+  "preserve image after generation overflow"
+
+echo "ok: fake-image metadata mutation"
 echo "ok: rollback metadata tests"

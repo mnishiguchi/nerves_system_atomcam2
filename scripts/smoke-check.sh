@@ -312,6 +312,13 @@ require_grep 'metadata_choose_slot' scripts/atomcam2-boot-metadata.sh
 require_grep 'metadata_choose_loaded_slot' scripts/atomcam2-boot-metadata.sh
 require_grep "printf 'selected_slot=%s" scripts/atomcam2-boot-metadata.sh
 require_grep 'choose pending slot from raw device' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'metadata_prepare_pending_image' scripts/atomcam2-boot-metadata.sh
+require_grep 'metadata_write_device_copy' scripts/atomcam2-boot-metadata.sh
+require_grep 'image_not_regular_file' scripts/atomcam2-boot-metadata.sh
+require_grep 'prepare-pending-image' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'preserve previously selected metadata copy' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'fall back after corrupt metadata mutation' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject metadata generation overflow' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'read_boot_policy' board/atomcam2/boot-manager/init
 require_grep 'metadata_line#selected_slot=' board/atomcam2/boot-manager/init
 require_grep 'metadata_line#selection_reason=' board/atomcam2/boot-manager/init
