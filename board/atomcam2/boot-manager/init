@@ -11,7 +11,9 @@ old_root_mount="/mnt/boot-manager"
 old_root_relative_mount="mnt/boot-manager"
 report_name="atomcam2-boot-manager.env"
 boot_mount_writable=0
-prototype_data_partition=""
+slot_a_partition=""
+slot_b_partition=""
+data_partition=""
 metadata_command="/usr/bin/atomcam2-boot-metadata"
 metadata_work_dir="/tmp/atomcam2-boot-metadata"
 metadata_output_path="$metadata_work_dir/selected.env"
@@ -72,57 +74,6 @@ bootstrap_kernel_filesystems() {
     else
       true
     fi
-  fi
-}
-
-find_prototype_data_partition() {
-  for candidate_partition in /dev/mmcblk*p3; do
-    if [ -b "$candidate_partition" ]; then
-      prototype_data_partition="$candidate_partition"
-      return 0
-    fi
-  done
-
-  return 1
-}
-
-write_raw_stage() {
-  raw_stage="$1"
-
-  if [ -z "$prototype_data_partition" ]; then
-    if ! find_prototype_data_partition; then
-      return 0
-    fi
-  fi
-
-  raw_stage_partition="$prototype_data_partition"
-
-  if [ ! -b "$raw_stage_partition" ]; then
-    moved_raw_stage_partition="$application_mount$prototype_data_partition"
-
-    if [ -b "$moved_raw_stage_partition" ]; then
-      raw_stage_partition="$moved_raw_stage_partition"
-    else
-      return 0
-    fi
-  fi
-
-  if printf 'ATOMCAM2_BOOT_STAGE=%s\n' "$raw_stage" |
-    dd \
-      of="$raw_stage_partition" \
-      bs=256 \
-      count=1 \
-      conv=sync,notrunc \
-      2>&9; then
-    :
-  else
-    true
-  fi
-
-  if sync 2>&9; then
-    :
-  else
-    true
   fi
 }
 
@@ -334,6 +285,9 @@ write_report_to() {
     echo "boot_mount_writable=$boot_mount_writable"
     echo "root_disk=${root_disk:-}"
     echo "application_partition=${application_partition:-}"
+    echo "slot_a_partition=${slot_a_partition:-}"
+    echo "slot_b_partition=${slot_b_partition:-}"
+    echo "data_partition=${data_partition:-}"
     echo "boot_metadata_status=$boot_metadata_status"
     echo "boot_metadata_error=$boot_metadata_error"
     echo "boot_metadata_selected_copy=$boot_metadata_selected_copy"
@@ -372,8 +326,6 @@ write_report_to() {
 
 write_report() {
   stage="$1"
-
-  write_raw_stage "$stage"
 
   if [ "$boot_mount_moved" -eq 1 ]; then
     moved_report_path="$application_mount$final_boot_mount/$report_name"
@@ -500,7 +452,6 @@ mkdir -p "$application_mount" /tmp
 
 bootstrap_kernel_filesystems
 exec 9>/dev/null
-write_raw_stage "boot_manager_entered"
 
 boot_partition=""
 if ! find_boot_mount; then
@@ -532,9 +483,21 @@ else
   write_report "boot_metadata_unavailable"
 fi
 
-application_partition="${root_disk}p2"
-if [ ! -b "$application_partition" ]; then
-  enter_recovery "application_partition_not_found"
+slot_a_partition="${root_disk}p2"
+slot_b_partition="${root_disk}p3"
+data_partition="${root_disk}p4"
+application_partition="$slot_a_partition"
+
+if [ ! -b "$slot_a_partition" ]; then
+  enter_recovery "slot_a_partition_not_found"
+fi
+
+if [ ! -b "$slot_b_partition" ]; then
+  enter_recovery "slot_b_partition_not_found"
+fi
+
+if [ ! -b "$data_partition" ]; then
+  enter_recovery "data_partition_not_found"
 fi
 
 pivot_root_command="/sbin/pivot_root"
@@ -628,7 +591,7 @@ pivot_root_error_path="$application_mount$final_boot_mount/atomcam2-pivot-root.e
 cd "$application_mount"
 if "$pivot_root_command" . "$old_root_relative_mount" 2>"$pivot_root_error_path"; then
   cd /
-  write_raw_stage "pivot_root_returned"
+  write_report "pivot_root_returned"
 else
   pivot_root_status="$?"
   cd /
@@ -640,13 +603,13 @@ else
   exec sh
 fi
 
-write_raw_stage "old_root_unmount"
+write_report "old_root_unmount"
 
 old_root_unmount_error_path="$final_boot_mount/atomcam2-old-root-unmount.err"
 
 if "$application_umount_command"   -l   "$old_root_mount"   2>"$old_root_unmount_error_path"; then
 
-  write_raw_stage "old_root_unmounted"
+  write_report "old_root_unmounted"
 else
   old_root_unmount_status="$?"
   write_report "old_root_unmount_failed_${old_root_unmount_status}"

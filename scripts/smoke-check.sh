@@ -130,7 +130,7 @@ require_grep 'a.nerves_fw_product' examples/atomcam2_nerves_app/config/target.ex
 require_grep 'a.nerves_fw_version' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_platform' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_architecture' examples/atomcam2_nerves_app/config/target.exs
-require_grep '"a.nerves_fw_application_part0_devpath" => "/dev/rootdisk0p3"' examples/atomcam2_nerves_app/config/target.exs
+require_grep '"a.nerves_fw_application_part0_devpath" => "/dev/rootdisk0p4"' examples/atomcam2_nerves_app/config/target.exs
 require_grep '"a.nerves_fw_application_part0_fstype" => "ext2"' examples/atomcam2_nerves_app/config/target.exs
 require_grep '"a.nerves_fw_application_part0_target" => "/data"' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'time_file: "/data/.nerves_time"' examples/atomcam2_nerves_app/config/runtime.exs
@@ -152,7 +152,7 @@ require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerve
 require_grep 'runtime_mod: Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/config/runtime.exs
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 require_grep 'defmodule Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'def active_partition, do: "Prototype p2"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'def active_partition, do: "Slot A (p2)"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 require_grep 'def firmware_id, do: "UUID unavailable"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
 
@@ -229,17 +229,22 @@ require_grep 'file-resource rootfs_hack.squashfs' fwup.conf
 require_grep 'host-path = ${BOOT_MANAGER}' fwup.conf
 require_grep 'file-resource rootfs.img' fwup.conf
 require_grep 'assert-size-lte = ${APPLICATION_PART_COUNT}' fwup.conf
-require_grep 'define-eval(APPLICATION_PART_OFFSET' fwup.conf
+require_grep 'define-eval(APPLICATION_SLOT_A_PART_OFFSET' fwup.conf
+require_grep 'define-eval(APPLICATION_SLOT_B_PART_OFFSET' fwup.conf
 require_grep 'define(APPLICATION_PART_COUNT, 262144)' fwup.conf
 require_grep 'define-eval(DATA_PART_OFFSET' fwup.conf
 require_grep 'define(DATA_PART_COUNT, 1048576)' fwup.conf
 require_grep 'partition 1 {' fwup.conf
-require_grep 'block-offset = .*APPLICATION_PART_OFFSET' fwup.conf
+require_grep 'block-offset = .*APPLICATION_SLOT_A_PART_OFFSET' fwup.conf
 require_grep 'partition 2 {' fwup.conf
+require_grep 'block-offset = .*APPLICATION_SLOT_B_PART_OFFSET' fwup.conf
+require_grep 'partition 3 {' fwup.conf
 require_grep 'block-offset = .*DATA_PART_OFFSET' fwup.conf
 require_grep 'type = 0x83 # Linux' fwup.conf
 require_grep 'on-resource rootfs_hack.squashfs { fat_write' fwup.conf
-require_grep 'on-resource rootfs.img { raw_write(${APPLICATION_PART_OFFSET}) }' fwup.conf
+require_grep 'on-resource rootfs.img { raw_write(${APPLICATION_SLOT_A_PART_OFFSET}) }' fwup.conf
+reject_grep 'raw_write(${APPLICATION_SLOT_B_PART_OFFSET})' fwup.conf
+require_grep 'raw_memset(${APPLICATION_SLOT_B_PART_OFFSET}, 256, 0xff)' fwup.conf
 reject_grep 'raw_memset.*DATA_PART_OFFSET' fwup.conf
 require_grep 'file-resource atomcam2-data-init' fwup.conf
 require_grep 'contents = "format-if-missing\\n"' fwup.conf
@@ -373,9 +378,15 @@ require_grep 'bootstrap_kernel_filesystems' board/atomcam2/boot-manager/init
 require_grep 'mount -t proc proc /proc' board/atomcam2/boot-manager/init
 require_grep 'mount -t sysfs sysfs /sys' board/atomcam2/boot-manager/init
 require_grep 'mount -t tmpfs tmpfs /tmp' board/atomcam2/boot-manager/init
-require_grep 'find_prototype_data_partition' board/atomcam2/boot-manager/init
-require_grep 'ATOMCAM2_BOOT_STAGE=' board/atomcam2/boot-manager/init
-require_grep 'application_partition="${root_disk}p2"' board/atomcam2/boot-manager/init
+require_grep 'slot_a_partition="${root_disk}p2"' board/atomcam2/boot-manager/init
+require_grep 'slot_b_partition="${root_disk}p3"' board/atomcam2/boot-manager/init
+require_grep 'data_partition="${root_disk}p4"' board/atomcam2/boot-manager/init
+require_grep 'application_partition="$slot_a_partition"' board/atomcam2/boot-manager/init
+reject_grep 'find_prototype_data_partition' board/atomcam2/boot-manager/init
+reject_grep 'prototype_data_partition' board/atomcam2/boot-manager/init
+reject_grep 'moved_raw_stage_partition' board/atomcam2/boot-manager/init
+reject_grep 'write_raw_stage' board/atomcam2/boot-manager/init
+reject_grep 'conv=sync,notrunc' board/atomcam2/boot-manager/init
 require_grep 'metadata_command="/usr/bin/atomcam2-boot-metadata"' board/atomcam2/boot-manager/init
 require_grep 'read_boot_metadata' board/atomcam2/boot-manager/init
 require_grep 'select-device' board/atomcam2/boot-manager/init
@@ -390,10 +401,8 @@ require_grep 'mount -t squashfs -o ro' board/atomcam2/boot-manager/init
 require_grep 'pivot_root_command="/sbin/pivot_root"' board/atomcam2/boot-manager/init
 require_grep '"\$pivot_root_command" \. "\$old_root_relative_mount"' board/atomcam2/boot-manager/init
 require_grep 'exec /sbin/init' board/atomcam2/boot-manager/init
-require_grep 'moved_raw_stage_partition=' board/atomcam2/boot-manager/init
 require_grep 'exec 9>/dev/null' board/atomcam2/boot-manager/init
 require_grep '2>&9' board/atomcam2/boot-manager/init
-require_grep 'conv=sync,notrunc' board/atomcam2/boot-manager/init
 require_grep 'exec 9>&-' board/atomcam2/boot-manager/init
 require_grep 'temporary_output_path=' board/atomcam2/boot-manager/init
 require_grep 'dev_move' board/atomcam2/boot-manager/init
@@ -409,10 +418,10 @@ require_grep 'application_umount_command=' board/atomcam2/boot-manager/init
 require_grep '"\$application_umount_command"' board/atomcam2/boot-manager/init
 require_grep 'old_root_unmount_error_path=' board/atomcam2/boot-manager/init
 require_grep '"\$old_root_mount"' board/atomcam2/boot-manager/init
-require_grep 'write_raw_stage "pivot_root_returned"' board/atomcam2/boot-manager/init
+require_grep 'write_report "pivot_root_returned"' board/atomcam2/boot-manager/init
 require_grep 'pivot_root_failed_${pivot_root_status}' board/atomcam2/boot-manager/init
-require_grep 'write_raw_stage "old_root_unmount"' board/atomcam2/boot-manager/init
-require_grep 'write_raw_stage "old_root_unmounted"' board/atomcam2/boot-manager/init
+require_grep 'write_report "old_root_unmount"' board/atomcam2/boot-manager/init
+require_grep 'write_report "old_root_unmounted"' board/atomcam2/boot-manager/init
 require_grep 'b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc' scripts/post-image.sh
 require_grep 'ATOMCAM2_KERNEL_IMAGE' scripts/release-artifacts.sh
 require_grep 'unexpected AtomCam2 control kernel SHA256' scripts/release-artifacts.sh
@@ -444,8 +453,11 @@ require_grep 'create_rootdisk_links' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep '/dev/rootdisk0p1' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep '/dev/rootdisk0p2' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep '/dev/rootdisk0p3' rootfs_overlay/usr/bin/atomcam2-pre-run
-require_grep 'application_partition="${root_disk}p2"' rootfs_overlay/usr/bin/atomcam2-pre-run
-require_grep 'data_partition="${root_disk}p3"' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep '/dev/rootdisk0p4' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'application_slot_a_partition="${root_disk}p2"' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'application_slot_b_partition="${root_disk}p3"' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'application_partition="$application_slot_a_partition"' rootfs_overlay/usr/bin/atomcam2-pre-run
+require_grep 'data_partition="${root_disk}p4"' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep 'data_init_marker=' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep 'data_initialization_requested' rootfs_overlay/usr/bin/atomcam2-pre-run
 require_grep 'format-if-missing' rootfs_overlay/usr/bin/atomcam2-pre-run

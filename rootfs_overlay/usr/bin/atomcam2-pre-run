@@ -40,8 +40,10 @@ create_rootdisk_links() {
       ;;
   esac
 
-  application_partition="${root_disk}p2"
-  data_partition="${root_disk}p3"
+  application_slot_a_partition="${root_disk}p2"
+  application_slot_b_partition="${root_disk}p3"
+  application_partition="$application_slot_a_partition"
+  data_partition="${root_disk}p4"
 
   if [ ! -b "$root_disk" ]; then
     return 1
@@ -64,8 +66,8 @@ create_rootdisk_links() {
       ;;
   esac
 
-  if [ -b "$application_partition" ]; then
-    if ! ln -sf "$application_partition" /dev/rootdisk0p2; then
+  if [ -b "$application_slot_a_partition" ]; then
+    if ! ln -sf "$application_slot_a_partition" /dev/rootdisk0p2; then
       return 1
     fi
   else
@@ -74,12 +76,22 @@ create_rootdisk_links() {
     fi
   fi
 
-  if [ -b "$data_partition" ]; then
-    if ! ln -sf "$data_partition" /dev/rootdisk0p3; then
+  if [ -b "$application_slot_b_partition" ]; then
+    if ! ln -sf "$application_slot_b_partition" /dev/rootdisk0p3; then
       return 1
     fi
   else
     if ! rm -f /dev/rootdisk0p3; then
+      return 1
+    fi
+  fi
+
+  if [ -b "$data_partition" ]; then
+    if ! ln -sf "$data_partition" /dev/rootdisk0p4; then
+      return 1
+    fi
+  else
+    if ! rm -f /dev/rootdisk0p4; then
       return 1
     fi
   fi
@@ -221,6 +233,8 @@ write_report() {
     echo "root_disk=$root_disk"
     echo "boot_partition=$boot_partition"
     echo "application_partition=$application_partition"
+    echo "application_slot_a_partition=$application_slot_a_partition"
+    echo "application_slot_b_partition=$application_slot_b_partition"
     echo "data_partition=$data_partition"
     echo "data_mount=$data_mount"
     echo "data_status=$data_status"
@@ -245,6 +259,8 @@ fi
 root_disk=""
 boot_partition=""
 application_partition=""
+application_slot_a_partition=""
+application_slot_b_partition=""
 data_partition=""
 rootdisk_links=0
 data_status="not_started"
