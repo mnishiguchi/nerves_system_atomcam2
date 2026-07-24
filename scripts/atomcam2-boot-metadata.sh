@@ -775,9 +775,9 @@ metadata_write_device_copy() {
   fi
 }
 
-metadata_prepare_pending_image() {
+metadata_load_writable_image() {
   if [ "$#" -ne 2 ]; then
-    metadata_error="prepare_pending_image_argument_count"
+    metadata_error="load_writable_image_argument_count"
     return 1
   fi
 
@@ -806,6 +806,193 @@ metadata_prepare_pending_image() {
     return 1
   fi
 
+  metadata_previous_copy="$metadata_selected_copy"
+
+  case "$metadata_previous_copy" in
+    A)
+      metadata_written_copy="B"
+      ;;
+    B)
+      metadata_written_copy="A"
+      ;;
+    *)
+      metadata_previous_copy=""
+      metadata_error="selected_copy_invalid"
+      return 1
+      ;;
+  esac
+
+  return 0
+}
+
+metadata_commit_loaded_image() {
+  if [ "$#" -ne 7 ]; then
+    metadata_error="commit_loaded_image_argument_count"
+    return 1
+  fi
+
+  image_path="$1"
+  work_directory="$2"
+  operation_name="$3"
+  expected_generation="$4"
+  expected_confirmed_slot="$5"
+  expected_pending_slot="$6"
+  expected_pending_attempts="$7"
+
+  case "$operation_name" in
+    attempt|confirm|revert)
+      ;;
+    *)
+      metadata_error="invalid_operation_name"
+      return 1
+      ;;
+  esac
+
+  next_record_path="$work_directory/atomcam2-boot-metadata-${operation_name}.$$"
+  verified_record_path="$work_directory/atomcam2-boot-metadata-${operation_name}-verify.$$"
+
+  rm -f "$next_record_path" "$verified_record_path"
+
+  if ! metadata_write \
+    "$next_record_path" \
+    "$expected_generation" \
+    "$expected_confirmed_slot" \
+    "$expected_pending_slot" \
+    "$expected_pending_attempts" \
+    "$metadata_max_attempts" \
+    "$metadata_slot_a_status" \
+    "$metadata_slot_a_firmware_id" \
+    "$metadata_slot_a_sha256" \
+    "$metadata_slot_b_status" \
+    "$metadata_slot_b_firmware_id" \
+    "$metadata_slot_b_sha256"
+  then
+    rm -f "$next_record_path" "$verified_record_path"
+    return 1
+  fi
+
+  if expected_record_sha256="$(
+    sha256sum "$next_record_path" 2>/dev/null |
+      awk '
+        NF {
+          print $1
+          found = 1
+        }
+
+        END {
+          if (!found) {
+            exit 1
+          }
+        }
+      '
+  )"
+  then
+    :
+  else
+    rm -f "$next_record_path" "$verified_record_path"
+    metadata_error="record_checksum_failed"
+    return 1
+  fi
+
+  if ! metadata_write_device_copy \
+    "$image_path" \
+    "$metadata_written_copy" \
+    "$next_record_path"
+  then
+    rm -f "$next_record_path" "$verified_record_path"
+    return 1
+  fi
+
+  if ! metadata_extract_device_copy \
+    "$image_path" \
+    "$metadata_written_copy" \
+    "$verified_record_path"
+  then
+    rm -f "$next_record_path" "$verified_record_path"
+    return 1
+  fi
+
+  if actual_record_sha256="$(
+    sha256sum "$verified_record_path" 2>/dev/null |
+      awk '
+        NF {
+          print $1
+          found = 1
+        }
+
+        END {
+          if (!found) {
+            exit 1
+          }
+        }
+      '
+  )"
+  then
+    :
+  else
+    rm -f "$next_record_path" "$verified_record_path"
+    metadata_error="written_record_checksum_failed"
+    return 1
+  fi
+
+  if [ "$actual_record_sha256" != "$expected_record_sha256" ]; then
+    rm -f "$next_record_path" "$verified_record_path"
+    metadata_error="written_record_verification_failed"
+    return 1
+  fi
+
+  if ! metadata_read "$verified_record_path"; then
+    rm -f "$next_record_path" "$verified_record_path"
+    metadata_error="written_record_invalid"
+    return 1
+  fi
+
+  if [ "$metadata_generation" != "$expected_generation" ]; then
+    rm -f "$next_record_path" "$verified_record_path"
+    metadata_error="written_generation_mismatch"
+    return 1
+  fi
+
+  if [ "$metadata_confirmed_slot" != "$expected_confirmed_slot" ]; then
+    rm -f "$next_record_path" "$verified_record_path"
+    metadata_error="written_confirmed_slot_mismatch"
+    return 1
+  fi
+
+  if [ "$metadata_pending_slot" != "$expected_pending_slot" ]; then
+    rm -f "$next_record_path" "$verified_record_path"
+    metadata_error="written_pending_slot_mismatch"
+    return 1
+  fi
+
+  if [ "$metadata_pending_attempts" != "$expected_pending_attempts" ]; then
+    rm -f "$next_record_path" "$verified_record_path"
+    metadata_error="written_pending_attempts_mismatch"
+    return 1
+  fi
+
+  rm -f "$next_record_path" "$verified_record_path"
+  metadata_error=""
+
+  return 0
+}
+
+metadata_prepare_pending_image() {
+  if [ "$#" -ne 2 ]; then
+    metadata_error="prepare_pending_image_argument_count"
+    return 1
+  fi
+
+  image_path="$1"
+  work_directory="$2"
+
+  if ! metadata_load_writable_image \
+    "$image_path" \
+    "$work_directory"
+  then
+    return 1
+  fi
+
   if [ "$metadata_pending_slot" = "-" ]; then
     metadata_error="pending_slot_missing"
     return 1
@@ -816,7 +1003,6 @@ metadata_prepare_pending_image() {
     return 1
   fi
 
-  previous_copy="$metadata_selected_copy"
   selected_slot="$metadata_selected_slot"
   selection_reason="$metadata_selection_reason"
 
@@ -840,101 +1026,20 @@ metadata_prepare_pending_image() {
 
   next_pending_attempts="$metadata_incremented_value"
 
-  case "$previous_copy" in
-    A)
-      target_copy="B"
-      ;;
-    B)
-      target_copy="A"
-      ;;
-    *)
-      metadata_error="selected_copy_invalid"
-      return 1
-      ;;
-  esac
-
-  next_record_path="$work_directory/atomcam2-boot-metadata-next.$$"
-  verified_record_path="$work_directory/atomcam2-boot-metadata-verify.$$"
-
-  rm -f "$next_record_path" "$verified_record_path"
-
-  if ! metadata_write \
-    "$next_record_path" \
+  if ! metadata_commit_loaded_image \
+    "$image_path" \
+    "$work_directory" \
+    attempt \
     "$next_generation" \
     "$metadata_confirmed_slot" \
     "$metadata_pending_slot" \
-    "$next_pending_attempts" \
-    "$metadata_max_attempts" \
-    "$metadata_slot_a_status" \
-    "$metadata_slot_a_firmware_id" \
-    "$metadata_slot_a_sha256" \
-    "$metadata_slot_b_status" \
-    "$metadata_slot_b_firmware_id" \
-    "$metadata_slot_b_sha256"
+    "$next_pending_attempts"
   then
-    rm -f "$next_record_path" "$verified_record_path"
     return 1
   fi
 
-  expected_record_sha256="$(
-    sha256sum "$next_record_path" |
-      awk '{print $1}'
-  )"
-
-  if ! metadata_write_device_copy \
-    "$image_path" \
-    "$target_copy" \
-    "$next_record_path"
-  then
-    rm -f "$next_record_path" "$verified_record_path"
-    return 1
-  fi
-
-  if ! metadata_extract_device_copy \
-    "$image_path" \
-    "$target_copy" \
-    "$verified_record_path"
-  then
-    rm -f "$next_record_path" "$verified_record_path"
-    return 1
-  fi
-
-  actual_record_sha256="$(
-    sha256sum "$verified_record_path" |
-      awk '{print $1}'
-  )"
-
-  if [ "$actual_record_sha256" != "$expected_record_sha256" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_record_verification_failed"
-    return 1
-  fi
-
-  if ! metadata_read "$verified_record_path"; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_record_invalid"
-    return 1
-  fi
-
-  if [ "$metadata_generation" != "$next_generation" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_generation_mismatch"
-    return 1
-  fi
-
-  if [ "$metadata_pending_attempts" != "$next_pending_attempts" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_attempts_mismatch"
-    return 1
-  fi
-
-  rm -f "$next_record_path" "$verified_record_path"
-
-  metadata_previous_copy="$previous_copy"
-  metadata_written_copy="$target_copy"
   metadata_selected_slot="$selected_slot"
   metadata_selection_reason="$selection_reason"
-  metadata_error=""
 
   return 0
 }
@@ -947,24 +1052,6 @@ metadata_confirm_pending_image() {
   image_path="$1"
   active_slot="$2"
   work_directory="$3"
-  metadata_previous_copy=""
-  metadata_written_copy=""
-  metadata_error=""
-
-  if [ ! -f "$image_path" ]; then
-    metadata_error="image_not_regular_file"
-    return 1
-  fi
-
-  if [ ! -r "$image_path" ]; then
-    metadata_error="image_not_readable"
-    return 1
-  fi
-
-  if [ ! -w "$image_path" ]; then
-    metadata_error="image_not_writable"
-    return 1
-  fi
 
   case "$active_slot" in
     A|B)
@@ -975,7 +1062,10 @@ metadata_confirm_pending_image() {
       ;;
   esac
 
-  if ! metadata_select_device "$image_path" "$work_directory"; then
+  if ! metadata_load_writable_image \
+    "$image_path" \
+    "$work_directory"
+  then
     return 1
   fi
 
@@ -989,8 +1079,6 @@ metadata_confirm_pending_image() {
     return 1
   fi
 
-  previous_copy="$metadata_selected_copy"
-
   if ! metadata_increment_decimal \
     generation \
     "$metadata_generation" \
@@ -1001,113 +1089,20 @@ metadata_confirm_pending_image() {
 
   next_generation="$metadata_incremented_value"
 
-  case "$previous_copy" in
-    A)
-      target_copy="B"
-      ;;
-    B)
-      target_copy="A"
-      ;;
-    *)
-      metadata_error="selected_copy_invalid"
-      return 1
-      ;;
-  esac
-
-  next_record_path="$work_directory/atomcam2-boot-metadata-confirm.$$"
-  verified_record_path="$work_directory/atomcam2-boot-metadata-confirm-verify.$$"
-
-  rm -f "$next_record_path" "$verified_record_path"
-
-  if ! metadata_write \
-    "$next_record_path" \
+  if ! metadata_commit_loaded_image \
+    "$image_path" \
+    "$work_directory" \
+    confirm \
     "$next_generation" \
     "$active_slot" \
     - \
-    000 \
-    "$metadata_max_attempts" \
-    "$metadata_slot_a_status" \
-    "$metadata_slot_a_firmware_id" \
-    "$metadata_slot_a_sha256" \
-    "$metadata_slot_b_status" \
-    "$metadata_slot_b_firmware_id" \
-    "$metadata_slot_b_sha256"
+    000
   then
-    rm -f "$next_record_path" "$verified_record_path"
     return 1
   fi
 
-  expected_record_sha256="$(
-    sha256sum "$next_record_path" |
-      awk '{print $1}'
-  )"
-
-  if ! metadata_write_device_copy \
-    "$image_path" \
-    "$target_copy" \
-    "$next_record_path"
-  then
-    rm -f "$next_record_path" "$verified_record_path"
-    return 1
-  fi
-
-  if ! metadata_extract_device_copy \
-    "$image_path" \
-    "$target_copy" \
-    "$verified_record_path"
-  then
-    rm -f "$next_record_path" "$verified_record_path"
-    return 1
-  fi
-
-  actual_record_sha256="$(
-    sha256sum "$verified_record_path" |
-      awk '{print $1}'
-  )"
-
-  if [ "$actual_record_sha256" != "$expected_record_sha256" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_record_verification_failed"
-    return 1
-  fi
-
-  if ! metadata_read "$verified_record_path"; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_record_invalid"
-    return 1
-  fi
-
-  if [ "$metadata_generation" != "$next_generation" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_generation_mismatch"
-    return 1
-  fi
-
-  if [ "$metadata_confirmed_slot" != "$active_slot" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_confirmed_slot_mismatch"
-    return 1
-  fi
-
-  if [ "$metadata_pending_slot" != "-" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_pending_slot_not_cleared"
-    return 1
-  fi
-
-  if [ "$metadata_pending_attempts" != "000" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_pending_attempts_not_reset"
-    return 1
-  fi
-
-  rm -f "$next_record_path" "$verified_record_path"
-
-  metadata_previous_copy="$previous_copy"
-  metadata_written_copy="$target_copy"
   metadata_selected_slot="$active_slot"
   metadata_selection_reason="confirmed"
-  metadata_error=""
 
   return 0
 }
@@ -1120,24 +1115,6 @@ metadata_revert_image() {
   image_path="$1"
   active_slot="$2"
   work_directory="$3"
-  metadata_previous_copy=""
-  metadata_written_copy=""
-  metadata_error=""
-
-  if [ ! -f "$image_path" ]; then
-    metadata_error="image_not_regular_file"
-    return 1
-  fi
-
-  if [ ! -r "$image_path" ]; then
-    metadata_error="image_not_readable"
-    return 1
-  fi
-
-  if [ ! -w "$image_path" ]; then
-    metadata_error="image_not_writable"
-    return 1
-  fi
 
   case "$active_slot" in
     A|B)
@@ -1148,7 +1125,10 @@ metadata_revert_image() {
       ;;
   esac
 
-  if ! metadata_select_device "$image_path" "$work_directory"; then
+  if ! metadata_load_writable_image \
+    "$image_path" \
+    "$work_directory"
+  then
     return 1
   fi
 
@@ -1178,8 +1158,6 @@ metadata_revert_image() {
     return 1
   fi
 
-  previous_copy="$metadata_selected_copy"
-
   if ! metadata_increment_decimal \
     generation \
     "$metadata_generation" \
@@ -1190,113 +1168,20 @@ metadata_revert_image() {
 
   next_generation="$metadata_incremented_value"
 
-  case "$previous_copy" in
-    A)
-      target_copy="B"
-      ;;
-    B)
-      target_copy="A"
-      ;;
-    *)
-      metadata_error="selected_copy_invalid"
-      return 1
-      ;;
-  esac
-
-  next_record_path="$work_directory/atomcam2-boot-metadata-revert.$$"
-  verified_record_path="$work_directory/atomcam2-boot-metadata-revert-verify.$$"
-
-  rm -f "$next_record_path" "$verified_record_path"
-
-  if ! metadata_write \
-    "$next_record_path" \
+  if ! metadata_commit_loaded_image \
+    "$image_path" \
+    "$work_directory" \
+    revert \
     "$next_generation" \
     "$active_slot" \
     "$revert_slot" \
-    000 \
-    "$metadata_max_attempts" \
-    "$metadata_slot_a_status" \
-    "$metadata_slot_a_firmware_id" \
-    "$metadata_slot_a_sha256" \
-    "$metadata_slot_b_status" \
-    "$metadata_slot_b_firmware_id" \
-    "$metadata_slot_b_sha256"
+    000
   then
-    rm -f "$next_record_path" "$verified_record_path"
     return 1
   fi
 
-  expected_record_sha256="$(
-    sha256sum "$next_record_path" |
-      awk '{print $1}'
-  )"
-
-  if ! metadata_write_device_copy \
-    "$image_path" \
-    "$target_copy" \
-    "$next_record_path"
-  then
-    rm -f "$next_record_path" "$verified_record_path"
-    return 1
-  fi
-
-  if ! metadata_extract_device_copy \
-    "$image_path" \
-    "$target_copy" \
-    "$verified_record_path"
-  then
-    rm -f "$next_record_path" "$verified_record_path"
-    return 1
-  fi
-
-  actual_record_sha256="$(
-    sha256sum "$verified_record_path" |
-      awk '{print $1}'
-  )"
-
-  if [ "$actual_record_sha256" != "$expected_record_sha256" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_record_verification_failed"
-    return 1
-  fi
-
-  if ! metadata_read "$verified_record_path"; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_record_invalid"
-    return 1
-  fi
-
-  if [ "$metadata_generation" != "$next_generation" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_generation_mismatch"
-    return 1
-  fi
-
-  if [ "$metadata_confirmed_slot" != "$active_slot" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_confirmed_slot_mismatch"
-    return 1
-  fi
-
-  if [ "$metadata_pending_slot" != "$revert_slot" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_revert_slot_mismatch"
-    return 1
-  fi
-
-  if [ "$metadata_pending_attempts" != "000" ]; then
-    rm -f "$next_record_path" "$verified_record_path"
-    metadata_error="written_pending_attempts_not_reset"
-    return 1
-  fi
-
-  rm -f "$next_record_path" "$verified_record_path"
-
-  metadata_previous_copy="$previous_copy"
-  metadata_written_copy="$target_copy"
   metadata_selected_slot="$revert_slot"
   metadata_selection_reason="pending"
-  metadata_error=""
 
   return 0
 }

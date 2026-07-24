@@ -314,6 +314,10 @@ require_grep "printf 'selected_slot=%s" scripts/atomcam2-boot-metadata.sh
 require_grep 'choose pending slot from raw device' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'metadata_prepare_pending_image' scripts/atomcam2-boot-metadata.sh
 require_grep 'metadata_write_device_copy' scripts/atomcam2-boot-metadata.sh
+require_grep 'metadata_load_writable_image' scripts/atomcam2-boot-metadata.sh
+require_grep 'metadata_commit_loaded_image' scripts/atomcam2-boot-metadata.sh
+require_grep 'written_pending_slot_mismatch' scripts/atomcam2-boot-metadata.sh
+require_grep 'written_pending_attempts_mismatch' scripts/atomcam2-boot-metadata.sh
 require_grep 'image_not_regular_file' scripts/atomcam2-boot-metadata.sh
 require_grep 'prepare-pending-image' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'preserve previously selected metadata copy' scripts/test-atomcam2-boot-metadata.sh
