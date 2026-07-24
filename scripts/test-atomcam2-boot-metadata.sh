@@ -1645,4 +1645,426 @@ assert_equal \
   "preserve image after revert overflow"
 
 echo "ok: fake-image manual revert"
+
+prevent_revert_record="$test_root/prevent-revert-record.bin"
+prevent_revert_image="$test_root/prevent-revert-device.bin"
+prevent_revert_work_directory="$test_root/prevent-revert-work"
+
+"$metadata_script" write \
+  "$prevent_revert_record" \
+  00000000000000000012 \
+  B - 000 003 \
+  valid "$slot_a_uuid" "$slot_a_sha" \
+  valid "$slot_b_uuid" "$slot_b_sha"
+
+write_metadata_test_image \
+  "$prevent_revert_image" \
+  "$prevent_revert_record" \
+  "$prevent_revert_record"
+
+prevent_revert_previous_copy="$test_root/prevent-revert-previous.bin"
+prevent_revert_previous_copy_after="$test_root/prevent-revert-previous-after.bin"
+
+extract_metadata_test_copy \
+  "$prevent_revert_image" \
+  A \
+  "$prevent_revert_previous_copy"
+
+prevent_revert_previous_sha256="$(
+  sha256sum "$prevent_revert_previous_copy" |
+    awk '{print $1}'
+)"
+
+prevent_revert_output="$(
+  "$metadata_script" \
+    prevent-revert-image \
+    "$prevent_revert_image" \
+    B \
+    "$prevent_revert_work_directory"
+)"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "previous_copy" { print $2 }'
+  )" \
+  "identify metadata copy before prevent-revert"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "written_copy" { print $2 }'
+  )" \
+  "write prevent-revert to inactive metadata copy"
+
+assert_equal \
+  00000000000000000013 \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "generation" { print $2 }'
+  )" \
+  "increment prevent-revert generation"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "confirmed_slot" { print $2 }'
+  )" \
+  "preserve confirmed slot during prevent-revert"
+
+assert_equal \
+  - \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "pending_slot" { print $2 }'
+  )" \
+  "keep pending slot clear during prevent-revert"
+
+assert_equal \
+  empty \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "slot_a_status" { print $2 }'
+  )" \
+  "mark rollback slot reusable"
+
+assert_equal \
+  - \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "slot_a_firmware_id" { print $2 }'
+  )" \
+  "clear reusable slot firmware ID"
+
+assert_equal \
+  - \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "slot_a_sha256" { print $2 }'
+  )" \
+  "clear reusable slot checksum"
+
+assert_equal \
+  valid \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "slot_b_status" { print $2 }'
+  )" \
+  "preserve running slot status"
+
+assert_equal \
+  "$slot_b_uuid" \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "slot_b_firmware_id" { print $2 }'
+  )" \
+  "preserve running slot firmware ID"
+
+assert_equal \
+  "$slot_b_sha" \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "slot_b_sha256" { print $2 }'
+  )" \
+  "preserve running slot checksum"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "selected_slot" { print $2 }'
+  )" \
+  "retain running slot after prevent-revert"
+
+assert_equal \
+  confirmed \
+  "$(
+    printf '%s\n' "$prevent_revert_output" |
+      awk -F= '$1 == "selection_reason" { print $2 }'
+  )" \
+  "retain confirmed policy after prevent-revert"
+
+extract_metadata_test_copy \
+  "$prevent_revert_image" \
+  A \
+  "$prevent_revert_previous_copy_after"
+
+prevent_revert_previous_sha256_after="$(
+  sha256sum "$prevent_revert_previous_copy_after" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$prevent_revert_previous_sha256" \
+  "$prevent_revert_previous_sha256_after" \
+  "preserve previous metadata during prevent-revert"
+
+prevent_revert_selection_output="$(
+  "$metadata_script" \
+    select-device \
+    "$prevent_revert_image" \
+    "$prevent_revert_work_directory"
+)"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$prevent_revert_selection_output" |
+      awk -F= '$1 == "selected_copy" { print $2 }'
+  )" \
+  "select prevent-revert metadata copy"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$prevent_revert_selection_output" |
+      awk -F= '$1 == "selected_slot" { print $2 }'
+  )" \
+  "select confirmed slot after prevent-revert"
+
+printf X |
+  dd \
+    of="$prevent_revert_image" \
+    bs=512 \
+    seek=2040 \
+    count=1 \
+    conv=notrunc \
+    2>/dev/null
+
+prevent_revert_fallback_output="$(
+  "$metadata_script" \
+    select-device \
+    "$prevent_revert_image" \
+    "$prevent_revert_work_directory"
+)"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$prevent_revert_fallback_output" |
+      awk -F= '$1 == "selected_copy" { print $2 }'
+  )" \
+  "fall back after corrupt prevent-revert record"
+
+assert_equal \
+  valid \
+  "$(
+    printf '%s\n' "$prevent_revert_fallback_output" |
+      awk -F= '$1 == "slot_a_status" { print $2 }'
+  )" \
+  "retain rollback eligibility after failed prevent-revert write"
+
+pending_prevent_revert_image="$test_root/pending-prevent-revert-device.bin"
+
+write_metadata_test_image \
+  "$pending_prevent_revert_image" \
+  "$record_b" \
+  "$record_b"
+
+pending_prevent_revert_sha256_before="$(
+  sha256sum "$pending_prevent_revert_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  prevent-revert-image \
+  "$pending_prevent_revert_image" \
+  A \
+  "$test_root/pending-prevent-revert-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: accepted prevent-revert while a slot was pending" >&2
+  exit 1
+else
+  echo "ok: reject prevent-revert while a slot is pending"
+fi
+
+pending_prevent_revert_sha256_after="$(
+  sha256sum "$pending_prevent_revert_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$pending_prevent_revert_sha256_before" \
+  "$pending_prevent_revert_sha256_after" \
+  "preserve image after pending prevent-revert rejection"
+
+empty_prevent_revert_image="$test_root/empty-prevent-revert-device.bin"
+
+write_metadata_test_image \
+  "$empty_prevent_revert_image" \
+  "$record_a" \
+  "$record_a"
+
+empty_prevent_revert_sha256_before="$(
+  sha256sum "$empty_prevent_revert_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  prevent-revert-image \
+  "$empty_prevent_revert_image" \
+  A \
+  "$test_root/empty-prevent-revert-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: accepted prevent-revert without a valid rollback slot" >&2
+  exit 1
+else
+  echo "ok: reject prevent-revert without valid rollback slot"
+fi
+
+empty_prevent_revert_sha256_after="$(
+  sha256sum "$empty_prevent_revert_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$empty_prevent_revert_sha256_before" \
+  "$empty_prevent_revert_sha256_after" \
+  "preserve image without valid rollback slot"
+
+bad_prevent_revert_image="$test_root/bad-prevent-revert-device.bin"
+
+write_metadata_test_image \
+  "$bad_prevent_revert_image" \
+  "$bad_revert_record" \
+  "$bad_revert_record"
+
+bad_prevent_revert_sha256_before="$(
+  sha256sum "$bad_prevent_revert_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  prevent-revert-image \
+  "$bad_prevent_revert_image" \
+  A \
+  "$test_root/bad-prevent-revert-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: accepted prevent-revert with a bad rollback slot" >&2
+  exit 1
+else
+  echo "ok: reject prevent-revert with bad rollback slot"
+fi
+
+bad_prevent_revert_sha256_after="$(
+  sha256sum "$bad_prevent_revert_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$bad_prevent_revert_sha256_before" \
+  "$bad_prevent_revert_sha256_after" \
+  "preserve image with bad rollback slot"
+
+prevent_revert_active_mismatch_image="$test_root/prevent-revert-active-mismatch.bin"
+
+write_metadata_test_image \
+  "$prevent_revert_active_mismatch_image" \
+  "$prevent_revert_record" \
+  "$prevent_revert_record"
+
+prevent_revert_active_mismatch_sha256_before="$(
+  sha256sum "$prevent_revert_active_mismatch_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  prevent-revert-image \
+  "$prevent_revert_active_mismatch_image" \
+  A \
+  "$test_root/prevent-revert-active-mismatch-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: prevented revert from a non-confirmed slot" >&2
+  exit 1
+else
+  echo "ok: reject prevent-revert from non-confirmed active slot"
+fi
+
+prevent_revert_active_mismatch_sha256_after="$(
+  sha256sum "$prevent_revert_active_mismatch_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$prevent_revert_active_mismatch_sha256_before" \
+  "$prevent_revert_active_mismatch_sha256_after" \
+  "preserve image after prevent-revert active mismatch"
+
+if "$metadata_script" \
+  prevent-revert-image \
+  /dev/null \
+  B \
+  "$test_root/non-regular-prevent-revert-work" \
+  >/dev/null \
+  2>&1
+then
+  echo "error: prevented revert on a non-regular image" >&2
+  exit 1
+else
+  echo "ok: reject prevent-revert on non-regular image"
+fi
+
+prevent_revert_overflow_record="$test_root/prevent-revert-overflow-record.bin"
+prevent_revert_overflow_image="$test_root/prevent-revert-overflow-device.bin"
+prevent_revert_overflow_error="$test_root/prevent-revert-overflow.err"
+
+"$metadata_script" write \
+  "$prevent_revert_overflow_record" \
+  99999999999999999999 \
+  B - 000 003 \
+  valid "$slot_a_uuid" "$slot_a_sha" \
+  valid "$slot_b_uuid" "$slot_b_sha"
+
+write_metadata_test_image \
+  "$prevent_revert_overflow_image" \
+  "$prevent_revert_overflow_record" \
+  "$prevent_revert_overflow_record"
+
+prevent_revert_overflow_sha256_before="$(
+  sha256sum "$prevent_revert_overflow_image" |
+    awk '{print $1}'
+)"
+
+if "$metadata_script" \
+  prevent-revert-image \
+  "$prevent_revert_overflow_image" \
+  B \
+  "$test_root/prevent-revert-overflow-work" \
+  >/dev/null \
+  2>"$prevent_revert_overflow_error"
+then
+  echo "error: accepted prevent-revert generation overflow" >&2
+  exit 1
+fi
+
+if grep -q 'generation_overflow' "$prevent_revert_overflow_error"; then
+  echo "ok: reject prevent-revert generation overflow"
+else
+  echo "error: prevent-revert overflow was not reported" >&2
+  cat "$prevent_revert_overflow_error" >&2
+  exit 1
+fi
+
+prevent_revert_overflow_sha256_after="$(
+  sha256sum "$prevent_revert_overflow_image" |
+    awk '{print $1}'
+)"
+
+assert_equal \
+  "$prevent_revert_overflow_sha256_before" \
+  "$prevent_revert_overflow_sha256_after" \
+  "preserve image after prevent-revert overflow"
+
+echo "ok: fake-image prevent-revert"
 echo "ok: rollback metadata tests"

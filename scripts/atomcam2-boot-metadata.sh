@@ -840,7 +840,7 @@ metadata_commit_loaded_image() {
   expected_pending_attempts="$7"
 
   case "$operation_name" in
-    attempt|confirm|revert)
+    attempt|confirm|revert|prevent-revert)
       ;;
     *)
       metadata_error="invalid_operation_name"
@@ -1185,6 +1185,96 @@ metadata_revert_image() {
 
   return 0
 }
+metadata_prevent_revert_image() {
+  if [ "$#" -ne 3 ]; then
+    metadata_error="prevent_revert_image_argument_count"
+    return 1
+  fi
+
+  image_path="$1"
+  active_slot="$2"
+  work_directory="$3"
+
+  case "$active_slot" in
+    A|B)
+      ;;
+    *)
+      metadata_error="active_slot_invalid"
+      return 1
+      ;;
+  esac
+
+  if ! metadata_load_writable_image \
+    "$image_path" \
+    "$work_directory"
+  then
+    return 1
+  fi
+
+  if [ "$metadata_pending_slot" != "-" ]; then
+    metadata_error="pending_slot_already_set"
+    return 1
+  fi
+
+  if [ "$active_slot" != "$metadata_confirmed_slot" ]; then
+    metadata_error="active_slot_not_confirmed"
+    return 1
+  fi
+
+  case "$active_slot" in
+    A)
+      rollback_slot_status="$metadata_slot_b_status"
+      ;;
+    B)
+      rollback_slot_status="$metadata_slot_a_status"
+      ;;
+  esac
+
+  if [ "$rollback_slot_status" != "valid" ]; then
+    metadata_error="rollback_slot_not_valid"
+    return 1
+  fi
+
+  if ! metadata_increment_decimal \
+    generation \
+    "$metadata_generation" \
+    20
+  then
+    return 1
+  fi
+
+  next_generation="$metadata_incremented_value"
+
+  case "$active_slot" in
+    A)
+      metadata_slot_b_status="empty"
+      metadata_slot_b_firmware_id="-"
+      metadata_slot_b_sha256="-"
+      ;;
+    B)
+      metadata_slot_a_status="empty"
+      metadata_slot_a_firmware_id="-"
+      metadata_slot_a_sha256="-"
+      ;;
+  esac
+
+  if ! metadata_commit_loaded_image \
+    "$image_path" \
+    "$work_directory" \
+    prevent-revert \
+    "$next_generation" \
+    "$active_slot" \
+    - \
+    000
+  then
+    return 1
+  fi
+
+  metadata_selected_slot="$active_slot"
+  metadata_selection_reason="confirmed"
+
+  return 0
+}
 usage() {
   printf '%s\n' \
     "Usage:" \
@@ -1197,7 +1287,8 @@ usage() {
     "  $0 select-device DEVICE [WORK_DIRECTORY]" \
     "  $0 prepare-pending-image IMAGE [WORK_DIRECTORY]" \
     "  $0 confirm-pending-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]" \
-    "  $0 revert-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]"
+    "  $0 revert-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]" \
+    "  $0 prevent-revert-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]"
 }
 
 command_name="${1:-}"
@@ -1348,6 +1439,31 @@ case "$command_name" in
     fi
 
     if metadata_revert_image \
+      "$2" \
+      "$3" \
+      "$work_directory"
+    then
+      printf 'previous_copy=%s\n' "$metadata_previous_copy"
+      printf 'written_copy=%s\n' "$metadata_written_copy"
+      printf 'selected_slot=%s\n' "$metadata_selected_slot"
+      printf 'selection_reason=%s\n' "$metadata_selection_reason"
+      metadata_print
+    else
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  prevent-revert-image)
+    if [ "$#" -eq 3 ]; then
+      work_directory="${ATOMCAM2_BOOT_METADATA_WORK_DIR:-/tmp}"
+    elif [ "$#" -eq 4 ]; then
+      work_directory="$4"
+    else
+      usage >&2
+      exit 1
+    fi
+
+    if metadata_prevent_revert_image \
       "$2" \
       "$3" \
       "$work_directory"

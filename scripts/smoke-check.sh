@@ -337,6 +337,14 @@ require_grep 'reject revert while a slot is pending' scripts/test-atomcam2-boot-
 require_grep 'reject revert to empty slot' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'reject revert to bad slot' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'reject revert generation overflow' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'metadata_prevent_revert_image' scripts/atomcam2-boot-metadata.sh
+require_grep 'attempt|confirm|revert|prevent-revert' scripts/atomcam2-boot-metadata.sh
+require_grep 'prevent-revert-image' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'mark rollback slot reusable' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'preserve previous metadata during prevent-revert' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'retain rollback eligibility after failed prevent-revert write' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject prevent-revert while a slot is pending' scripts/test-atomcam2-boot-metadata.sh
+require_grep 'reject prevent-revert generation overflow' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'read_boot_policy' board/atomcam2/boot-manager/init
 require_grep 'metadata_line#selected_slot=' board/atomcam2/boot-manager/init
 require_grep 'metadata_line#selection_reason=' board/atomcam2/boot-manager/init
