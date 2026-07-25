@@ -37,6 +37,9 @@ v
 validate firmware metadata and extract rootfs.img
 |
 v
+validate and retain the incoming fwup meta-uuid
+|
+v
 select the inactive application slot
 |
 v
@@ -97,6 +100,8 @@ wrapper process's stdin on SSH EOF.
   task.
 - The candidate partition is verified against the extracted rootfs SHA-256
   before metadata activation.
+- The candidate UUID is validated and copied from the incoming fwup
+  `meta-uuid`.
 - Pending metadata is written only after the candidate verifies successfully.
 - The existing confirmed slot remains unchanged until the candidate is healthy
   after reboot.
@@ -117,6 +122,23 @@ Nerves.Runtime.revert()
 Nerves.Runtime.FwupOps.prevent_revert()
 Nerves.Runtime.FwupOps.factory_reset()
 ```
+
+A custom KV backend maps the physically running slot from the boot report and
+the current redundant metadata into standard Nerves keys:
+
+```text
+nerves_fw_active
+a.nerves_fw_uuid
+a.nerves_fw_validated
+b.nerves_fw_uuid
+b.nerves_fw_validated
+```
+
+It reads live redundant metadata when KV reloads because the boot report is a
+boot-time snapshot and remains stale after successful confirmation.
+NervesMOTD uses its standard target runtime, so it displays the active slot,
+validation state, and fwup nickname/UUID without an Atom Cam-specific firmware
+override.
 
 A restricted fwup-compatible adapter maps only the standard operations to the
 Atom Cam 2 command. It does not execute arbitrary commands from `ops.fw`.
@@ -153,6 +175,8 @@ The shell test covers:
 - prevent-revert;
 - exhausted pending-candidate rejection;
 - incompatible platform rejection;
+- malformed or missing firmware UUID rejection;
+- persistence of the incoming fwup UUID in candidate slot metadata;
 - SSH upload subsystem integration on physical hardware;
 - framed Nerves Runtime operations status and errors.
 
@@ -172,16 +196,24 @@ Validation on an Atom Cam 2 on 2026-07-25 covered:
 - `Nerves.Runtime.revert/0` in both slot directions, including reboot and
   health-based confirmation.
 
-The final tested firmware was version `0.1.1`, UUID `toy-cup`
-(`eb377d26-74e3-54ff-b10f-476f771d546c`). Both slots contained rootfs SHA-256
-`5428a0df2e36b0b1e619bd25083c493ece7b0cb0b3be42e3ecfcd8b8538b8434`.
+UUID and MOTD validation on the same camera additionally covered:
+
+- `:unvalidated` and `Not validated (A)` while an uploaded slot was pending;
+- automatic transition to `:validated` and `Valid (A)` without another reboot;
+- active UUID and MOTD identity matching the uploaded fwup `meta-uuid`;
+- a manual revert to Slot B with Slot B's UUID and a revert back to Slot A.
+
+The final tested firmware was version `0.1.1`, UUID `raw-sign`
+(`bebf9516-388f-5579-c661-e6ea6f68752f`). Both slots contained rootfs SHA-256
+`1710409cec4c8f641009c13a30c562028bc0ef1f6d7c5c58c0df14a86da3cbd5`.
 The final metadata state was:
 
 ```text
-generation=00000000000000000025
+generation=00000000000000000037
 confirmed_slot=A
 pending_slot=-
 pending_attempts=000
+slot_a_firmware_id=bebf9516-388f-5579-c661-e6ea6f68752f
 ```
 
 ## Physical validation still required

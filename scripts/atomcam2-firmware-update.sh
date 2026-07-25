@@ -156,6 +156,29 @@ firmware_metadata_value() {
     "$input_path"
 }
 
+firmware_id_valid() {
+  firmware_id="$1"
+
+  awk -v firmware_id="$firmware_id" '
+    function hexadecimal(value) {
+      return value != "" && value !~ /[^0-9a-f]/
+    }
+
+    BEGIN {
+      if (length(firmware_id) != 36) exit 1
+      if (substr(firmware_id, 9, 1) != "-") exit 1
+      if (substr(firmware_id, 14, 1) != "-") exit 1
+      if (substr(firmware_id, 19, 1) != "-") exit 1
+      if (substr(firmware_id, 24, 1) != "-") exit 1
+      if (!hexadecimal(substr(firmware_id, 1, 8))) exit 1
+      if (!hexadecimal(substr(firmware_id, 10, 4))) exit 1
+      if (!hexadecimal(substr(firmware_id, 15, 4))) exit 1
+      if (!hexadecimal(substr(firmware_id, 20, 4))) exit 1
+      if (!hexadecimal(substr(firmware_id, 25, 12))) exit 1
+    }
+  '
+}
+
 increment_generation() {
   generation="$1"
 
@@ -544,6 +567,7 @@ validate_firmware_metadata() {
 
   firmware_platform="$(firmware_metadata_value meta-platform "$metadata_path")"
   firmware_architecture="$(firmware_metadata_value meta-architecture "$metadata_path")"
+  firmware_uuid="$(firmware_metadata_value meta-uuid "$metadata_path")"
 
   if [ "$firmware_platform" != "atomcam2" ]; then
     fail "firmware platform is not atomcam2: $firmware_platform"
@@ -551,6 +575,10 @@ validate_firmware_metadata() {
 
   if [ "$firmware_architecture" != "mipsel" ]; then
     fail "firmware architecture is not mipsel: $firmware_architecture"
+  fi
+
+  if ! firmware_id_valid "$firmware_uuid"; then
+    fail "firmware UUID is invalid: $firmware_uuid"
   fi
 }
 
@@ -588,7 +616,7 @@ install_locked() {
 
   rootfs_size="$(wc -c < "$rootfs_path" | tr -d ' ')"
   rootfs_sha256="$(sha256sum "$rootfs_path" | awk '{print $1}')"
-  rootfs_firmware_id="$("$metadata_command" firmware-id "$rootfs_sha256")"
+  rootfs_firmware_id="$firmware_uuid"
 
   load_metadata "$initial_state_path" "$initial_state_work_directory"
   initial_generation="$generation"

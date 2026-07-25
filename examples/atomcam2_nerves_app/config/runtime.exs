@@ -74,6 +74,5 @@ if config_target() != :host do
     authorized_keys: compiled_keys ++ sd_keys
 
   config :nerves_motd,
-    logo: Atomcam2NervesApp.MOTDLogo.render(),
-    runtime_mod: Atomcam2NervesApp.MOTDRuntime
+    logo: Atomcam2NervesApp.MOTDLogo.render()
 end

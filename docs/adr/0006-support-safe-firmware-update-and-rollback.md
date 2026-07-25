@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 
@@ -153,6 +153,17 @@ recovery path rather than guessing which application slot to boot.
 Prefer a small, purpose-built native utility for metadata parsing and updates.
 Do not implement a generalized state framework without a concrete need.
 
+Expose the selected slot through the standard `nerves_fw_active` key. Expose
+each populated slot's firmware identifier and validation state through
+`<slot>.nerves_fw_uuid` and `<slot>.nerves_fw_validated`. The identifier stored
+for a remotely uploaded candidate must be the incoming fwup bundle's
+`meta-uuid`.
+
+Runtime consumers must load current redundant metadata rather than relying only
+on the boot-manager report. The report identifies the physically running slot,
+but its confirmed and pending fields are a boot-time snapshot and become stale
+after `Nerves.Runtime.validate_firmware/0`.
+
 ### Slot selection and boot attempts
 
 The boot manager must select slots as follows:
@@ -228,6 +239,10 @@ Use `Nerves.Runtime.FwupOps` and `Nerves.Runtime.validate_firmware/0` rather tha
 project-specific application APIs when the standard interfaces are available.
 The Atom Cam 2 implementation may use custom fwup operations internally to
 manage its dedicated raw metadata.
+
+Use the standard NervesMOTD target runtime. Its firmware designation and
+validation display must be backed by the slot-scoped UUID and validation keys,
+including the normal fwup nickname derived from the active firmware UUID.
 
 Retain the ADR 0005 `factory-reset` behavior. It must clear only `/data` and
 must not change slot selection, validation state, application-slot contents,

@@ -54,6 +54,8 @@ update_directory="$work_directory/update"
 firmware_directory="$work_directory/firmware"
 firmware_path="$work_directory/candidate.fw"
 invalid_firmware_path="$work_directory/invalid.fw"
+invalid_uuid_firmware_path="$work_directory/invalid-uuid.fw"
+candidate_uuid=22222222-2222-4222-8222-222222222222
 export FAKE_METADATA_STATE="$work_directory/metadata.env"
 export FAKE_METADATA_NEXT_STATE="$work_directory/metadata-next.env"
 
@@ -192,6 +194,14 @@ case "$mode" in
 
     printf 'meta-platform=%s\n' "$platform"
     printf 'meta-architecture=mipsel\n'
+
+    if unzip -p "$firmware_path" data/uuid >/dev/null 2>&1; then
+      uuid="$(unzip -p "$firmware_path" data/uuid)"
+    else
+      uuid=22222222-2222-4222-8222-222222222222
+    fi
+
+    printf 'meta-uuid=%s\n' "$uuid"
     ;;
   apply)
     if [ "$task_name" != "atomcam2-slot" ]; then
@@ -217,6 +227,7 @@ slot_a_before="$(sha256sum "$slot_a" | awk '{print $1}')"
 mkdir -p "$firmware_directory/data" "$update_directory"
 printf 'candidate firmware B\n' > "$firmware_directory/data/rootfs.img"
 printf 'atomcam2\n' > "$firmware_directory/data/platform"
+printf '%s\n' "$candidate_uuid" > "$firmware_directory/data/uuid"
 (
   cd "$firmware_directory"
   zip -q -r "$firmware_path" data
@@ -225,6 +236,12 @@ printf 'wrong-platform\n' > "$firmware_directory/data/platform"
 (
   cd "$firmware_directory"
   zip -q -r "$invalid_firmware_path" data
+)
+printf 'atomcam2\n' > "$firmware_directory/data/platform"
+printf 'not-a-uuid\n' > "$firmware_directory/data/uuid"
+(
+  cd "$firmware_directory"
+  zip -q -r "$invalid_uuid_firmware_path" data
 )
 
 initial_sha="$(sha256sum "$slot_a" | awk '{print $1}')"
@@ -273,6 +290,7 @@ assert_contains 'status=installed' "$install_output" 'install result'
 assert_equal B "$(state_value pending_slot)" 'pending slot after install'
 assert_equal A "$(state_value confirmed_slot)" 'confirmed slot after install'
 assert_equal valid "$(state_value slot_b_status)" 'slot B status after install'
+assert_equal "$candidate_uuid" "$(state_value slot_b_firmware_id)" 'slot B firmware UUID after install'
 assert_equal "$slot_a_before" "$(sha256sum "$slot_a" | awk '{print $1}')" 'active slot preservation'
 assert_equal a\-\>b "$("$updater" status)" 'status after install'
 
@@ -325,6 +343,11 @@ if "$updater" install "$invalid_firmware_path" > "$work_directory/invalid.out" 2
   fail 'invalid platform firmware was accepted'
 fi
 assert_contains 'firmware platform is not atomcam2' "$work_directory/invalid.out" 'invalid platform rejection'
+
+if "$updater" install "$invalid_uuid_firmware_path" > "$work_directory/invalid-uuid.out" 2>&1; then
+  fail 'invalid firmware UUID was accepted'
+fi
+assert_contains 'firmware UUID is invalid' "$work_directory/invalid-uuid.out" 'invalid UUID rejection'
 
 export ATOMCAM2_FIRMWARE_UPDATE_COMMAND="$updater"
 ops_adapter="$source_directory/atomcam2-fwup-ops.sh"

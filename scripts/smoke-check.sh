@@ -156,12 +156,9 @@ require_grep 'defmodule Atomcam2NervesApp.MOTDLogo' examples/atomcam2_nerves_app
 require_grep 'config_target() != :host' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'runtime_mod: Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/config/runtime.exs
-require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'defmodule Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'FirmwareKVBackend.active_partition()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep '"b" -> "Slot B (p3)"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'def firmware_id, do: "UUID unavailable"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep '"#{slot}.nerves_fw_uuid"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
+require_grep '"#{slot}.nerves_fw_validated"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
+require_grep 'firmware_uuid="$(firmware_metadata_value meta-uuid' scripts/atomcam2-firmware-update.sh
 iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
 
 if grep -Fq 'MOTDLogo.render' "$iex_file"; then
