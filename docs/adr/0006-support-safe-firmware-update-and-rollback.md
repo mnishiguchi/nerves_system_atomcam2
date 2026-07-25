@@ -341,7 +341,8 @@ failure must leave both slot contents and rollback metadata unchanged.
 3. It verifies and mounts the pending slot.
 4. It hands off to the pending application.
 5. The application performs health checks.
-6. Successful validation promotes the pending slot to confirmed.
+6. Successful validation promotes the pending slot to confirmed through the boot
+   metadata protocol.
 7. A reboot before validation consumes another attempt.
 8. Exhausted attempts cause the boot manager to return to the previous confirmed
    slot.
@@ -395,6 +396,36 @@ hardware that:
 
 Failure of any foundational prototype gate must stop the A/B implementation and
 trigger an ADR revision.
+
+## Implementation status
+
+The boot manager foundation described in this ADR has been implemented and
+validated on physical AtomCam 2 hardware.
+
+Implemented:
+
+- Immutable `rootfs_hack.squashfs` boot manager handoff.
+- A/B application root filesystem layout.
+- Redundant boot metadata records with generation-based selection.
+- Confirmed slot and pending slot management.
+- Pending boot attempt tracking and automatic fallback after attempt
+  exhaustion.
+- Metadata corruption fallback to a valid record.
+- Inactive-slot firmware installation workflow with checksum verification.
+
+Validated:
+
+- The vendor boot contract remains unchanged.
+- The protected kernel boots the immutable boot manager.
+- The boot manager selects and hands off to the Nerves application root
+  filesystem.
+- Failed pending boot attempts recover to the previous confirmed slot.
+
+Remaining work:
+
+- Integrate application-level health confirmation with the boot metadata
+  protocol.
+- Add complete update delivery flow and production update interface.
 
 ## Verification strategy
 
