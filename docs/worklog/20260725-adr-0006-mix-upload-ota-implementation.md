@@ -49,6 +49,9 @@ v
 verify the complete written rootfs checksum
 |
 v
+mount the inactive SquashFS read-only and validate its boot structure
+|
+v
 write redundant pending boot metadata
 |
 v
@@ -100,6 +103,8 @@ wrapper process's stdin on SSH EOF.
   task.
 - The candidate partition is verified against the extracted rootfs SHA-256
   before metadata activation.
+- The written candidate must mount as SquashFS and contain executable
+  `/sbin/init`, an unmount command, and all boot-manager handoff mountpoints.
 - The candidate UUID is validated and copied from the incoming fwup
   `meta-uuid`.
 - Pending metadata is written only after the candidate verifies successfully.
@@ -110,6 +115,9 @@ wrapper process's stdin on SSH EOF.
 - Interrupted candidate writes leave the previous confirmed firmware selected.
 - Interrupted metadata writes leave the previous valid metadata record usable.
 - Firmware operations use one device lock to prevent concurrent mutation.
+- If a pending slot still fails the boot manager's structural checks, the boot
+  manager atomically marks it bad and boots the confirmed slot in the same
+  boot.
 
 ## Nerves Runtime integration
 
@@ -152,7 +160,12 @@ boot it waits for the stabilization period and verifies:
 
 - the required Nerves applications are started;
 - `/data` is writable;
-- the boot report identifies the running slot as the pending slot.
+- the boot report identifies a valid running pending slot;
+- the runtime active slot, firmware UUID, product, platform, and architecture
+  match that slot's metadata;
+- firmware validation state is still `:unvalidated`;
+- `wlan0` is present and configured, without requiring Internet reachability;
+- Nerves heart is supervising the hardware watchdog.
 
 The worker then calls `Nerves.Runtime.validate_firmware/0`, which confirms the
 slot through the same metadata protocol.
@@ -176,7 +189,13 @@ The shell test covers:
 - exhausted pending-candidate rejection;
 - incompatible platform rejection;
 - malformed or missing firmware UUID rejection;
+- candidate SquashFS mount and boot-structure validation before metadata
+  activation;
 - persistence of the incoming fwup UUID in candidate slot metadata;
+- atomic rejection of a structurally invalid pending slot in the metadata
+  codec;
+- direct application-health tests proving that local health failures and
+  metadata-confirmation failures reboot without confirming the candidate;
 - SSH upload subsystem integration on physical hardware;
 - framed Nerves Runtime operations status and errors.
 
@@ -203,17 +222,42 @@ UUID and MOTD validation on the same camera additionally covered:
 - active UUID and MOTD identity matching the uploaded fwup `meta-uuid`;
 - a manual revert to Slot B with Slot B's UUID and a revert back to Slot A.
 
-The final tested firmware was version `0.1.1`, UUID `raw-sign`
-(`bebf9516-388f-5579-c661-e6ea6f68752f`). Both slots contained rootfs SHA-256
-`1710409cec4c8f641009c13a30c562028bc0ef1f6d7c5c58c0df14a86da3cbd5`.
+Final implementation validation additionally covered:
+
+- installation of firmware version `0.1.1`, UUID `dynamic-trip`
+  (`4fe22452-c5cd-507f-3474-2dffd129bd11`) through `mix upload`;
+- automatic confirmation only after firmware metadata, `wlan0`, `/data`, and
+  Nerves heart health checks passed;
+- `nerves_heart` 2.5.0 supervising the `jz Watchdog` with a 5-second hardware
+  timeout;
+- a blocked heart callback causing a full kernel reboot, with boot ID changing
+  from `60c6bcf3-3360-4439-affe-22afc68dd7ca` to
+  `51c56f45-ac72-4430-892e-9f0b1e53ff6c`;
+- preservation of the confirmed Slot B and firmware UUID after watchdog
+  recovery;
+- a standard `Nerves.Runtime.revert/0` round trip from Slot B to Slot A and back
+  to Slot B;
+- interactive NervesMOTD output showing `dynamic-trip`, its UUID, `Valid (B)`,
+  and `atomcam2 mipsel`.
+
+The JZ watchdog driver reports `wdt_last_boot: :power_on` after watchdog reset,
+so the changed kernel boot ID and reset uptime are the physical reset evidence.
+
+The final tested firmware was Slot B version `0.1.1`, UUID `dynamic-trip`
+(`4fe22452-c5cd-507f-3474-2dffd129bd11`).
 The final metadata state was:
 
 ```text
-generation=00000000000000000037
-confirmed_slot=A
+generation=00000000000000000046
+confirmed_slot=B
 pending_slot=-
 pending_attempts=000
+slot_a_status=valid
 slot_a_firmware_id=bebf9516-388f-5579-c661-e6ea6f68752f
+slot_a_sha256=1710409cec4c8f641009c13a30c562028bc0ef1f6d7c5c58c0df14a86da3cbd5
+slot_b_status=valid
+slot_b_firmware_id=4fe22452-c5cd-507f-3474-2dffd129bd11
+slot_b_sha256=102697efa2a490ad4596daf5be42b4a1bbec67748e67bb5166413e5badf2a325
 ```
 
 ## Physical validation still required
@@ -222,8 +266,11 @@ Before publishing this as a production-supported OTA path, validate on a real
 Atom Cam 2:
 
 - `Nerves.Runtime.FwupOps.prevent_revert/0`;
+- a host-side complete install of the final boot manager followed by physical
+  malformed-pending-slot same-boot fallback validation;
 - power interruption during transfer, slot writing, verification, metadata
   commit, pending boot, and confirmation;
 - recovery from an application that repeatedly crashes;
-- watchdog recovery from a candidate that hangs without rebooting;
+- factory reset with both slots present and the complete `/data`, provisioning,
+  and protected-kernel preservation matrix;
 - ADR 0007 firmware-signature enforcement.

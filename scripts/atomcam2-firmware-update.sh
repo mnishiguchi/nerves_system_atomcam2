@@ -7,6 +7,8 @@ export PATH
 metadata_command="${ATOMCAM2_BOOT_METADATA_COMMAND:-/usr/bin/atomcam2-boot-metadata}"
 fwup_command="${ATOMCAM2_FWUP_COMMAND:-/usr/bin/fwup}"
 unzip_command="${ATOMCAM2_UNZIP_COMMAND:-/usr/bin/unzip}"
+mount_command="${ATOMCAM2_MOUNT_COMMAND:-/bin/mount}"
+umount_command="${ATOMCAM2_UMOUNT_COMMAND:-/bin/umount}"
 root_disk="${ATOMCAM2_ROOT_DISK:-/dev/rootdisk0}"
 boot_report="${ATOMCAM2_BOOT_REPORT:-/media/mmc/atomcam2-boot-manager.env}"
 update_directory="${ATOMCAM2_UPDATE_DIRECTORY:-/data/atomcam2-update}"
@@ -22,6 +24,8 @@ lock_acquired=0
 work_directory=""
 staged_firmware=""
 temporary_file=""
+candidate_mount=""
+candidate_mounted=0
 
 usage() {
   printf '%s\n' \
@@ -292,6 +296,11 @@ release_lock() {
 }
 
 cleanup() {
+  if [ "$candidate_mounted" -eq 1 ]; then
+    "$umount_command" "$candidate_mount" >/dev/null 2>&1 || true
+    candidate_mounted=0
+  fi
+
   if [ -n "$work_directory" ]; then
     rm -rf "$work_directory"
   fi
@@ -582,6 +591,50 @@ validate_firmware_metadata() {
   fi
 }
 
+validate_candidate_rootfs() {
+  candidate_mount="$work_directory/candidate-root"
+  mkdir -p "$candidate_mount"
+
+  if ! "$mount_command" \
+    -t squashfs \
+    -o ro \
+    "$candidate_partition" \
+    "$candidate_mount"
+  then
+    fail "candidate root filesystem could not be mounted"
+  fi
+
+  candidate_mounted=1
+
+  if [ ! -x "$candidate_mount/sbin/init" ]; then
+    fail "candidate root filesystem is missing executable /sbin/init"
+  fi
+
+  candidate_umount_found=0
+  for candidate_umount in /bin/umount /sbin/umount; do
+    if [ -x "$candidate_mount$candidate_umount" ]; then
+      candidate_umount_found=1
+      break
+    fi
+  done
+
+  if [ "$candidate_umount_found" -ne 1 ]; then
+    fail "candidate root filesystem is missing an unmount command"
+  fi
+
+  for required_directory in boot dev media/mmc mnt/boot-manager proc sys; do
+    if [ ! -d "$candidate_mount/$required_directory" ]; then
+      fail "candidate root filesystem is missing /$required_directory"
+    fi
+  done
+
+  if ! "$umount_command" "$candidate_mount"; then
+    fail "candidate root filesystem could not be unmounted"
+  fi
+
+  candidate_mounted=0
+}
+
 install_locked() {
   firmware_path="$1"
 
@@ -596,6 +649,8 @@ install_locked() {
   require_base_state
   require_command "$fwup_command" "fwup"
   require_command "$unzip_command" "unzip"
+  require_command "$mount_command" "mount"
+  require_command "$umount_command" "umount"
   prepare_work_directory "$update_directory"
 
   firmware_metadata_path="$work_directory/firmware-metadata.env"
@@ -679,6 +734,8 @@ install_locked() {
   if [ "$verified_rootfs_sha256" != "$rootfs_sha256" ]; then
     fail "candidate partition verification failed"
   fi
+
+  validate_candidate_rootfs
 
   before_commit_state_path="$work_directory/before-commit-state.env"
   before_commit_work_directory="$work_directory/before-commit-state"

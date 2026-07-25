@@ -46,6 +46,8 @@ write_state() {
 
 fake_metadata="$work_directory/atomcam2-boot-metadata"
 fake_fwup="$work_directory/fwup"
+fake_mount="$work_directory/mount"
+fake_umount="$work_directory/umount"
 root_disk="$work_directory/root-disk.img"
 slot_a="$work_directory/slot-a.img"
 slot_b="$work_directory/slot-b.img"
@@ -217,6 +219,43 @@ esac
 EOF_FWUP
 chmod +x "$fake_fwup"
 
+cat > "$fake_mount" <<'EOF_MOUNT'
+#!/bin/sh
+set -eu
+
+if [ "${FAKE_MOUNT_FAIL:-0}" = "1" ]; then
+  exit 1
+fi
+
+mount_point=""
+for argument in "$@"; do
+  mount_point="$argument"
+done
+
+mkdir -p \
+  "$mount_point/bin" \
+  "$mount_point/boot" \
+  "$mount_point/dev" \
+  "$mount_point/media/mmc" \
+  "$mount_point/mnt/boot-manager" \
+  "$mount_point/proc" \
+  "$mount_point/sbin" \
+  "$mount_point/sys"
+printf '#!/bin/sh\n' > "$mount_point/sbin/init"
+printf '#!/bin/sh\n' > "$mount_point/bin/umount"
+chmod +x "$mount_point/sbin/init" "$mount_point/bin/umount"
+printf 'mounted\n' > "$FAKE_MOUNT_MARKER"
+EOF_MOUNT
+chmod +x "$fake_mount"
+
+cat > "$fake_umount" <<'EOF_UMOUNT'
+#!/bin/sh
+set -eu
+
+printf 'unmounted\n' > "$FAKE_UMOUNT_MARKER"
+EOF_UMOUNT
+chmod +x "$fake_umount"
+
 truncate -s 2097152 "$root_disk"
 truncate -s 1048576 "$slot_a"
 truncate -s 1048576 "$slot_b"
@@ -266,6 +305,8 @@ EOF_STATE
 export ATOMCAM2_BOOT_METADATA_COMMAND="$fake_metadata"
 export ATOMCAM2_FWUP_COMMAND="$fake_fwup"
 export ATOMCAM2_UNZIP_COMMAND="$(command -v unzip)"
+export ATOMCAM2_MOUNT_COMMAND="$fake_mount"
+export ATOMCAM2_UMOUNT_COMMAND="$fake_umount"
 export ATOMCAM2_ROOT_DISK="$root_disk"
 export ATOMCAM2_SLOT_A_PARTITION="$slot_a"
 export ATOMCAM2_SLOT_B_PARTITION="$slot_b"
@@ -277,6 +318,8 @@ export ATOMCAM2_ALLOW_REGULAR_MEDIA=1
 export ATOMCAM2_SKIP_ROOT_CHECK=1
 export ATOMCAM2_CURRENT_SLOT=A
 export ATOMCAM2_CURRENT_SELECTION_REASON=confirmed
+export FAKE_MOUNT_MARKER="$work_directory/mount.marker"
+export FAKE_UMOUNT_MARKER="$work_directory/umount.marker"
 
 updater="$source_directory/atomcam2-firmware-update.sh"
 
@@ -293,6 +336,8 @@ assert_equal valid "$(state_value slot_b_status)" 'slot B status after install'
 assert_equal "$candidate_uuid" "$(state_value slot_b_firmware_id)" 'slot B firmware UUID after install'
 assert_equal "$slot_a_before" "$(sha256sum "$slot_a" | awk '{print $1}')" 'active slot preservation'
 assert_equal a\-\>b "$("$updater" status)" 'status after install'
+assert_contains mounted "$FAKE_MOUNT_MARKER" 'candidate root filesystem mount validation'
+assert_contains unmounted "$FAKE_UMOUNT_MARKER" 'candidate root filesystem unmount validation'
 
 export ATOMCAM2_CURRENT_SLOT=B
 export ATOMCAM2_CURRENT_SELECTION_REASON=pending
@@ -338,6 +383,22 @@ export ATOMCAM2_CURRENT_SELECTION_REASON=pending_attempt_limit
 "$updater" reject-pending > "$work_directory/reject.out"
 assert_equal - "$(state_value pending_slot)" 'pending slot after rejection'
 assert_equal bad "$(state_value slot_b_status)" 'rejected slot status'
+
+generation_before_structural_failure="$(state_value generation)"
+export FAKE_MOUNT_FAIL=1
+if "$updater" install "$firmware_path" > "$work_directory/invalid-rootfs.out" 2>&1; then
+  fail 'structurally invalid root filesystem was accepted'
+fi
+unset FAKE_MOUNT_FAIL
+assert_contains \
+  'candidate root filesystem could not be mounted' \
+  "$work_directory/invalid-rootfs.out" \
+  'invalid candidate root filesystem rejection'
+assert_equal \
+  "$generation_before_structural_failure" \
+  "$(state_value generation)" \
+  'metadata generation after structural rejection'
+assert_equal - "$(state_value pending_slot)" 'pending slot after structural rejection'
 
 if "$updater" install "$invalid_firmware_path" > "$work_directory/invalid.out" 2>&1; then
   fail 'invalid platform firmware was accepted'

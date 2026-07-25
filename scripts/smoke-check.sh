@@ -159,6 +159,12 @@ require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerve
 require_grep '"#{slot}.nerves_fw_uuid"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
 require_grep '"#{slot}.nerves_fw_validated"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
 require_grep 'firmware_uuid="$(firmware_metadata_value meta-uuid' scripts/atomcam2-firmware-update.sh
+require_grep 'validate_candidate_rootfs' scripts/atomcam2-firmware-update.sh
+require_grep 'candidate root filesystem is missing executable /sbin/init' scripts/atomcam2-firmware-update.sh
+require_grep 'Nerves.Runtime.Heart.running?()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
+require_grep 'firmware_metadata_health' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
+require_grep 'network_interface_health' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
+require_grep '^-heart$' examples/atomcam2_nerves_app/rel/vm.args.eex
 iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
 
 if grep -Fq 'MOTDLogo.render' "$iex_file"; then
@@ -362,7 +368,9 @@ require_grep 'reject revert to empty slot' scripts/test-atomcam2-boot-metadata.s
 require_grep 'reject revert to bad slot' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'reject revert generation overflow' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'metadata_prevent_revert_image' scripts/atomcam2-boot-metadata.sh
-require_grep 'attempt|confirm|revert|prevent-revert' scripts/atomcam2-boot-metadata.sh
+require_grep 'attempt|confirm|reject|revert|prevent-revert' scripts/atomcam2-boot-metadata.sh
+require_grep 'reject-pending-device' scripts/atomcam2-boot-metadata.sh
+require_grep 'fake-image reject pending' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'prevent-revert-image' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'mark rollback slot reusable' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'preserve previous metadata during prevent-revert' scripts/test-atomcam2-boot-metadata.sh
@@ -423,6 +431,14 @@ require_grep 'pending_boot_attempt_status=${pending_boot_attempt_status:-}' \
 require_grep 'pending_boot_attempt_error=${pending_boot_attempt_error:-}' \
   board/atomcam2/boot-manager/init \
   "boot report includes pending attempt errors"
+
+require_grep 'reject_pending_application' \
+  board/atomcam2/boot-manager/init \
+  "boot manager rejects structurally invalid pending slots"
+
+require_grep 'pending_rejection_status=${pending_rejection_status:-}' \
+  board/atomcam2/boot-manager/init \
+  "boot report includes pending rejection status"
 
 reject_grep '^application_partition="$slot_a_partition"$' board/atomcam2/boot-manager/init
 reject_grep 'find_prototype_data_partition' board/atomcam2/boot-manager/init

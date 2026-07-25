@@ -2079,5 +2079,149 @@ assert_equal \
   "$prevent_revert_overflow_sha256_after" \
   "preserve image after prevent-revert overflow"
 
+reject_pending_record="$test_root/reject-pending-record.bin"
+reject_pending_image="$test_root/reject-pending-device.bin"
+reject_pending_work_directory="$test_root/reject-pending-work"
+
+"$metadata_script" write \
+  "$reject_pending_record" \
+  00000000000000000041 \
+  A B 001 003 \
+  valid "$slot_a_uuid" "$slot_a_sha" \
+  valid "$slot_b_uuid" "$slot_b_sha"
+
+write_metadata_test_image \
+  "$reject_pending_image" \
+  "$reject_pending_record" \
+  "$reject_pending_record"
+
+reject_pending_previous_copy="$test_root/reject-pending-previous.bin"
+reject_pending_previous_copy_after="$test_root/reject-pending-previous-after.bin"
+
+dd \
+  if="$reject_pending_image" \
+  of="$reject_pending_previous_copy" \
+  bs=512 \
+  skip=2032 \
+  count=8 \
+  2>/dev/null
+
+reject_pending_output="$(
+  "$metadata_script" \
+    reject-pending-image \
+    "$reject_pending_image" \
+    A \
+    "$reject_pending_work_directory"
+)"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "previous_copy" { print $2 }'
+  )" \
+  "identify metadata copy before pending rejection"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "written_copy" { print $2 }'
+  )" \
+  "write pending rejection to inactive metadata copy"
+
+assert_equal \
+  B \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "rejected_slot" { print $2 }'
+  )" \
+  "identify rejected pending slot"
+
+assert_equal \
+  00000000000000000042 \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "generation" { print $2 }'
+  )" \
+  "increment pending rejection generation"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "confirmed_slot" { print $2 }'
+  )" \
+  "retain confirmed slot after pending rejection"
+
+assert_equal \
+  - \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "pending_slot" { print $2 }'
+  )" \
+  "clear rejected pending slot"
+
+assert_equal \
+  000 \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "pending_attempts" { print $2 }'
+  )" \
+  "reset attempts after pending rejection"
+
+assert_equal \
+  bad \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "slot_b_status" { print $2 }'
+  )" \
+  "mark rejected pending slot bad"
+
+assert_equal \
+  "$slot_b_uuid" \
+  "$(
+    printf '%s\n' "$reject_pending_output" |
+      awk -F= '$1 == "slot_b_firmware_id" { print $2 }'
+  )" \
+  "retain rejected firmware identity"
+
+dd \
+  if="$reject_pending_image" \
+  of="$reject_pending_previous_copy_after" \
+  bs=512 \
+  skip=2032 \
+  count=8 \
+  2>/dev/null
+
+assert_equal \
+  "$(sha256sum "$reject_pending_previous_copy" | awk '{print $1}')" \
+  "$(sha256sum "$reject_pending_previous_copy_after" | awk '{print $1}')" \
+  "preserve previous metadata during pending rejection"
+
+reject_pending_selection="$(
+  "$metadata_script" \
+    select-device \
+    "$reject_pending_image" \
+    "$reject_pending_work_directory"
+)"
+
+assert_equal \
+  A \
+  "$(
+    printf '%s\n' "$reject_pending_selection" |
+      awk -F= '$1 == "selected_slot" { print $2 }'
+  )" \
+  "select confirmed slot after pending rejection"
+
+assert_equal \
+  confirmed \
+  "$(
+    printf '%s\n' "$reject_pending_selection" |
+      awk -F= '$1 == "selection_reason" { print $2 }'
+  )" \
+  "select confirmed policy after pending rejection"
+
 echo "ok: fake-image prevent-revert"
+echo "ok: fake-image reject pending"
 echo "ok: rollback metadata tests"

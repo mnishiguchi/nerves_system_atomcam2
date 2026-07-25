@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Proposed
 
 ## Context
 
@@ -415,8 +415,9 @@ trigger an ADR revision.
 
 ## Implementation status
 
-The boot manager foundation described in this ADR has been implemented and
-validated on physical AtomCam 2 hardware.
+The experimental standard Nerves update and rollback path described in this ADR
+is implemented. Production acceptance remains gated by the complete physical
+failure matrix and ADR 0007.
 
 Implemented:
 
@@ -426,8 +427,19 @@ Implemented:
 - Confirmed slot and pending slot management.
 - Pending boot attempt tracking and automatic fallback after attempt
   exhaustion.
+- Same-boot rejection of a pending slot that cannot be mounted or fails
+  structural validation, followed by selection of the confirmed slot.
 - Metadata corruption fallback to a valid record.
-- Inactive-slot firmware installation workflow with checksum verification.
+- Inactive-slot firmware installation with fwup metadata checks, checksum
+  verification, read-only SquashFS mounting, and root structure validation
+  before pending metadata is committed.
+- Standard `mix upload`, `Nerves.Runtime.validate_firmware/0`,
+  `Nerves.Runtime.revert/0`, `Nerves.Runtime.FwupOps.prevent_revert/0`, and
+  `Nerves.Runtime.FwupOps.factory_reset/0` integration.
+- Runtime firmware UUID and validation metadata for standard NervesMOTD output.
+- Application health confirmation covering required applications, writable
+  `/data`, selected-slot metadata and UUID consistency, configured `wlan0`, and
+  an active Nerves hardware watchdog.
 
 Validated:
 
@@ -436,12 +448,23 @@ Validated:
 - The boot manager selects and hands off to the Nerves application root
   filesystem.
 - Failed pending boot attempts recover to the previous confirmed slot.
+- Standard `mix upload` succeeds in both slot directions and confirms the
+  uploaded fwup UUID.
+- `Nerves.Runtime.revert/0` succeeds in both slot directions.
+- A blocked Erlang heart callback causes a full JZ watchdog reset and the
+  confirmed firmware returns.
+- NervesMOTD reports the active firmware UUID, fwup nickname, validation state,
+  slot, and platform in the standard Nerves format.
 
-Remaining work:
+Remaining production acceptance work:
 
-- Integrate application-level health confirmation with the boot metadata
-  protocol.
-- Add complete update delivery flow and production update interface.
+- Install the final immutable boot-manager image with a host-side complete
+  install and physically verify same-boot malformed-candidate rejection.
+- Complete the documented power-interruption, crash-loop, `prevent-revert`,
+  factory-reset, `/data`, provisioning, and protected-kernel verification
+  matrix.
+- Verify ADR 0007 firmware authentication before removing the experimental
+  label.
 
 ## Verification strategy
 

@@ -18,6 +18,7 @@ metadata_selection_reason=""
 metadata_previous_copy=""
 metadata_written_copy=""
 metadata_incremented_value=""
+metadata_rejected_slot=""
 
 validate_values() {
   if awk \
@@ -907,7 +908,7 @@ metadata_commit_loaded_image() {
   expected_pending_attempts="$7"
 
   case "$operation_name" in
-    attempt|confirm|revert|prevent-revert)
+    attempt|confirm|reject|revert|prevent-revert)
       ;;
     *)
       metadata_error="invalid_operation_name"
@@ -1209,6 +1210,121 @@ metadata_confirm_pending_image() {
 
   return 0
 }
+
+metadata_reject_loaded_pending() {
+  if [ "$#" -ne 3 ]; then
+    metadata_error="reject_loaded_pending_argument_count"
+    return 1
+  fi
+
+  media_path="$1"
+  active_slot="$2"
+  work_directory="$3"
+
+  case "$active_slot" in
+    A|B)
+      ;;
+    *)
+      metadata_error="active_slot_invalid"
+      return 1
+      ;;
+  esac
+
+  if [ "$metadata_pending_slot" = "-" ]; then
+    metadata_error="pending_slot_missing"
+    return 1
+  fi
+
+  if [ "$active_slot" != "$metadata_confirmed_slot" ]; then
+    metadata_error="active_slot_not_confirmed"
+    return 1
+  fi
+
+  metadata_rejected_slot="$metadata_pending_slot"
+
+  case "$metadata_rejected_slot" in
+    A)
+      metadata_slot_a_status="bad"
+      ;;
+    B)
+      metadata_slot_b_status="bad"
+      ;;
+  esac
+
+  if ! metadata_increment_decimal \
+    generation \
+    "$metadata_generation" \
+    20
+  then
+    return 1
+  fi
+
+  next_generation="$metadata_incremented_value"
+
+  if ! metadata_commit_loaded_image \
+    "$media_path" \
+    "$work_directory" \
+    reject \
+    "$next_generation" \
+    "$active_slot" \
+    - \
+    000
+  then
+    return 1
+  fi
+
+  metadata_selected_slot="$active_slot"
+  metadata_selection_reason="confirmed"
+
+  return 0
+}
+
+metadata_reject_pending_image() {
+  if [ "$#" -ne 3 ]; then
+    metadata_error="reject_pending_image_argument_count"
+    return 1
+  fi
+
+  image_path="$1"
+  active_slot="$2"
+  work_directory="$3"
+
+  if ! metadata_load_writable_image \
+    "$image_path" \
+    "$work_directory"
+  then
+    return 1
+  fi
+
+  metadata_reject_loaded_pending \
+    "$image_path" \
+    "$active_slot" \
+    "$work_directory"
+}
+
+metadata_reject_pending_device() {
+  if [ "$#" -ne 3 ]; then
+    metadata_error="reject_pending_device_argument_count"
+    return 1
+  fi
+
+  device_path="$1"
+  active_slot="$2"
+  work_directory="$3"
+
+  if ! metadata_load_writable_device \
+    "$device_path" \
+    "$work_directory"
+  then
+    return 1
+  fi
+
+  metadata_reject_loaded_pending \
+    "$device_path" \
+    "$active_slot" \
+    "$work_directory"
+}
+
 metadata_revert_image() {
   if [ "$#" -ne 3 ]; then
     metadata_error="revert_image_argument_count"
@@ -1391,6 +1507,8 @@ usage() {
     "  $0 prepare-pending-image IMAGE [WORK_DIRECTORY]" \
     "  $0 record-pending-attempt-device DEVICE [WORK_DIRECTORY]" \
     "  $0 confirm-pending-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]" \
+    "  $0 reject-pending-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]" \
+    "  $0 reject-pending-device DEVICE ACTIVE_SLOT [WORK_DIRECTORY]" \
     "  $0 revert-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]" \
     "  $0 prevent-revert-image IMAGE ACTIVE_SLOT [WORK_DIRECTORY]"
 }
@@ -1550,6 +1668,58 @@ case "$command_name" in
     then
       printf 'previous_copy=%s\n' "$metadata_previous_copy"
       printf 'written_copy=%s\n' "$metadata_written_copy"
+      metadata_print
+    else
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  reject-pending-image)
+    if [ "$#" -eq 3 ]; then
+      work_directory="${ATOMCAM2_BOOT_METADATA_WORK_DIR:-/tmp}"
+    elif [ "$#" -eq 4 ]; then
+      work_directory="$4"
+    else
+      usage >&2
+      exit 1
+    fi
+
+    if metadata_reject_pending_image \
+      "$2" \
+      "$3" \
+      "$work_directory"
+    then
+      printf 'previous_copy=%s\n' "$metadata_previous_copy"
+      printf 'written_copy=%s\n' "$metadata_written_copy"
+      printf 'rejected_slot=%s\n' "$metadata_rejected_slot"
+      printf 'selected_slot=%s\n' "$metadata_selected_slot"
+      printf 'selection_reason=%s\n' "$metadata_selection_reason"
+      metadata_print
+    else
+      printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
+      exit 1
+    fi
+    ;;
+  reject-pending-device)
+    if [ "$#" -eq 3 ]; then
+      work_directory="${ATOMCAM2_BOOT_METADATA_WORK_DIR:-/tmp}"
+    elif [ "$#" -eq 4 ]; then
+      work_directory="$4"
+    else
+      usage >&2
+      exit 1
+    fi
+
+    if metadata_reject_pending_device \
+      "$2" \
+      "$3" \
+      "$work_directory"
+    then
+      printf 'previous_copy=%s\n' "$metadata_previous_copy"
+      printf 'written_copy=%s\n' "$metadata_written_copy"
+      printf 'rejected_slot=%s\n' "$metadata_rejected_slot"
+      printf 'selected_slot=%s\n' "$metadata_selected_slot"
+      printf 'selection_reason=%s\n' "$metadata_selection_reason"
       metadata_print
     else
       printf 'atomcam2 boot metadata: %s\n' "$metadata_error" >&2
