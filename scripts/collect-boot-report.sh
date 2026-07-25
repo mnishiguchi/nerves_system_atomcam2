@@ -103,6 +103,7 @@ fi
 for path in \
   atomcam2-init-entered.env \
   atomcam2-initramfs.env \
+  atomcam2-boot-manager.env \
   atomcam2-pre-run.env \
   atomcam2-network.env \
   atomcam2-wifi-driver.env \
@@ -124,13 +125,17 @@ These files are copied from the AtomCam2 SD-card FAT partition after a hardware
 boot attempt. Missing later-stage files usually indicate that boot stopped before
 that layer.
 
-Expected order:
+Possible evidence in boot order:
 
-1. atomcam2-init-entered.env
-2. atomcam2-initramfs.env
-3. atomcam2-pre-run.env
-4. atomcam2-wifi-driver.env
-5. atomcam2-network.env
+1. atomcam2-init-entered.env (custom initramfs only)
+2. atomcam2-initramfs.env (custom initramfs only)
+3. atomcam2-boot-manager.env
+4. atomcam2-pre-run.env
+5. atomcam2-wifi-driver.env
+6. atomcam2-network.env
+
+With the protected vendor control kernel, the first two files may be absent.
+atomcam2-boot-manager.env is the first repository-controlled handoff report.
 REPORT
 
 printf 'Collected AtomCam2 first-boot report files into: %s\n' "$report_dir"

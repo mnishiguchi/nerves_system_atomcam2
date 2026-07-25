@@ -18,6 +18,7 @@ hostname_value="${ATOMCAM2_HOSTNAME:-nerves}"
 authorized_keys_image="$images_dir/authorized_keys"
 hostname_image="$images_dir/hostname"
 provisioning_image="$images_dir/nerves-provisioning.conf"
+boot_manager_image="$images_dir/atomcam2-boot-manager.squashfs"
 output_dir="$images_dir/atomcam2-sd"
 artifact_dir=$(CDPATH= cd -- "$images_dir/.." && pwd)
 artifact_scripts_dir="$artifact_dir/scripts"
@@ -58,6 +59,11 @@ fi
 
 cp "$ATOMCAM2_KERNEL_IMAGE" "$images_dir/uImage.lzma"
 echo "Using verified AtomCam2 control kernel: $ATOMCAM2_KERNEL_IMAGE"
+
+"${NERVES_DEFCONFIG_DIR}/scripts/atomcam2-build-boot-manager.sh" \
+  "$images_dir/rootfs.squashfs" \
+  "$boot_manager_image" \
+  "$NERVES_DEFCONFIG_DIR/board/atomcam2/boot-manager/init"
 
 "${NERVES_DEFCONFIG_DIR}/scripts/atomcam2-package-flat-sd.sh" \
   --images-dir "$images_dir" \

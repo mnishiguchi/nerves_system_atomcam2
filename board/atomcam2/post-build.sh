@@ -15,6 +15,7 @@ else
 fi
 
 mkdir -p "$TARGET_DIR/data"
+mkdir -p "$TARGET_DIR/mnt/boot-manager"
 mkdir -p "$TARGET_DIR/root"
 mkdir -p "$TARGET_DIR/atom"
 mkdir -p "$TARGET_DIR/boot"

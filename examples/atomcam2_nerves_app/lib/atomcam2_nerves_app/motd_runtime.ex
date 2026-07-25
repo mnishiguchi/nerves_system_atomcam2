@@ -24,7 +24,7 @@ defmodule Atomcam2NervesApp.MOTDRuntime do
   def time_synchronized?, do: Target.time_synchronized?()
 
   @impl true
-  def active_partition, do: "Flat SD"
+  def active_partition, do: "Slot A (p2)"
 
   @impl true
   def firmware_validity, do: :unknown
