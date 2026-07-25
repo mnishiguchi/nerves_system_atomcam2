@@ -31,7 +31,7 @@ The verified IEx node is:
 
 Commit `3cd22ab` is the reproducible ping and SSH baseline. It uses the explicit minimal runtime stack without `nerves_pack` or `nerves_motd`.
 
-Camera runtime, RTSP, WebUI, Samba, vendor application compatibility, internal flash writes, and production updates remain out of scope.
+Camera runtime, RTSP, WebUI, Samba, vendor application compatibility, and internal flash writes remain out of scope. Remote firmware updates remain experimental until the physical OTA validation matrix is complete.
 
 ## Application workflow
 
@@ -63,13 +63,34 @@ system artifact; application dependency source is not modified.
 `complete` task. After running `mix firmware`, use `mix burn` to write the
 existing firmware bundle without rebuilding it.
 
-## Remote update policy
+## Remote firmware updates
 
-`mix upload` is intentionally unsupported. Atom Cam 2 boots from files on a FAT
-partition that remains mounted by the running system, so writing that partition
-through the fwup SSH subsystem has not been proven safe. The target rejects
-remote fwup connections. Power down the camera and use `mix firmware.burn`, or
-`mix burn` when the firmware is already built.
+The ADR 0006 A/B layout supports standard `mix upload` after the device is
+running firmware that includes the safe updater.
+
+The first installation must still use removable media:
+
+    mix firmware.burn
+
+Subsequent application firmware can be uploaded over SSH:
+
+    mix firmware
+    mix upload nerves.local
+
+The device stages the firmware under `/data`, validates its platform and
+architecture, selects the inactive application slot, writes only that slot,
+verifies the written root filesystem, and records it as pending. The SSH
+subsystem then reboots the device.
+
+After the pending firmware boots, the application waits for local services and
+the persistent data filesystem to become healthy before confirming the new
+slot. The previous confirmed slot remains available for rollback.
+
+Remote updates do not rewrite the FAT boot partition, protected control kernel,
+boot manager, active application slot, or persistent data partition. Physical
+happy-path OTA and `Nerves.Runtime.revert/0` testing has passed on an Atom Cam 2.
+Power-interruption, crash-loop, watchdog, and firmware-signature validation is
+still required before treating this path as production-ready.
 
 ## System-maintainer workflow
 

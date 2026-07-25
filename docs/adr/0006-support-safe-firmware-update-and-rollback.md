@@ -250,12 +250,13 @@ Do not build a generic migration framework until a concrete requirement exists.
 
 ### Remote update boundary
 
-Remote firmware upload must remain rejected while the boot-manager prototype,
-A/B implementation, watchdog behavior, complete physical failure matrix, and
-ADR 0007 firmware-authentication requirements are unverified.
+Enable standard remote firmware upload after the boot-manager prototype, A/B
+inactive-slot write, destination verification, confirmation, and manual revert
+paths pass physical happy-path validation.
 
-After all acceptance criteria pass, enable the existing SSH fwup subsystem so
-that `mix upload` applies the checked inactive-slot `upgrade` path.
+Treat remote upload as experimental until watchdog behavior, the complete
+physical failure matrix, and ADR 0007 firmware-authentication requirements are
+verified. Production release documentation must preserve that distinction.
 
 NervesHub is outside the scope of this decision.
 
@@ -493,9 +494,10 @@ Detailed investigation and physical-test evidence belong in dated files under
 - The previous firmware can still use `/data` after candidate rollback.
 - The transition from the current layout is documented as a complete
   installation.
-- `mix upload` remains disabled until the complete physical failure matrix
+- `mix upload` uses the checked inactive-slot update path and is physically
+  verified in both slot directions.
+- `mix upload` remains experimental until the complete physical failure matrix
   passes and ADR 0007 firmware authentication is verified.
-- After enablement, `mix upload` uses the checked inactive-slot `upgrade` path.
 
 Do not mark this ADR `Accepted` until all acceptance criteria have been verified
 on physical Atom Cam 2 hardware.

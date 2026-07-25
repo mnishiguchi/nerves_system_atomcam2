@@ -24,7 +24,12 @@ defmodule Atomcam2NervesApp.MOTDRuntime do
   def time_synchronized?, do: Target.time_synchronized?()
 
   @impl true
-  def active_partition, do: "Slot A (p2)"
+  def active_partition do
+    case Atomcam2NervesApp.FirmwareKVBackend.active_partition() do
+      "a" -> "Slot A (p2)"
+      "b" -> "Slot B (p3)"
+    end
+  end
 
   @impl true
   def firmware_validity, do: :unknown

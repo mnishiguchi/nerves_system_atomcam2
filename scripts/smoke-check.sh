@@ -118,6 +118,13 @@ else
   echo "ok: application source does not reference Atomcam2NervesApp.Network"
 fi
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_executable scripts/atomcam2-firmware-update.sh
+require_executable scripts/atomcam2-fwup-ops.sh
+require_executable scripts/test-atomcam2-firmware-update.sh
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
+require_file examples/atomcam2_nerves_app/test/firmware_health_test.exs
+require_file examples/atomcam2_nerves_app/test/firmware_kv_backend_test.exs
 require_file lib/mix/tasks/atomcam2.install.ex
 require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
@@ -125,7 +132,7 @@ require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
 reject_grep 'nerves-firmware-metadata.conf' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'Nerves.Runtime.KVBackend.InMemory' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'Atomcam2NervesApp.FirmwareKVBackend' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_product' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_version' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_platform' examples/atomcam2_nerves_app/config/target.exs
@@ -152,7 +159,8 @@ require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerve
 require_grep 'runtime_mod: Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/config/runtime.exs
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 require_grep 'defmodule Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'def active_partition, do: "Slot A (p2)"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep 'FirmwareKVBackend.active_partition()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep '"b" -> "Slot B (p3)"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 require_grep 'def firmware_id, do: "UUID unavailable"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
 iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
 
@@ -186,11 +194,25 @@ require_grep 'setup:' examples/atomcam2_nerves_app/mix.exs
 require_grep 'ATOMCAM2_SYSTEM_SOURCE' examples/atomcam2_nerves_app/mix.exs
 require_grep 'github: @system_repository' examples/atomcam2_nerves_app/mix.exs
 require_grep 'nerves: \[compile: true\]' examples/atomcam2_nerves_app/mix.exs
-require_grep 'precheck_callback:' examples/atomcam2_nerves_app/config/target.exs
-require_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
-require_grep 'mix firmware.burn' README.md
-require_grep 'mix firmware.burn' examples/atomcam2_nerves_app/README.md
-require_grep 'power down the camera and use mix firmware.burn' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_grep 'Atomcam2NervesApp.FirmwareUploadSubsystem' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'defmodule Atomcam2NervesApp.FirmwareUploadSubsystem' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'FirmwareUpdate.precheck' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep '@upload_directory "/data/atomcam2-firmware-update"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'File.mkdir_p(@upload_directory)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'update_command:' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep '/data/atomcam2-update' scripts/atomcam2-firmware-update.sh
+require_grep '{:eof, _channel_id}' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep '\["install", staged_firmware\]' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'def precheck do' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_grep 'framing=1' scripts/atomcam2-fwup-ops.sh
+require_grep 'emit_frame WN' scripts/atomcam2-fwup-ops.sh
+require_grep 'emit_frame ER' scripts/atomcam2-fwup-ops.sh
+require_grep 'rm -f "$TARGET_DIR/usr/libexec/atomcam2/fwup-stream"' board/atomcam2/post-build.sh
+require_grep 'mix upload nerves.local' README.md
+require_grep 'mix upload nerves.local' examples/atomcam2_nerves_app/README.md
+reject_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+reject_grep 'mix upload.*intentionally unsupported' README.md
+reject_grep 'mix upload.*intentionally unsupported' examples/atomcam2_nerves_app/README.md
 reject_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
 require_grep 'mix setup' scripts/build-firmware-log.sh
 require_grep 'check_command python3' scripts/check-prereqs.sh
