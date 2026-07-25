@@ -5,10 +5,25 @@ defmodule Atomcam2NervesApp.Application do
 
   @impl Application
   def start(_type, _args) do
-    :ok = Atomcam2NervesApp.Discovery.advertise()
+    Supervisor.start_link(
+      children(),
+      strategy: :one_for_one,
+      name: Atomcam2NervesApp.Supervisor
+    )
+  end
 
-    children = [Atomcam2NervesApp.TimeSync]
+  defp children do
+    case Application.fetch_env!(:atomcam2_nerves_app, :target) do
+      :host ->
+        []
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: Atomcam2NervesApp.Supervisor)
+      :atomcam2 ->
+        :ok = Atomcam2NervesApp.Discovery.advertise()
+
+        [
+          Atomcam2NervesApp.TimeSync,
+          Atomcam2NervesApp.FirmwareHealth
+        ]
+    end
   end
 end

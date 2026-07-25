@@ -6,5 +6,8 @@
 -setcookie <%= @release.options[:cookie] %>
 -kernel inet_dist_use_interface {127,0,0,1}
 
+## Keep the hardware watchdog armed while the application is running.
+-heart
+
 ## Start without an interactive shell on boot.
 -noshell

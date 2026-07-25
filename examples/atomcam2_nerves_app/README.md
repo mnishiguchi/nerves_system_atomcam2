@@ -1,10 +1,20 @@
 # AtomCam2 minimal Nerves app
 
-This app proves the supported Atom Cam 2 application workflow:
+This app proves the supported Atom Cam 2 application workflow.
+
+Perform the initial installation through removable media:
 
 ```sh
 mix setup
 mix firmware.burn
+```
+
+After the device is running firmware with ADR 0006 update support, subsequent
+application firmware can be installed remotely:
+
+```sh
+mix firmware
+mix upload nerves.local
 ```
 
 It configures Wi-Fi through VintageNet, advertises `nerves.local` through
@@ -87,11 +97,28 @@ Toolshed is imported automatically through `/etc/iex.exs`, so helpers such as
 
 ## Remote updates
 
-`mix upload` is intentionally unsupported. The running system mounts the same
-FAT partition that contains the vendor kernel and SquashFS files, and an in-place
-fwup update has not been proven safe. The target rejects connections to the fwup
-SSH subsystem. Power down the camera and use `mix firmware.burn`, or `mix burn`
-when the firmware is already built.
+After the initial complete installation, standard Nerves firmware uploads are
+supported:
+
+```sh
+mix firmware
+mix upload nerves.local
+```
+
+The SSH firmware subsystem forwards the uploaded bundle to the Atom Cam 2
+updater. The updater stages the bundle under `/data`, validates the target
+platform and architecture, selects the inactive application slot, writes and
+verifies the root filesystem, and records the candidate as pending.
+
+A successful upload reboots the device. After the candidate reaches the
+application root and passes its local health checks, it is confirmed through
+`Nerves.Runtime.validate_firmware/0`. Until confirmation, the previous slot
+remains the rollback target.
+
+The upload path does not rewrite the FAT boot partition, protected control
+kernel, boot manager, active application slot, or persistent data partition.
+The first firmware containing this support must therefore be installed with
+`mix firmware.burn`.
 
 Every firmware build preserves the merged application rootfs at:
 

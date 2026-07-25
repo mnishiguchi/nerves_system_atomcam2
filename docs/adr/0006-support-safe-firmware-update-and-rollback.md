@@ -153,6 +153,17 @@ recovery path rather than guessing which application slot to boot.
 Prefer a small, purpose-built native utility for metadata parsing and updates.
 Do not implement a generalized state framework without a concrete need.
 
+Expose the selected slot through the standard `nerves_fw_active` key. Expose
+each populated slot's firmware identifier and validation state through
+`<slot>.nerves_fw_uuid` and `<slot>.nerves_fw_validated`. The identifier stored
+for a remotely uploaded candidate must be the incoming fwup bundle's
+`meta-uuid`.
+
+Runtime consumers must load current redundant metadata rather than relying only
+on the boot-manager report. The report identifies the physically running slot,
+but its confirmed and pending fields are a boot-time snapshot and become stale
+after `Nerves.Runtime.validate_firmware/0`.
+
 ### Slot selection and boot attempts
 
 The boot manager must select slots as follows:
@@ -229,6 +240,10 @@ project-specific application APIs when the standard interfaces are available.
 The Atom Cam 2 implementation may use custom fwup operations internally to
 manage its dedicated raw metadata.
 
+Use the standard NervesMOTD target runtime. Its firmware designation and
+validation display must be backed by the slot-scoped UUID and validation keys,
+including the normal fwup nickname derived from the active firmware UUID.
+
 Retain the ADR 0005 `factory-reset` behavior. It must clear only `/data` and
 must not change slot selection, validation state, application-slot contents,
 provisioning, the boot manager, or the protected kernel.
@@ -250,12 +265,13 @@ Do not build a generic migration framework until a concrete requirement exists.
 
 ### Remote update boundary
 
-Remote firmware upload must remain rejected while the boot-manager prototype,
-A/B implementation, watchdog behavior, complete physical failure matrix, and
-ADR 0007 firmware-authentication requirements are unverified.
+Enable standard remote firmware upload after the boot-manager prototype, A/B
+inactive-slot write, destination verification, confirmation, and manual revert
+paths pass physical happy-path validation.
 
-After all acceptance criteria pass, enable the existing SSH fwup subsystem so
-that `mix upload` applies the checked inactive-slot `upgrade` path.
+Treat remote upload as experimental until watchdog behavior, the complete
+physical failure matrix, and ADR 0007 firmware-authentication requirements are
+verified. Production release documentation must preserve that distinction.
 
 NervesHub is outside the scope of this decision.
 
@@ -399,8 +415,9 @@ trigger an ADR revision.
 
 ## Implementation status
 
-The boot manager foundation described in this ADR has been implemented and
-validated on physical AtomCam 2 hardware.
+The experimental standard Nerves update and rollback path described in this ADR
+is implemented. Production acceptance remains gated by the complete physical
+failure matrix and ADR 0007.
 
 Implemented:
 
@@ -410,8 +427,19 @@ Implemented:
 - Confirmed slot and pending slot management.
 - Pending boot attempt tracking and automatic fallback after attempt
   exhaustion.
+- Same-boot rejection of a pending slot that cannot be mounted or fails
+  structural validation, followed by selection of the confirmed slot.
 - Metadata corruption fallback to a valid record.
-- Inactive-slot firmware installation workflow with checksum verification.
+- Inactive-slot firmware installation with fwup metadata checks, checksum
+  verification, read-only SquashFS mounting, and root structure validation
+  before pending metadata is committed.
+- Standard `mix upload`, `Nerves.Runtime.validate_firmware/0`,
+  `Nerves.Runtime.revert/0`, `Nerves.Runtime.FwupOps.prevent_revert/0`, and
+  `Nerves.Runtime.FwupOps.factory_reset/0` integration.
+- Runtime firmware UUID and validation metadata for standard NervesMOTD output.
+- Application health confirmation covering required applications, writable
+  `/data`, selected-slot metadata and UUID consistency, configured `wlan0`, and
+  an active Nerves hardware watchdog.
 
 Validated:
 
@@ -420,12 +448,23 @@ Validated:
 - The boot manager selects and hands off to the Nerves application root
   filesystem.
 - Failed pending boot attempts recover to the previous confirmed slot.
+- Standard `mix upload` succeeds in both slot directions and confirms the
+  uploaded fwup UUID.
+- `Nerves.Runtime.revert/0` succeeds in both slot directions.
+- A blocked Erlang heart callback causes a full JZ watchdog reset and the
+  confirmed firmware returns.
+- NervesMOTD reports the active firmware UUID, fwup nickname, validation state,
+  slot, and platform in the standard Nerves format.
 
-Remaining work:
+Remaining production acceptance work:
 
-- Integrate application-level health confirmation with the boot metadata
-  protocol.
-- Add complete update delivery flow and production update interface.
+- Install the final immutable boot-manager image with a host-side complete
+  install and physically verify same-boot malformed-candidate rejection.
+- Complete the documented power-interruption, crash-loop, `prevent-revert`,
+  factory-reset, `/data`, provisioning, and protected-kernel verification
+  matrix.
+- Verify ADR 0007 firmware authentication before removing the experimental
+  label.
 
 ## Verification strategy
 
@@ -493,9 +532,10 @@ Detailed investigation and physical-test evidence belong in dated files under
 - The previous firmware can still use `/data` after candidate rollback.
 - The transition from the current layout is documented as a complete
   installation.
-- `mix upload` remains disabled until the complete physical failure matrix
+- `mix upload` uses the checked inactive-slot update path and is physically
+  verified in both slot directions.
+- `mix upload` remains experimental until the complete physical failure matrix
   passes and ADR 0007 firmware authentication is verified.
-- After enablement, `mix upload` uses the checked inactive-slot `upgrade` path.
 
 Do not mark this ADR `Accepted` until all acceptance criteria have been verified
 on physical Atom Cam 2 hardware.

@@ -23,7 +23,10 @@ defmodule NervesSystemAtomcam2.MixProject do
       deps: deps(),
       aliases: [
         loadconfig: [&bootstrap/1],
-        smoke: ["cmd ./scripts/smoke-check.sh"]
+        smoke: [
+          "cmd ./scripts/smoke-check.sh",
+          "cmd ./scripts/test-atomcam2-firmware-update.sh"
+        ]
       ]
     ]
   end

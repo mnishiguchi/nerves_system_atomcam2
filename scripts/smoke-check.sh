@@ -118,6 +118,13 @@ else
   echo "ok: application source does not reference Atomcam2NervesApp.Network"
 fi
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_executable scripts/atomcam2-firmware-update.sh
+require_executable scripts/atomcam2-fwup-ops.sh
+require_executable scripts/test-atomcam2-firmware-update.sh
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
+require_file examples/atomcam2_nerves_app/test/firmware_health_test.exs
+require_file examples/atomcam2_nerves_app/test/firmware_kv_backend_test.exs
 require_file lib/mix/tasks/atomcam2.install.ex
 require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
@@ -125,7 +132,7 @@ require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
 reject_grep 'nerves-firmware-metadata.conf' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'Nerves.Runtime.KVBackend.InMemory' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'Atomcam2NervesApp.FirmwareKVBackend' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_product' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_version' examples/atomcam2_nerves_app/config/target.exs
 require_grep 'a.nerves_fw_platform' examples/atomcam2_nerves_app/config/target.exs
@@ -149,11 +156,15 @@ require_grep 'defmodule Atomcam2NervesApp.MOTDLogo' examples/atomcam2_nerves_app
 require_grep 'config_target() != :host' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'config :nerves_motd' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'logo: Atomcam2NervesApp.MOTDLogo.render()' examples/atomcam2_nerves_app/config/runtime.exs
-require_grep 'runtime_mod: Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/config/runtime.exs
-require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'defmodule Atomcam2NervesApp.MOTDRuntime' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'def active_partition, do: "Slot A (p2)"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
-require_grep 'def firmware_id, do: "UUID unavailable"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/motd_runtime.ex
+require_grep '"#{slot}.nerves_fw_uuid"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
+require_grep '"#{slot}.nerves_fw_validated"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
+require_grep 'firmware_uuid="$(firmware_metadata_value meta-uuid' scripts/atomcam2-firmware-update.sh
+require_grep 'validate_candidate_rootfs' scripts/atomcam2-firmware-update.sh
+require_grep 'candidate root filesystem is missing executable /sbin/init' scripts/atomcam2-firmware-update.sh
+require_grep 'Nerves.Runtime.Heart.running?()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
+require_grep 'firmware_metadata_health' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
+require_grep 'network_interface_health' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
+require_grep '^-heart$' examples/atomcam2_nerves_app/rel/vm.args.eex
 iex_file="$repo_dir/examples/atomcam2_nerves_app/rootfs_overlay/etc/iex.exs"
 
 if grep -Fq 'MOTDLogo.render' "$iex_file"; then
@@ -186,11 +197,25 @@ require_grep 'setup:' examples/atomcam2_nerves_app/mix.exs
 require_grep 'ATOMCAM2_SYSTEM_SOURCE' examples/atomcam2_nerves_app/mix.exs
 require_grep 'github: @system_repository' examples/atomcam2_nerves_app/mix.exs
 require_grep 'nerves: \[compile: true\]' examples/atomcam2_nerves_app/mix.exs
-require_grep 'precheck_callback:' examples/atomcam2_nerves_app/config/target.exs
-require_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
-require_grep 'mix firmware.burn' README.md
-require_grep 'mix firmware.burn' examples/atomcam2_nerves_app/README.md
-require_grep 'power down the camera and use mix firmware.burn' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_grep 'Atomcam2NervesApp.FirmwareUploadSubsystem' examples/atomcam2_nerves_app/config/target.exs
+require_grep 'defmodule Atomcam2NervesApp.FirmwareUploadSubsystem' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'FirmwareUpdate.precheck' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep '@upload_directory "/data/atomcam2-firmware-update"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'File.mkdir_p(@upload_directory)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'update_command:' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep '/data/atomcam2-update' scripts/atomcam2-firmware-update.sh
+require_grep '{:eof, _channel_id}' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep '\["install", staged_firmware\]' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'def precheck do' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+require_grep 'framing=1' scripts/atomcam2-fwup-ops.sh
+require_grep 'emit_frame WN' scripts/atomcam2-fwup-ops.sh
+require_grep 'emit_frame ER' scripts/atomcam2-fwup-ops.sh
+require_grep 'rm -f "$TARGET_DIR/usr/libexec/atomcam2/fwup-stream"' board/atomcam2/post-build.sh
+require_grep 'mix upload nerves.local' README.md
+require_grep 'mix upload nerves.local' examples/atomcam2_nerves_app/README.md
+reject_grep 'reject_remote_update' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_update.ex
+reject_grep 'mix upload.*intentionally unsupported' README.md
+reject_grep 'mix upload.*intentionally unsupported' examples/atomcam2_nerves_app/README.md
 reject_grep 'patch-vintage-net-linux-3.10.sh' examples/atomcam2_nerves_app/mix.exs
 require_grep 'mix setup' scripts/build-firmware-log.sh
 require_grep 'check_command python3' scripts/check-prereqs.sh
@@ -343,7 +368,9 @@ require_grep 'reject revert to empty slot' scripts/test-atomcam2-boot-metadata.s
 require_grep 'reject revert to bad slot' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'reject revert generation overflow' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'metadata_prevent_revert_image' scripts/atomcam2-boot-metadata.sh
-require_grep 'attempt|confirm|revert|prevent-revert' scripts/atomcam2-boot-metadata.sh
+require_grep 'attempt|confirm|reject|revert|prevent-revert' scripts/atomcam2-boot-metadata.sh
+require_grep 'reject-pending-device' scripts/atomcam2-boot-metadata.sh
+require_grep 'fake-image reject pending' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'prevent-revert-image' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'mark rollback slot reusable' scripts/test-atomcam2-boot-metadata.sh
 require_grep 'preserve previous metadata during prevent-revert' scripts/test-atomcam2-boot-metadata.sh
@@ -404,6 +431,14 @@ require_grep 'pending_boot_attempt_status=${pending_boot_attempt_status:-}' \
 require_grep 'pending_boot_attempt_error=${pending_boot_attempt_error:-}' \
   board/atomcam2/boot-manager/init \
   "boot report includes pending attempt errors"
+
+require_grep 'reject_pending_application' \
+  board/atomcam2/boot-manager/init \
+  "boot manager rejects structurally invalid pending slots"
+
+require_grep 'pending_rejection_status=${pending_rejection_status:-}' \
+  board/atomcam2/boot-manager/init \
+  "boot report includes pending rejection status"
 
 reject_grep '^application_partition="$slot_a_partition"$' board/atomcam2/boot-manager/init
 reject_grep 'find_prototype_data_partition' board/atomcam2/boot-manager/init

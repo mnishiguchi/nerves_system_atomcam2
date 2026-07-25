@@ -18,6 +18,8 @@ metadata_command="/usr/bin/atomcam2-boot-metadata"
 metadata_work_dir="/tmp/atomcam2-boot-metadata"
 metadata_output_path="$metadata_work_dir/selected.env"
 metadata_error_path="$metadata_work_dir/select.err"
+metadata_reject_work_dir="/tmp/atomcam2-boot-metadata-reject"
+metadata_reject_error_path="/tmp/atomcam2-boot-metadata-reject.err"
 boot_metadata_status="not_read"
 boot_metadata_error=""
 boot_metadata_selected_copy=""
@@ -45,6 +47,12 @@ pending_boot_attempt_status="not_required"
 pending_boot_attempt_error=""
 pending_boot_attempt_previous_copy=""
 pending_boot_attempt_written_copy=""
+pending_rejection_status="not_required"
+pending_rejection_error=""
+pending_rejection_reason=""
+pending_rejected_slot=""
+application_failure_stage=""
+application_umount_command=""
 
 bootstrap_kernel_filesystems() {
   mkdir -p /dev /proc /sys /tmp "$final_boot_mount" "$application_mount"
@@ -168,6 +176,147 @@ validate_application_partition() {
   fi
 
   return 0
+}
+
+unmount_application_partition() {
+  if is_mounted "$application_mount"; then
+    umount "$application_mount" 2>/dev/null || true
+  fi
+}
+
+prepare_application_partition() {
+  application_failure_stage=""
+  application_umount_command=""
+
+  if select_application_partition; then
+    write_report "application_partition_selected"
+  else
+    application_failure_stage="application_partition_unavailable"
+    write_report "$application_failure_stage"
+    return 1
+  fi
+
+  if validate_application_partition; then
+    write_report "application_partition_validated"
+  else
+    application_failure_stage="application_partition_invalid"
+    write_report "$application_failure_stage"
+    return 1
+  fi
+
+  if ! mount -t squashfs -o ro "$application_partition" "$application_mount"; then
+    application_failure_stage="application_mount_failed"
+    write_report "$application_failure_stage"
+    return 1
+  fi
+
+  if [ ! -x "$application_mount/sbin/init" ]; then
+    application_failure_stage="application_init_missing"
+    unmount_application_partition
+    write_report "$application_failure_stage"
+    return 1
+  fi
+
+  for candidate_command in /bin/umount /sbin/umount; do
+    if [ -x "$application_mount$candidate_command" ]; then
+      application_umount_command="$candidate_command"
+      break
+    fi
+  done
+
+  if [ -z "$application_umount_command" ]; then
+    application_failure_stage="application_umount_missing"
+    unmount_application_partition
+    write_report "$application_failure_stage"
+    return 1
+  fi
+
+  for required_directory in boot dev media/mmc mnt/boot-manager proc sys; do
+    if [ ! -d "$application_mount/$required_directory" ]; then
+      application_failure_stage="application_mountpoint_missing"
+      unmount_application_partition
+      write_report "$application_failure_stage"
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+reject_pending_application() {
+  rejection_reason="$1"
+  pending_rejection_status="failed"
+  pending_rejection_error=""
+  pending_rejection_reason="$rejection_reason"
+  pending_rejected_slot="$boot_metadata_pending_slot"
+
+  if [ "$boot_policy_selection_reason" != "pending" ]; then
+    pending_rejection_error="selection_not_pending"
+    return 1
+  fi
+
+  case "$boot_metadata_confirmed_slot" in
+    A|B)
+      ;;
+    *)
+      pending_rejection_error="confirmed_slot_invalid"
+      return 1
+      ;;
+  esac
+
+  rm -rf "$metadata_reject_work_dir"
+  rm -f "$metadata_reject_error_path"
+
+  if "$metadata_command" \
+    reject-pending-device \
+    "$root_disk" \
+    "$boot_metadata_confirmed_slot" \
+    "$metadata_reject_work_dir" \
+    >/dev/null \
+    2>"$metadata_reject_error_path"
+  then
+    if ! read_boot_metadata; then
+      pending_rejection_error="metadata_reload_failed"
+      return 1
+    fi
+
+    if ! read_boot_policy; then
+      pending_rejection_error="policy_reload_failed"
+      return 1
+    fi
+
+    if [ "$boot_metadata_pending_slot" != "-" ]; then
+      pending_rejection_error="pending_slot_not_cleared"
+      return 1
+    fi
+
+    if [ "$boot_policy_selected_slot" != "$boot_metadata_confirmed_slot" ]; then
+      pending_rejection_error="confirmed_slot_not_selected"
+      return 1
+    fi
+
+    if [ "$boot_policy_selection_reason" != "confirmed" ]; then
+      pending_rejection_error="confirmed_policy_not_selected"
+      return 1
+    fi
+
+    pending_rejection_status="rejected"
+    return 0
+  fi
+
+  if [ -s "$metadata_reject_error_path" ]; then
+    pending_rejection_error="$(
+      sed -n \
+        '1s/^atomcam2 boot metadata: //p' \
+        "$metadata_reject_error_path"
+    )"
+  fi
+
+  if [ -z "$pending_rejection_error" ]; then
+    pending_rejection_error="rejection_failed"
+  fi
+
+  return 1
 }
 
 record_pending_boot_attempt() {
@@ -405,6 +554,10 @@ write_report_to() {
     echo "pending_boot_attempt_error=${pending_boot_attempt_error:-}"
     echo "pending_boot_attempt_previous_copy=${pending_boot_attempt_previous_copy:-}"
     echo "pending_boot_attempt_written_copy=${pending_boot_attempt_written_copy:-}"
+    echo "pending_rejection_status=${pending_rejection_status:-}"
+    echo "pending_rejection_error=${pending_rejection_error:-}"
+    echo "pending_rejection_reason=${pending_rejection_reason:-}"
+    echo "pending_rejected_slot=${pending_rejected_slot:-}"
     echo "slot_a_partition=${slot_a_partition:-}"
     echo "slot_b_partition=${slot_b_partition:-}"
     echo "data_partition=${data_partition:-}"
@@ -620,20 +773,6 @@ slot_a_partition="${root_disk}p2"
 slot_b_partition="${root_disk}p3"
 data_partition="${root_disk}p4"
 
-if select_application_partition; then
-  write_report "application_partition_selected"
-else
-  write_report "application_partition_unavailable"
-  enter_recovery "application_partition_unavailable"
-fi
-
-if validate_application_partition; then
-  write_report "application_partition_validated"
-else
-  write_report "application_partition_invalid"
-  enter_recovery "application_partition_invalid"
-fi
-
 if [ ! -b "$slot_a_partition" ]; then
   enter_recovery "slot_a_partition_not_found"
 fi
@@ -652,32 +791,19 @@ if [ ! -x "$pivot_root_command" ]; then
   enter_recovery "pivot_root_unavailable"
 fi
 
-if ! mount -t squashfs -o ro "$application_partition" "$application_mount"; then
-  enter_recovery "application_mount_failed"
-fi
+if ! prepare_application_partition; then
+  failed_application_stage="$application_failure_stage"
 
-if [ ! -x "$application_mount/sbin/init" ]; then
-  enter_recovery "application_init_missing"
-fi
+  if reject_pending_application "$failed_application_stage"; then
+    write_report "pending_application_rejected"
 
-application_umount_command=""
-
-for candidate_command in /bin/umount /sbin/umount; do
-  if [ -x "$application_mount$candidate_command" ]; then
-    application_umount_command="$candidate_command"
-    break
+    if ! prepare_application_partition; then
+      enter_recovery "confirmed_${application_failure_stage}"
+    fi
+  else
+    enter_recovery "$failed_application_stage"
   fi
-done
-
-if [ -z "$application_umount_command" ]; then
-  enter_recovery "application_umount_missing"
 fi
-
-for required_directory in boot dev media/mmc mnt/boot-manager proc sys; do
-  if [ ! -d "$application_mount/$required_directory" ]; then
-    enter_recovery "application_mountpoint_missing"
-  fi
-done
 
 write_report "application_mounted"
 

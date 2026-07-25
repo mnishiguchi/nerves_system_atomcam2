@@ -5,19 +5,28 @@ config :nerves, :firmware,
   post_processing_script: Path.expand("../scripts/preserve-final-rootfs.sh", __DIR__)
 
 firmware_metadata = %{
-  "nerves_fw_active" => "a",
   "a.nerves_fw_product" => Atom.to_string(Mix.Project.config()[:app]),
   "a.nerves_fw_version" => Mix.Project.config()[:version],
   "a.nerves_fw_platform" => "atomcam2",
   "a.nerves_fw_architecture" => "mipsel",
   "a.nerves_fw_application_part0_devpath" => "/dev/rootdisk0p4",
   "a.nerves_fw_application_part0_fstype" => "ext2",
-  "a.nerves_fw_application_part0_target" => "/data"
+  "a.nerves_fw_application_part0_target" => "/data",
+  "b.nerves_fw_product" => Atom.to_string(Mix.Project.config()[:app]),
+  "b.nerves_fw_version" => Mix.Project.config()[:version],
+  "b.nerves_fw_platform" => "atomcam2",
+  "b.nerves_fw_architecture" => "mipsel",
+  "b.nerves_fw_application_part0_devpath" => "/dev/rootdisk0p4",
+  "b.nerves_fw_application_part0_fstype" => "ext2",
+  "b.nerves_fw_application_part0_target" => "/data"
 }
 
 config :nerves_runtime,
-  kv_backend: {Nerves.Runtime.KVBackend.InMemory, contents: firmware_metadata},
-  init_module: Atomcam2NervesApp.FilesystemInit
+  kv_backend: {Atomcam2NervesApp.FirmwareKVBackend, contents: firmware_metadata},
+  init_module: Atomcam2NervesApp.FilesystemInit,
+  devpath: "/dev/rootdisk0",
+  fwup_path: "/usr/libexec/atomcam2/fwup-ops",
+  ops_fw_path: "/usr/share/fwup/ops.fw"
 
 config :shoehorn,
   init: [:nerves_runtime, :vintage_net, :mdns_lite, :nerves_ssh],
@@ -37,10 +46,15 @@ public_keys =
   end)
 
 config :nerves_ssh,
-  authorized_keys: public_keys
+  authorized_keys: public_keys,
+  subsystems: [
+    :ssh_sftpd.subsystem_spec(cwd: ~c"/"),
+    {~c"fwup", {Atomcam2NervesApp.FirmwareUploadSubsystem, []}}
+  ]
 
-config :ssh_subsystem_fwup,
-  precheck_callback: {Atomcam2NervesApp.FirmwareUpdate, :reject_remote_update, []}
+config :atomcam2_nerves_app,
+  firmware_stabilization_ms: 30_000,
+  target: :atomcam2
 
 config :mdns_lite,
   hosts: [:hostname, "nerves"],
