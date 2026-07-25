@@ -769,12 +769,16 @@ metadata_write_device_copy() {
     return 1
   fi
 
-  if sync; then
-    return 0
-  else
-    metadata_error="image_sync_failed"
-    return 1
+  if command -v sync >/dev/null 2>&1; then
+    if sync; then
+      return 0
+    else
+      metadata_error="image_sync_failed"
+      return 1
+    fi
   fi
+
+  return 0
 }
 
 metadata_load_writable_media() {

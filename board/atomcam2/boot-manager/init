@@ -224,7 +224,10 @@ EOF
   if [ -s "$metadata_error_path" ]; then
     pending_boot_attempt_error="$(
       sed -n \
-        '1s/^atomcam2 boot metadata: //p' \
+        '1{
+          s/^atomcam2 boot metadata: //
+          p
+        }' \
         "$metadata_error_path"
     )"
   fi
