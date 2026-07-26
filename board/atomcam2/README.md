@@ -22,7 +22,10 @@ The initramfs source in this directory documents and reproduces the required han
 
 Keep board-specific code limited to confirmed Atom Cam 2 requirements. The supported Nerves system owns the root filesystem, runtime, provisioning, and firmware workflow; it does not import the general `atomcam_tools` userland or update mechanism.
 
-ADR 0008 may add an optional compatibility service that reads the protected
-vendor camera filesystems. That service must remain disabled by default, keep
-internal flash read-only, use private writable state under `/data`, and leave
-Nerves in control of networking, the watchdog, updates, rollback, and recovery.
+ADR 0008 adds an optional manual compatibility service that reads the protected
+vendor camera filesystems. It remains disabled by default, keeps internal flash
+read-only, uses private writable state under `/data`, and leaves Nerves in
+control of networking, the watchdog, updates, rollback, and recovery. Camera
+modules in the protected kernel are permanent once loaded, so stopping the
+manual runtime cleans up its processes, mounts, and IPC and requires a reboot
+before another start.

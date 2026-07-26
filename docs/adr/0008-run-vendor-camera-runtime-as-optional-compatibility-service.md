@@ -2,7 +2,11 @@
 
 ## Status
 
-Proposed on July 26, 2026
+Accepted on July 26, 2026
+
+The read-only feasibility gate and console-visible Phase 2 checks are complete.
+Standard mobile-application live viewing remains an open operator acceptance
+check; recording and NAS export remain later phases.
 
 ## Context
 
@@ -44,6 +48,20 @@ watchdog-owning `assis` process.
 
 The evidence is recorded in
 [`../worklog/20260726-adr-0008-vendor-camera-feasibility.md`](../worklog/20260726-adr-0008-vendor-camera-feasibility.md).
+
+A subsequent physical manual-runtime trial also established that:
+
+- `hl_client` and `iCamera_app` remain running without `assis`;
+- Nerves `heart` retains sole hardware-watchdog ownership;
+- the vendor-requested GC2053 sensor interface is `data_interface=1`;
+- the two vendor processes use about 3.7 MiB combined RSS in the bounded trial;
+- Nerves Wi-Fi, SSH, firmware validation, and recovery remain healthy; and
+- the protected kernel marks every selected camera module permanent, so stop
+  can clean processes, mounts, and IPC but a reboot is required to remove the
+  modules.
+
+That evidence is recorded in
+[`../worklog/20260726-adr-0008-vendor-camera-manual-runtime.md`](../worklog/20260726-adr-0008-vendor-camera-manual-runtime.md).
 
 ## Decision
 
@@ -184,8 +202,10 @@ persistent configuration under `/data`. Startup must wait for:
 
 The supervisor must use bounded restart attempts and visible failure state. It
 must not create a reboot loop or restart Nerves networking. Stop must terminate
-only the vendor processes, remove only compatibility mounts, and unload only
-modules loaded by this service when unloading is safe.
+only the vendor processes and remove only compatibility mounts and IPC. The
+selected modules are permanent in the protected kernel and must remain loaded
+until a deliberate reboot. The command must report this state rather than
+attempting unsafe or ineffective unload operations.
 
 A vendor runtime failure must leave Nerves, SSH, OTA, rollback, and recovery
 usable. A NAS outage must affect only export and local spool pressure, never
@@ -195,7 +215,7 @@ All persistent compatibility state remains in `/data` across OTA update and
 rollback. Firmware must ignore state versions it does not understand rather
 than migrating them irreversibly during boot.
 
-## Feasibility gate
+## Implementation status
 
 The read-only probe establishes a conditional go:
 
@@ -204,24 +224,30 @@ The read-only probe establishes a conditional go:
 - a chroot compatibility layout is technically viable; and
 - protected flash can remain read-only by using a private configuration copy.
 
-It does not authorize starting the stock runtime. Phase 2 must first resolve and
-test:
-
-- the `assis` versus Nerves watchdog conflict;
-- the minimal module and process list;
-- camera-process memory consumption alongside the BEAM;
-- private configuration-copy behavior;
-- standard mobile-app live viewing; and
-- clean stop and recovery.
-
-The command:
+It does not authorize starting the stock runtime. The Phase 2 implementation
+instead provides an explicit minimal runtime:
 
 ```sh
 atomcam2-vendor-camera precheck
+atomcam2-vendor-camera prepare
+atomcam2-vendor-camera start
+atomcam2-vendor-camera status
+atomcam2-vendor-camera stop
 ```
 
-performs only read-only inspection. During this feasibility milestone,
-`start`, `status`, and `stop` deliberately return an unsupported-command error.
+`prepare` creates the private configuration and spool state. `start` uses an
+explicit module list and launches only `hl_client` and `iCamera_app`. The
+compatibility environment omits the real watchdog, hides or replaces commands
+that can alter networking, flash, mounts, modules, or power state, and removes
+the corresponding capability classes from the vendor processes.
+
+The physical trial resolved the watchdog conflict, minimal process list, memory
+measurement, private configuration behavior, clean stop, and reboot recovery.
+The runtime remains disabled by default and has no boot integration.
+
+Standard mobile-app live viewing is still unconfirmed. That check is the final
+Phase 2 acceptance item and must pass before recording hooks are treated as the
+next implementation boundary.
 
 ## Consequences
 

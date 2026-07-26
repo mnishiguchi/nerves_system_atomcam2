@@ -88,6 +88,7 @@ require_executable rootfs_overlay/usr/bin/atomcam2-pre-run
 require_executable rootfs_overlay/usr/bin/atomcam2-wifi-driver
 require_executable rootfs_overlay/usr/bin/atomcam2-network-check
 require_executable rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_executable rootfs_overlay/usr/libexec/atomcam2-vendor-camera-blocked-command
 require_executable scripts/atomcam2-build-boot-manager.sh
 require_executable scripts/atomcam2-package-flat-sd.sh
 require_executable scripts/atomcam2-check-sd-payload.sh
@@ -131,6 +132,7 @@ require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 require_file docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md
 require_file docs/worklog/20260726-adr-0008-vendor-camera-feasibility.md
+require_file docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md
 
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
@@ -327,8 +329,26 @@ require_grep '/dev/mtdblock3' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep '/dev/mtdblock6' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'stock vendor assis also opens the watchdog' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'result=feasible_with_unresolved_safety_gates' rootfs_overlay/usr/bin/atomcam2-vendor-camera
-reject_grep '/sbin/insmod' rootfs_overlay/usr/bin/atomcam2-vendor-camera
-reject_grep '/bin/mount' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'private device view excludes the hardware watchdog' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'manual vendor camera processes are running without assis' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'BR2_PACKAGE_UTIL_LINUX_SETPRIV=y' nerves_defconfig
+require_grep 'CONFIG_IPCRM=y' busybox.fragment
+require_grep 'CONFIG_IPCS=y' busybox.fragment
+require_grep 'CONFIG_KILL=y' busybox.fragment
+require_grep '\--bounding-set=-sys_admin,-sys_boot,-net_admin,-sys_module,-mknod' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'atomcam2-vendor-camera prepare' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'atomcam2-vendor-camera start' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'atomcam2-vendor-camera status' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'atomcam2-vendor-camera stop' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'sensor_gc2053_t31' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'ATOMCAM2_VENDOR_SENSOR_DATA_INTERFACE:-1' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'stopped-reboot-required' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'recorded_boot_id.*!=' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+reject_grep '/system/init/app_init.sh' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+reject_grep 'exfat.ko' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+reject_grep 'rtl8189ftv.ko' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+reject_grep 'atbm603x_wifi_sdio.ko' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+reject_grep 'mmc_detect_test.ko' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'output directory must differ from images directory' scripts/atomcam2-package-flat-sd.sh
 require_grep 'kernel image is too large for the AtomCam2 boot contract' scripts/atomcam2-package-flat-sd.sh
 require_grep 'ATOMCAM2_KERNEL_IMAGE must point to the verified AtomCam2 control kernel' scripts/post-image.sh
@@ -566,7 +586,7 @@ find "$repo_dir" \
   -path '*/vendor' -prune -o \
   -name '*.log' -prune -o \
   -name '*.dump' -prune -o \
-  \( -name '*.sh' -o -path '*/usr/bin/atomcam2-*' -o -path '*/initramfs/init' -o -path '*/boot-manager/init' \) \
+  \( -name '*.sh' -o -path '*/usr/bin/atomcam2-*' -o -path '*/usr/libexec/atomcam2-*' -o -path '*/initramfs/init' -o -path '*/boot-manager/init' \) \
   -type f -print | while IFS= read -r shell_file; do
   check_script_syntax "$shell_file"
 done

@@ -31,10 +31,14 @@ The verified IEx node is:
 
 Commit `3cd22ab` is the reproducible ping and SSH baseline. It uses the explicit minimal runtime stack without `nerves_pack` or `nerves_motd`.
 
-Vendor camera compatibility is now under a read-only feasibility
-investigation. Camera startup, recording, NAS export, RTSP, WebUI, Samba, and
-internal flash writes are not enabled. Remote firmware updates remain
-experimental until the physical OTA validation matrix is complete.
+An optional manual vendor-camera compatibility runtime is available for
+supervised testing. It remains disabled by default and keeps Nerves in control
+of boot, networking, the hardware watchdog, updates, and recovery. Automatic
+camera startup, recording, NAS export, RTSP, WebUI, Samba, and internal flash
+writes are not enabled. Standard mobile-application live viewing still needs
+operator confirmation before the manual-runtime milestone is complete. Remote
+firmware updates remain experimental until the physical OTA validation matrix
+is complete.
 
 ## Application workflow
 
@@ -207,28 +211,42 @@ verified Atom Cam 2 control kernel
 Nerves-generated root filesystem and application
 ```
 
-ADR 0008 proposes a second, optional boundary for camera compatibility. It
-would read the vendor camera binaries, libraries, drivers, and protected
-configuration already exposed below `/atom`, while keeping Nerves in control of
-boot, networking, the hardware watchdog, updates, and recovery. It does not
-adopt the complete `atomcam_tools` runtime.
+ADR 0008 defines a second, optional boundary for camera compatibility. It reads
+the vendor camera binaries, libraries, drivers, and protected configuration
+already exposed below `/atom`, while keeping Nerves in control of boot,
+networking, the hardware watchdog, updates, and recovery. It does not adopt the
+complete `atomcam_tools` runtime.
 
-The first implementation is a read-only target precheck:
+The target command supports a read-only precheck and a deliberately manual
+runtime:
 
 ```sh
 atomcam2-vendor-camera precheck
+atomcam2-vendor-camera prepare
+atomcam2-vendor-camera start
+atomcam2-vendor-camera status
+atomcam2-vendor-camera stop
 ```
 
-It verifies the live vendor mounts, required files, module ABI, reserved memory,
-`/data`, IPC, Wi-Fi, watchdog ownership, and NAS filesystem capabilities. Exit
-status `2` means that the platform foundation is present but the documented
-safety gates still prevent camera startup. `start`, `status`, and `stop` remain
-unavailable during this milestone.
+`precheck` verifies the live vendor mounts, required files, module ABI, reserved
+memory, `/data`, IPC, Wi-Fi, watchdog ownership, and NAS filesystem
+capabilities. `prepare` makes a mode-private copy of protected vendor
+configuration below `/data` without printing its contents. `start` loads only
+the required camera modules and starts `hl_client` and `iCamera_app` in the
+isolated compatibility layout; it deliberately omits the watchdog-owning
+`assis`. `stop` removes the tracked processes, mounts, and IPC. The protected
+kernel marks the camera modules permanent, so a reboot is required before
+another start.
+
+The manual runtime has passed a physical start/status/stop/reboot trial with
+stable SSH, Wi-Fi, Nerves watchdog ownership, and firmware validation. It does
+not yet record video, export to a NAS, or start during boot. Standard
+mobile-application live viewing remains an explicit operator acceptance check.
 
 The architecture and physical evidence are recorded in
 [`ADR 0008`](docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)
 and the
-[`feasibility worklog`](docs/worklog/20260726-adr-0008-vendor-camera-feasibility.md).
+[`manual-runtime worklog`](docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md).
 
 The application build preserves the final merged SquashFS at:
 

@@ -8,6 +8,15 @@
   runtime without replacing the Nerves musl userspace.
 - Record the protected-filesystem, module ABI, memory, watchdog, and NAS
   filesystem findings from the physical v0.2.0 feasibility probe.
+- Add explicit `prepare`, `start`, `status`, and `stop` commands for a manual,
+  disabled-by-default vendor camera compatibility runtime.
+- Keep protected vendor filesystems read-only, place private configuration and
+  spool state under `/data`, omit the watchdog-owning `assis`, expose only
+  selected devices, and drop vendor process capabilities for networking,
+  mounting, module loading, reboot, and device-node creation.
+- Verify manual camera process startup, bounded memory use, clean
+  process/mount/IPC shutdown, permanent-module reboot recovery, stable Nerves
+  Wi-Fi and watchdog ownership, and firmware validation on physical hardware.
 
 ## 0.2.0 - 2026-07-26
 

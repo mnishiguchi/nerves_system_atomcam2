@@ -19,8 +19,8 @@ grep_files() {
       xargs grep -Il "$1" 2>/dev/null || true
 }
 
-# ADR 0008 permits the explicit iCamera_app/vendor-camera feasibility probe.
-# Continue rejecting the broader services that remain outside the core system.
+# ADR 0008 permits the explicit, opt-in iCamera_app compatibility runtime.
+# Continue rejecting broader camera features from the core Nerves system.
 for forbidden in rtsp samba webui libcallback camera-service homekit webrtc rtmp; do
   matches="$(grep_files "$forbidden" | grep -v 'atomcam2-check-minimal-ssh-scope.sh' || true)"
 

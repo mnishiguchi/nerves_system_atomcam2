@@ -6,7 +6,7 @@ Architecture Decision Records are stored in `adr/`.
 
 Use ADRs for decisions that should remain true beyond a particular build or hardware test.
 
-The optional vendor camera compatibility design is proposed in:
+The optional vendor camera compatibility design is accepted in:
 
 - [`adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md`](adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)
 
@@ -37,12 +37,14 @@ Supporting investigations are retained separately:
 
 Camera runtime, RTSP, WebUI, Samba, firmware updates, and production hardening remain outside that milestone.
 
-## Vendor camera feasibility
+## Vendor camera compatibility
 
-The read-only v0.2.0 hardware investigation is recorded in:
+The read-only v0.2.0 hardware investigation and the subsequent manual-runtime
+trial are recorded in:
 
 - [`worklog/20260726-adr-0008-vendor-camera-feasibility.md`](worklog/20260726-adr-0008-vendor-camera-feasibility.md)
+- [`worklog/20260726-adr-0008-vendor-camera-manual-runtime.md`](worklog/20260726-adr-0008-vendor-camera-manual-runtime.md)
 
-It confirms that the protected vendor files and camera modules are available,
-while identifying writable configuration, watchdog ownership, memory
-measurement, and NAS filesystem support as explicit gates before startup.
+The manual runtime keeps Nerves ownership boundaries intact and passes the
+console-visible physical checks. Standard mobile-application live viewing
+remains an operator acceptance check before moving to recording integration.
