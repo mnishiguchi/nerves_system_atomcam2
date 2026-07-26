@@ -131,21 +131,31 @@ by VintageNet without patching `deps/vintage_net`.
 
 ## Releasing artifacts
 
-After a local system build and hardware verification, create both release
-artifacts from a clean release commit:
+Prepare each release in a focused pull request that:
+
+- bumps `VERSION`, `toolchain/VERSION`, and the example application's system
+  dependency version;
+- bumps the example application version when its firmware changes;
+- moves the completed changes into a dated `CHANGELOG.md` section; and
+- keeps the release tag, system, toolchain, and example system dependency
+  aligned.
+
+After that pull request is merged, fast-forward a clean `main` checkout and
+publish the matching tag, GitHub Release, system artifact, toolchain artifact,
+and checksum manifest:
 
 ```sh
-./scripts/release-artifacts.sh
-```
-
-Publish the matching GitHub release explicitly:
-
-```sh
+git switch main
+git pull --ff-only
 ./scripts/release-artifacts.sh --publish
 ```
 
-After publication, prove that an isolated checkout downloads both artifacts and
-builds without `NERVES_SYSTEM`, `NERVES_TOOLCHAIN`, or a local system override:
+The script derives the tag from `VERSION` and uses GitHub-generated release
+notes. Run it without flags to build the artifacts locally without publishing.
+
+After publication, prove that an isolated checkout of the tag downloads both
+artifacts and builds without `NERVES_SYSTEM`, `NERVES_TOOLCHAIN`, or a local
+system override:
 
 ```sh
 ./scripts/release-artifacts.sh --verify

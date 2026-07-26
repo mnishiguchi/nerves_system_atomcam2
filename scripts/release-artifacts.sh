@@ -23,7 +23,8 @@ Build the Atom Cam 2 custom toolchain and Nerves system release artifacts.
 
 Options:
   --output PATH  Artifact output directory.
-  --publish      Create the matching GitHub release and upload the artifacts.
+  --publish      Create the matching Git tag and GitHub release, then upload
+                 the artifacts.
   --verify       Clone the release tag and build the example app with isolated
                  Nerves caches and no local system/toolchain overrides.
   --force        Replace an existing local artifact output directory.
@@ -272,7 +273,7 @@ if [ "$publish" = "1" ]; then
     --repo mnishiguchi/nerves_system_atomcam2 \
     --target "$(git -C "$repo_root" rev-parse HEAD)" \
     --title "nerves_system_atomcam2 $version" \
-    --notes "Initial reusable Atom Cam 2 Nerves system and MIPS32R2 soft-float toolchain artifacts."
+    --generate-notes
 fi
 
 if [ "$verify" = "1" ]; then
