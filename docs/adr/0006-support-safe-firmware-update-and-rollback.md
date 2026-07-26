@@ -270,8 +270,10 @@ inactive-slot write, destination verification, confirmation, and manual revert
 paths pass physical happy-path validation.
 
 Treat remote upload as experimental until watchdog behavior, the complete
-physical failure matrix, and ADR 0007 firmware-authentication requirements are
-verified. Production release documentation must preserve that distinction.
+physical failure matrix, and recovery behavior are verified. ADR 0007 considered
+mandatory firmware signing and rejected it in favor of the ordinary Nerves
+baseline. Production release documentation must preserve the distinction
+between the implemented update path and the remaining physical hardening work.
 
 NervesHub is outside the scope of this decision.
 
@@ -335,10 +337,15 @@ filesystem lifecycle and safety policy.
 ADR 0006 owns crash-safe inactive-slot writing, destination verification,
 activation, validation, and rollback.
 
-ADR 0007 owns firmware authenticity, trusted signing keys, signature
-verification, and key rotation. Once device-side updates are enabled, a
-candidate must satisfy ADR 0007 before any inactive-slot write begins. Signature
-failure must leave both slot contents and rollback metadata unchanged.
+ADR 0007 considered authenticating firmware publishers with trusted signing
+keys and rejected that additional policy for the current scope. Update access
+is authorized through SSH public-key authentication. Fwup archive and resource
+integrity checks plus the Atom Cam 2 metadata and rootfs checks validate the
+candidate before pending metadata is committed.
+
+A future requirement to authenticate releases independently of SSH access
+requires a new decision and does not belong in the ADR 0006 A/B safety
+mechanism.
 
 ## Boot and update lifecycle
 
@@ -417,7 +424,7 @@ trigger an ADR revision.
 
 The experimental standard Nerves update and rollback path described in this ADR
 is implemented. Production acceptance remains gated by the complete physical
-failure matrix and ADR 0007.
+failure matrix.
 
 Implemented:
 
@@ -463,8 +470,6 @@ Remaining production acceptance work:
 - Complete the documented power-interruption, crash-loop, `prevent-revert`,
   factory-reset, `/data`, provisioning, and protected-kernel verification
   matrix.
-- Verify ADR 0007 firmware authentication before removing the experimental
-  label.
 
 ## Verification strategy
 
@@ -535,7 +540,7 @@ Detailed investigation and physical-test evidence belong in dated files under
 - `mix upload` uses the checked inactive-slot update path and is physically
   verified in both slot directions.
 - `mix upload` remains experimental until the complete physical failure matrix
-  passes and ADR 0007 firmware authentication is verified.
+  passes.
 
 Do not mark this ADR `Accepted` until all acceptance criteria have been verified
 on physical Atom Cam 2 hardware.

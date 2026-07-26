@@ -82,6 +82,18 @@ architecture, selects the inactive application slot, writes only that slot,
 verifies the written root filesystem, and records it as pending. The SSH
 subsystem then reboots the device.
 
+SSH public-key authentication authorizes access to the update endpoint. Fwup
+validates archive and resource integrity; the Atom Cam 2 updater adds the
+platform, architecture, inactive-slot, and written-rootfs checks required by its
+custom media layout. Mandatory firmware signing is deliberately not part of the
+baseline workflow, matching the ordinary Nerves system model. The rationale is
+recorded in
+[`ADR 0007`](docs/adr/0007-require-signed-firmware-for-device-side-updates.md).
+
+The upload reports its receiving and installation phases, received byte count,
+fwup write progress, and final updater status. An interrupted transfer removes
+its staged file and does not reboot the device.
+
 After the pending firmware boots, the application waits for local services and
 the persistent data filesystem to become healthy before confirming the new
 slot. The previous confirmed slot remains available for rollback.
@@ -89,7 +101,7 @@ slot. The previous confirmed slot remains available for rollback.
 Remote updates do not rewrite the FAT boot partition, protected control kernel,
 boot manager, active application slot, or persistent data partition. Physical
 happy-path OTA and `Nerves.Runtime.revert/0` testing has passed on an Atom Cam 2.
-Power-interruption, crash-loop, watchdog, and firmware-signature validation is
+Power-interruption, crash-loop, and the remaining physical failure matrix are
 still required before treating this path as production-ready.
 
 ## System-maintainer workflow
