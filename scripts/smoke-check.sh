@@ -87,6 +87,7 @@ require_executable rootfs_overlay/usr/bin/atomcam2-env
 require_executable rootfs_overlay/usr/bin/atomcam2-pre-run
 require_executable rootfs_overlay/usr/bin/atomcam2-wifi-driver
 require_executable rootfs_overlay/usr/bin/atomcam2-network-check
+require_executable rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_executable scripts/atomcam2-build-boot-manager.sh
 require_executable scripts/atomcam2-package-flat-sd.sh
 require_executable scripts/atomcam2-check-sd-payload.sh
@@ -128,6 +129,8 @@ require_file examples/atomcam2_nerves_app/test/firmware_kv_backend_test.exs
 require_file lib/mix/tasks/atomcam2.install.ex
 require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
+require_file docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md
+require_file docs/worklog/20260726-adr-0008-vendor-camera-feasibility.md
 
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
@@ -227,6 +230,7 @@ require_grep 'CONFIG_INITRAMFS_SOURCE="${NERVES_DEFCONFIG_DIR}/board/atomcam2/in
 require_grep 'CONFIG_BLK_DEV_LOOP=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_NLS_CODEPAGE_437=y' linux-3.10.14.defconfig
 require_grep 'CONFIG_FEATURE_MOUNT_LOOP=y' busybox.fragment
+require_grep 'CONFIG_CHROOT=y' busybox.fragment
 require_grep 'CONFIG_PIVOT_ROOT=y' busybox.fragment
 require_grep 'CONFIG_SWITCH_ROOT=y' busybox.fragment
 require_grep 'CONFIG_JZMMC_V12_MMC1=y' linux-3.10.14.defconfig
@@ -318,6 +322,13 @@ require_grep 'logging.sh' scripts/build-firmware-log.sh
 require_grep 'logging.sh' scripts/collect-boot-report.sh
 require_grep 'atomcam2-boot-manager.env' scripts/collect-boot-report.sh
 require_grep 'refusing to write SD payload to /' scripts/atomcam2-package-flat-sd.sh
+require_grep 'mode=read-only' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep '/dev/mtdblock3' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep '/dev/mtdblock6' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'stock vendor assis also opens the watchdog' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'result=feasible_with_unresolved_safety_gates' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+reject_grep '/sbin/insmod' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+reject_grep '/bin/mount' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'output directory must differ from images directory' scripts/atomcam2-package-flat-sd.sh
 require_grep 'kernel image is too large for the AtomCam2 boot contract' scripts/atomcam2-package-flat-sd.sh
 require_grep 'ATOMCAM2_KERNEL_IMAGE must point to the verified AtomCam2 control kernel' scripts/post-image.sh

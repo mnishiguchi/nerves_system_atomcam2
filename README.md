@@ -31,7 +31,10 @@ The verified IEx node is:
 
 Commit `3cd22ab` is the reproducible ping and SSH baseline. It uses the explicit minimal runtime stack without `nerves_pack` or `nerves_motd`.
 
-Camera runtime, RTSP, WebUI, Samba, vendor application compatibility, and internal flash writes remain out of scope. Remote firmware updates remain experimental until the physical OTA validation matrix is complete.
+Vendor camera compatibility is now under a read-only feasibility
+investigation. Camera startup, recording, NAS export, RTSP, WebUI, Samba, and
+internal flash writes are not enabled. Remote firmware updates remain
+experimental until the physical OTA validation matrix is complete.
 
 ## Application workflow
 
@@ -203,6 +206,29 @@ verified Atom Cam 2 control kernel
 +
 Nerves-generated root filesystem and application
 ```
+
+ADR 0008 proposes a second, optional boundary for camera compatibility. It
+would read the vendor camera binaries, libraries, drivers, and protected
+configuration already exposed below `/atom`, while keeping Nerves in control of
+boot, networking, the hardware watchdog, updates, and recovery. It does not
+adopt the complete `atomcam_tools` runtime.
+
+The first implementation is a read-only target precheck:
+
+```sh
+atomcam2-vendor-camera precheck
+```
+
+It verifies the live vendor mounts, required files, module ABI, reserved memory,
+`/data`, IPC, Wi-Fi, watchdog ownership, and NAS filesystem capabilities. Exit
+status `2` means that the platform foundation is present but the documented
+safety gates still prevent camera startup. `start`, `status`, and `stop` remain
+unavailable during this milestone.
+
+The architecture and physical evidence are recorded in
+[`ADR 0008`](docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)
+and the
+[`feasibility worklog`](docs/worklog/20260726-adr-0008-vendor-camera-feasibility.md).
 
 The application build preserves the final merged SquashFS at:
 

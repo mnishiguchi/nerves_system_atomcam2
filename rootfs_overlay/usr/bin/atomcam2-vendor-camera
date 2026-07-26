@@ -1,0 +1,398 @@
+#!/bin/sh
+set -u
+
+vendor_root="${ATOMCAM2_VENDOR_ROOT:-/atom}"
+vendor_system="${ATOMCAM2_VENDOR_SYSTEM:-$vendor_root/system}"
+vendor_configs="${ATOMCAM2_VENDOR_CONFIGS:-$vendor_root/configs}"
+data_mount="${ATOMCAM2_DATA_MOUNT:-/data}"
+runtime_root="${ATOMCAM2_VENDOR_RUNTIME_ROOT:-$data_mount/atomcam2-vendor-camera}"
+
+failures=0
+gates=0
+warnings=0
+
+pass() {
+  echo "PASS $*"
+}
+
+info() {
+  echo "INFO $*"
+}
+
+warn() {
+  warnings=$((warnings + 1))
+  echo "WARN $*"
+}
+
+block() {
+  failures=$((failures + 1))
+  echo "BLOCK $*"
+}
+
+gate() {
+  gates=$((gates + 1))
+  echo "GATE $*"
+}
+
+usage() {
+  cat <<'EOF_USAGE'
+Usage:
+  atomcam2-vendor-camera precheck
+
+The feasibility milestone implements only the read-only precheck. Camera
+startup, status, and shutdown remain unavailable until the safety gates
+reported by precheck have been resolved and validated on hardware.
+EOF_USAGE
+}
+
+mount_field() {
+  mount_point="$1"
+  field_number="$2"
+
+  awk \
+    -v mount_point="$mount_point" \
+    -v field_number="$field_number" \
+    '$2 == mount_point { print $field_number; exit }' \
+    /proc/mounts
+}
+
+require_read_only_mount() {
+  required_mount="$1"
+  required_source="$2"
+  required_type="$3"
+  mount_source="$(mount_field "$required_mount" 1)"
+  mount_type="$(mount_field "$required_mount" 3)"
+  mount_options="$(mount_field "$required_mount" 4)"
+
+  if [ -z "$mount_source" ]; then
+    block "$required_mount is not mounted"
+    return
+  fi
+
+  if [ -n "$required_source" ] && [ "$mount_source" != "$required_source" ]; then
+    block "$required_mount source is $mount_source, expected $required_source"
+  elif [ "$mount_type" != "$required_type" ]; then
+    block "$required_mount type is $mount_type, expected $required_type"
+  else
+    case ",$mount_options," in
+      *,ro,*)
+        pass "$required_mount is $mount_type read-only from $mount_source"
+        ;;
+      *)
+        block "$required_mount is not read-only"
+        ;;
+    esac
+  fi
+}
+
+require_read_write_mount() {
+  required_mount="$1"
+  mount_source="$(mount_field "$required_mount" 1)"
+  mount_type="$(mount_field "$required_mount" 3)"
+  mount_options="$(mount_field "$required_mount" 4)"
+
+  if [ -z "$mount_source" ]; then
+    block "$required_mount is not mounted"
+    return
+  fi
+
+  case ",$mount_options," in
+    *,rw,*)
+      case ",$mount_options," in
+        *,noexec,*)
+          block "$required_mount is read-write but does not permit executables"
+          ;;
+        *)
+          pass "$required_mount is $mount_type read-write and executable from $mount_source"
+          ;;
+      esac
+      ;;
+    *)
+      block "$required_mount is not read-write"
+      ;;
+  esac
+}
+
+process_running() {
+  expected_name="$1"
+
+  for process_status in /proc/[0-9]*/status; do
+    candidate_process_name="$(
+      awk '$1 == "Name:" { print $2; exit }' "$process_status" 2>/dev/null
+    )"
+
+    if [ "$candidate_process_name" = "$expected_name" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+require_file() {
+  required_file="$1"
+
+  if [ -r "$required_file" ]; then
+    pass "readable $required_file"
+  else
+    block "missing or unreadable $required_file"
+  fi
+}
+
+require_executable() {
+  required_executable="$1"
+
+  if [ -x "$required_executable" ]; then
+    pass "executable $required_executable"
+  else
+    block "missing or non-executable $required_executable"
+  fi
+}
+
+require_module_abi() {
+  module_file="$1"
+  kernel_release="$2"
+
+  if [ ! -r "$module_file" ]; then
+    block "missing camera module $module_file"
+    return
+  fi
+
+  module_vermagic="$(
+    /sbin/modinfo "$module_file" 2>/dev/null |
+      awk '$1 == "vermagic:" { print $2; exit }'
+  )"
+
+  if [ "$module_vermagic" = "$kernel_release" ]; then
+    pass "module ABI matches $kernel_release: $module_file"
+  else
+    block "module ABI mismatch for $module_file: ${module_vermagic:-unknown}"
+  fi
+}
+
+find_watchdog_owner() {
+  for descriptor in /proc/[0-9]*/fd/*; do
+    descriptor_target="$(readlink "$descriptor" 2>/dev/null || true)"
+
+    case "$descriptor_target" in
+      /dev/watchdog|/dev/watchdog0)
+        owner_pid="${descriptor#/proc/}"
+        owner_pid="${owner_pid%%/*}"
+        owner_name="$(cat "/proc/$owner_pid/comm" 2>/dev/null || true)"
+        echo "$owner_pid:${owner_name:-unknown}:$descriptor_target"
+        return
+        ;;
+      *)
+        ;;
+    esac
+  done
+}
+
+precheck() {
+  echo "atomcam2 vendor camera feasibility precheck"
+  echo "mode=read-only"
+
+  require_read_only_mount "$vendor_root" "" "squashfs"
+  require_read_only_mount "$vendor_system" "/dev/mtdblock3" "squashfs"
+  require_read_only_mount "$vendor_configs" "/dev/mtdblock6" "jffs2"
+  require_read_write_mount "$data_mount"
+
+  if awk '
+    $1 ~ /^\/dev\/mtd(block)?[0-9]+$/ && $4 ~ /(^|,)rw(,|$)/ {
+      found = 1
+    }
+    END {
+      exit(found ? 0 : 1)
+    }
+  ' /proc/mounts; then
+    block "an internal MTD partition is mounted read-write"
+  else
+    pass "all mounted internal MTD partitions are read-only"
+  fi
+
+  for config_file in \
+    "$vendor_configs/.product_config" \
+    "$vendor_configs/.user_config" \
+    "$vendor_configs/app.ver"; do
+    require_file "$config_file"
+  done
+
+  for executable in \
+    "$vendor_system/bin/ver-comp" \
+    "$vendor_system/bin/assis" \
+    "$vendor_system/bin/hl_client" \
+    "$vendor_system/bin/iCamera_app"; do
+    require_executable "$executable"
+  done
+
+  for library in \
+    "$vendor_root/lib/ld-uClibc.so.0" \
+    "$vendor_system/lib/libimp.so" \
+    "$vendor_system/lib/liblocalsdk.so" \
+    "$vendor_system/lib/liblocalsdk_watchdog.so" \
+    "$vendor_system/lib/libmp4rw.so" \
+    "$vendor_root/thirdlib/libcrypto.so.1.1" \
+    "$vendor_root/thirdlib/libssl.so.1.1"; do
+    require_file "$library"
+  done
+
+  require_file "$vendor_system/etc/sensor/gc2053-t31.bin"
+
+  kernel_release="$(cat /proc/sys/kernel/osrelease 2>/dev/null || true)"
+
+  if [ -z "$kernel_release" ]; then
+    block "kernel release is unavailable"
+  else
+    info "kernel_release=$kernel_release"
+
+    for module_file in \
+      "$vendor_system/driver/tx-isp-t31.ko" \
+      "$vendor_system/driver/sensor_gc2053_t31.ko" \
+      "$vendor_system/driver/audio.ko" \
+      "$vendor_system/driver/avpu.ko" \
+      "$vendor_system/driver/sinfo.ko" \
+      "$vendor_system/driver/sample_pwm_core.ko" \
+      "$vendor_system/driver/sample_pwm_hal.ko" \
+      "$vendor_system/driver/speaker_ctl.ko"; do
+      require_module_abi "$module_file" "$kernel_release"
+    done
+  fi
+
+  if grep -q '^atbm603x_wifi_sdio ' /proc/modules &&
+      [ -d /sys/class/net/wlan0 ]; then
+    pass "Nerves owns the active wlan0 interface"
+  else
+    block "the Nerves Wi-Fi interface is not healthy"
+  fi
+
+  if [ -x /usr/sbin/chroot ] ||
+      /bin/busybox --list 2>/dev/null | grep -qx chroot; then
+    pass "chroot support is available"
+  else
+    block "chroot support is unavailable"
+  fi
+
+  if [ -r /proc/sysvipc/msg ] && [ -r /proc/sysvipc/shm ]; then
+    pass "System V IPC is available"
+  else
+    block "System V IPC is unavailable"
+  fi
+
+  mem_total_kb="$(
+    awk '$1 == "MemTotal:" { print $2; exit }' /proc/meminfo
+  )"
+  reclaimable_kb="$(
+    awk '
+      $1 == "MemFree:" || $1 == "Buffers:" || $1 == "Cached:" {
+        total += $2
+      }
+      END {
+        print total + 0
+      }
+    ' /proc/meminfo
+  )"
+
+  info "memory_total_kb=${mem_total_kb:-0}"
+  info "memory_reclaimable_kb=${reclaimable_kb:-0}"
+
+  if [ "${mem_total_kb:-0}" -lt 81920 ]; then
+    block "less than 80 MiB of Linux memory is available"
+  elif [ "${reclaimable_kb:-0}" -lt 32768 ]; then
+    warn "less than 32 MiB is currently free or reclaimable"
+  else
+    pass "baseline memory headroom is sufficient for a bounded manual trial"
+  fi
+
+  if grep -q 'rmem=36M' /proc/cmdline; then
+    pass "the camera-reserved 36 MiB memory region is present"
+  else
+    block "the expected camera-reserved memory region is missing"
+  fi
+
+  data_available_kb="$(
+    df -k "$data_mount" 2>/dev/null |
+      awk 'NR == 2 { print $4; exit }'
+  )"
+  info "data_available_kb=${data_available_kb:-unknown}"
+
+  if [ "${data_available_kb:-0}" -lt 524288 ]; then
+    warn "less than 512 MiB is available for a local recording spool"
+  else
+    pass "at least 512 MiB is available for a bounded local spool"
+  fi
+
+  watchdog_owner="$(find_watchdog_owner)"
+
+  case "$watchdog_owner" in
+    *:heart:/dev/watchdog|*:heart:/dev/watchdog0)
+      pass "Nerves heart owns the hardware watchdog: $watchdog_owner"
+      gate "stock vendor assis also opens the watchdog and must be isolated or omitted"
+      ;;
+    "")
+      warn "no hardware-watchdog owner was found"
+      gate "Nerves watchdog ownership must be healthy before camera startup"
+      ;;
+    *)
+      block "unexpected hardware-watchdog owner: $watchdog_owner"
+      ;;
+  esac
+
+  for expected_vendor_process in iCamera_app assis hl_client; do
+    if process_running "$expected_vendor_process"; then
+      block "vendor process is already running during precheck: $expected_vendor_process"
+    else
+      pass "vendor process is stopped: $expected_vendor_process"
+    fi
+  done
+
+  if [ -d "$runtime_root/configs" ]; then
+    warn "a writable vendor configuration copy already exists at $runtime_root/configs"
+  else
+    gate "prepare a private writable configuration copy under $runtime_root"
+  fi
+
+  if grep -Eq '(^|[[:space:]])nfs([[:space:]]|$)' /proc/filesystems; then
+    pass "kernel NFS client support is active"
+  else
+    warn "the protected v0.2.0 kernel does not expose NFS client support"
+  fi
+
+  if grep -Eq '(^|[[:space:]])cifs([[:space:]]|$)' /proc/filesystems; then
+    pass "kernel CIFS client support is active"
+  else
+    info "kernel CIFS client support is not active"
+  fi
+
+  gate "measure camera-process memory and verify mobile-app viewing in a supervised manual trial"
+
+  echo "summary failures=$failures gates=$gates warnings=$warnings"
+
+  if [ "$failures" -gt 0 ]; then
+    echo "result=blocked"
+    return 1
+  fi
+
+  if [ "$gates" -gt 0 ]; then
+    echo "result=feasible_with_unresolved_safety_gates"
+    return 2
+  fi
+
+  echo "result=ready_for_manual_camera_start"
+}
+
+case "${1:-}" in
+  precheck)
+    precheck
+    ;;
+  start|status|stop)
+    echo "atomcam2-vendor-camera: $1 is not implemented in the feasibility milestone" >&2
+    exit 64
+    ;;
+  -h|--help|"")
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 64
+    ;;
+esac

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add ADR 0008 and a read-only `atomcam2-vendor-camera precheck` for the
+  optional vendor camera compatibility investigation.
+- Enable the minimal BusyBox `chroot` applet required to run the vendor uClibc
+  runtime without replacing the Nerves musl userspace.
+- Record the protected-filesystem, module ABI, memory, watchdog, and NAS
+  filesystem findings from the physical v0.2.0 feasibility probe.
+
 ## 0.2.0 - 2026-07-26
 
 - Adopt standard fwup media creation and `mix burn` workflows while preserving
