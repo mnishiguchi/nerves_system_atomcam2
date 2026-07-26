@@ -1,16 +1,30 @@
 # Changelog
 
-## 0.1.0-dev
+## 0.2.0 - 2026-07-26
 
-- Add publishable system and Atom Cam 2 custom toolchain artifact metadata.
-- Move the Linux 3.10 VintageNet compatibility definition into system staging headers.
-- Make the example application use released artifacts by default with an explicit local-system override.
-- Add a release script for artifact creation, publication, and isolated application verification.
+- Adopt standard fwup media creation and `mix burn` workflows while preserving
+  the verified Atom Cam 2 control kernel and flat-SD boot contract.
+- Add a persistent `/data` partition with format-if-missing initialization,
+  repair checks, and factory-reset support.
+- Add an immutable boot manager, redundant firmware metadata, A/B application
+  slots, health-based confirmation, watchdog recovery, and rollback.
+- Integrate standard Nerves firmware status, validation, revert,
+  `prevent-revert`, and factory-reset APIs.
 - Support standard SSH `mix upload` through the checked Atom Cam 2 A/B updater,
   including interrupted-transfer cleanup and progress reporting.
 - Align firmware authentication with the ordinary Nerves baseline: SSH
   authorizes update access, fwup and target checks validate the candidate, and
   publisher signatures remain optional.
+- Require a complete removable-media installation when moving from v0.1.0 to
+  the new A/B layout.
+
+## 0.1.0 - 2026-07-18
+
+- Add publishable system and Atom Cam 2 custom toolchain artifact metadata.
+- Move the Linux 3.10 VintageNet compatibility definition into system staging headers.
+- Make the example application use released artifacts by default with an explicit local-system override.
+- Add a release script for artifact creation, publication, and isolated application verification.
+- Reject unverified remote fwup updates and retain `mix atomcam2.install` as the supported update path.
 - Create minimal AtomCam2 Nerves system source snapshot.
 - Focus first milestone on `ping nerves.local` and `ssh nerves.local`.
 - Add flat SD-card packaging scripts.
