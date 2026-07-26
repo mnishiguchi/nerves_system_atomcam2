@@ -202,6 +202,9 @@ require_grep 'defmodule Atomcam2NervesApp.FirmwareUploadSubsystem' examples/atom
 require_grep 'FirmwareUpdate.precheck' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
 require_grep '@upload_directory "/data/atomcam2-firmware-update"' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
 require_grep 'File.mkdir_p(@upload_directory)' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'status=receiving' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'received_bytes=' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
+require_grep 'status=installing' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
 require_grep 'update_command:' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex
 require_grep '/data/atomcam2-update' scripts/atomcam2-firmware-update.sh
 require_grep '{:eof, _channel_id}' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_upload_subsystem.ex

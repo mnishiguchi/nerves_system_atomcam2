@@ -2,140 +2,81 @@
 
 ## Status
 
-Proposed
+Rejected on July 26, 2026
 
 ## Context
 
-ADR 0006 introduces device-side firmware installation through fwup and the SSH
-firmware subsystem.
+ADR 0006 introduces A/B firmware installation through fwup and the SSH
+firmware subsystem. This ADR proposed making Ed25519 signatures mandatory for
+every device-side update, with separate development and release keys, embedded
+trust roots, release-key custody, key rotation, and an on-device fwup policy
+wrapper.
 
-SSH authentication protects access to the update endpoint, but firmware
-authentication is a separate concern. A firmware bundle may pass through build
-workers, release storage, local disks, and transport layers before the device
-applies it.
+That proposal is stricter and more operationally complex than the official
+Nerves systems baseline:
 
-The device must reject firmware that was not produced by an authorized signer,
-even when the update reaches the device through an authenticated administrator.
+- `mix firmware` normally produces an unsigned fwup archive.
+- `nerves_ssh` normally exposes `ssh_subsystem_fwup`, which applies that archive
+  with fwup.
+- fwup signing and trusted public-key options are available when a product's
+  threat model requires them, but they are not required by a standard Nerves
+  system.
 
-This project does not plan to adopt NervesHub at this stage. Firmware signing
-must therefore work independently of NervesHub services.
+This project currently needs the behavior expected from an official Nerves
+system, plus the minimum Atom Cam 2-specific work needed to update its A/B
+application partitions safely.
 
 ## Decision
 
-Require Ed25519-signed fwup firmware for every device-side `upgrade`.
+Do not require firmware signatures at this stage.
 
-Generate and manage at least two signing identities:
+Use the ordinary Nerves workflow:
 
-- A development signing key
-- A release signing key
+```sh
+mix firmware
+mix upload nerves.local
+```
 
-Private keys must never be committed to the repository or embedded in firmware.
+SSH public-key authentication controls access to the update endpoint. The
+device uses fwup's archive and resource integrity checks, validates the firmware
+platform and architecture, writes only the inactive application slot, verifies
+the written root filesystem, and records the candidate as pending.
 
-The development private key may be stored in a developer-controlled local secret
-store. The release private key must be stored offline or in an appropriately
-protected continuous-delivery secret system with restricted access and audit
-logs.
+Keep the Atom Cam 2 A/B updater, health confirmation, and rollback behavior from
+ADR 0006. Do not add a custom fwup wrapper, build alias, embedded signing trust
+store, development/release key ceremony, or release signing manifest.
 
-Embed one or more trusted public keys in the read-only system image.
+For Issue #12, this means:
 
-Configure fwup and the SSH update subsystem so that:
-
-- Device-side upgrades require a valid signature from a trusted key.
-- Unsigned bundles are rejected before any inactive-slot write begins.
-- A bundle signed by an unknown or retired key is rejected.
-- Signature verification failure does not modify firmware-slot activation
-  state.
-- The same verification policy applies to local on-device fwup commands and
-  `mix upload`.
-
-Development builds must use the development key rather than bypassing signature
-verification. This keeps the tested development path equivalent to the release
-path.
-
-Host-side `complete` installation with physical media access may remain
-available for recovery, but release firmware produced for deployment must still
-be signed.
-
-Support key rotation by embedding multiple public keys temporarily:
-
-1. Release firmware that trusts both the old and new keys.
-2. Confirm deployment of that trust set.
-3. Begin signing with the new key.
-4. Confirm devices accept the new key.
-5. Remove the old public key in a later firmware release.
-
-Do not couple key management to NervesHub. Key creation, storage, signing,
-verification, and rotation must remain usable with GitHub Releases, local
-artifacts, `mix burn`, and `mix upload`.
+- NervesSSH provides the authenticated transport.
+- The custom SSH subsystem stages complete uploads under `/data` and cleans up
+  interrupted transfers.
+- Fwup and the Atom Cam 2 updater validate archive integrity, firmware metadata,
+  the inactive-slot write, and the resulting root filesystem.
+- The upload reports receiving, byte-count, installation, write-progress, and
+  final success or failure information.
 
 ## Consequences
 
-### Positive
+The system remains close to the official Nerves workflow and has fewer keys,
+policies, wrappers, and recovery cases to operate.
 
-- Devices authenticate firmware independently of transport security.
-- Compromise of a release download location does not permit unsigned firmware
-  installation.
-- The signing model works with local and SSH-based updates.
-- Key rotation can occur without replacing every device physically.
-- Future update services can reuse the same fwup trust model.
+SSH credentials must be protected because an administrator with update access
+can install a well-formed firmware archive. Fwup integrity checks detect archive
+or resource corruption, but they do not authenticate who produced an unsigned
+archive.
 
-### Negative
+Mandatory signing can be proposed again if the deployment threat model changes,
+for example for a remotely managed fleet, untrusted artifact distribution, or a
+requirement to authenticate releases independently of SSH access.
 
-- Release automation must have controlled access to a signing key.
-- Losing all authorized private keys complicates future updates.
-- Public-key removal requires a staged rotation.
-- Developers must manage a development key.
-- Recovery procedures must distinguish signature problems from media and
-  firmware problems.
+## Implementation evidence
 
-## Key-management requirements
-
-- Keep private keys outside Git history.
-- Do not print private keys or secret paths in workflow logs.
-- Back up the release private key securely.
-- Document who can sign a release.
-- Record public-key fingerprints in release documentation.
-- Separate development and release trust where practical.
-- Make key rotation an exercised procedure rather than an untested emergency
-  plan.
-- Define a physical-recovery path for devices that trust no available signing
-  key.
-
-## Verification strategy
-
-Test:
-
-- A correctly signed development firmware
-- A correctly signed release firmware
-- An unsigned firmware
-- A firmware modified after signing
-- A firmware signed by an unknown key
-- A firmware signed by a retired key
-- Rotation firmware trusting old and new keys
-- New-key firmware after rotation
-- Signature failure before inactive-slot modification
-- `mix upload` with valid and invalid signatures
-- Local on-device fwup with valid and invalid signatures
-
-Confirm that every rejected firmware leaves:
-
-- The active slot unchanged
-- The inactive slot either unchanged or explicitly disposable
-- The pending-slot state unchanged
-- The current firmware bootable
-
-## Acceptance criteria
-
-- All device-side upgrade paths require a recognized signature.
-- Development and release firmware use separate private keys.
-- No private signing key is stored in the repository or firmware.
-- Trusted public keys are embedded in the read-only system.
-- Invalid signatures are rejected before firmware activation state changes.
-- Key rotation is documented and hardware-verified.
-- `mix upload` rejects unsigned or untrusted firmware.
-- Signing and verification work without NervesHub.
+The final repository and physical-device validation are recorded in
+[`../worklog/20260726-adr-0007-standard-nerves-update-alignment.md`](../worklog/20260726-adr-0007-standard-nerves-update-alignment.md).
 
 ## References
 
 - [`ssh_subsystem_fwup` update options](https://hexdocs.pm/ssh_subsystem_fwup/readme.html)
-- [Fwup Elixir API](https://hexdocs.pm/fwup/Fwup.html)
+- [Nerves Runtime](https://hexdocs.pm/nerves_runtime/)
+- [Issue #12: production firmware update delivery workflow](https://github.com/mnishiguchi/nerves_system_atomcam2/issues/12)

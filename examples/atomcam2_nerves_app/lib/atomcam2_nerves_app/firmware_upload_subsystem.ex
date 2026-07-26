@@ -21,6 +21,7 @@ defmodule Atomcam2NervesApp.FirmwareUploadSubsystem do
        staged_firmware: nil,
        io_device: nil,
        installer_pid: nil,
+       bytes_received: 0,
        update_command:
          Keyword.get(
            options,
@@ -46,6 +47,8 @@ defmodule Atomcam2NervesApp.FirmwareUploadSubsystem do
          {:ok, staged_firmware, io_device} <-
            open_staged_firmware() do
       Logger.info("firmware upload started: #{staged_firmware}")
+
+      send_output(state, "status=receiving\n")
 
       {:ok,
        %{
@@ -105,7 +108,11 @@ defmodule Atomcam2NervesApp.FirmwareUploadSubsystem do
       ) do
     case write_chunk(state.io_device, data) do
       :ok ->
-        {:ok, state}
+        {:ok,
+         %{
+           state
+           | bytes_received: state.bytes_received + byte_size(data)
+         }}
 
       {:error, reason} ->
         stop_with_error(
@@ -128,6 +135,12 @@ defmodule Atomcam2NervesApp.FirmwareUploadSubsystem do
       ) do
     case File.close(state.io_device) do
       :ok ->
+        send_output(
+          state,
+          "received_bytes=#{state.bytes_received}\n"
+        )
+        send_output(state, "status=installing\n")
+
         start_installation(%{
           state
           | io_device: nil,

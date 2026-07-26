@@ -110,6 +110,16 @@ updater. The updater stages the bundle under `/data`, validates the target
 platform and architecture, selects the inactive application slot, writes and
 verifies the root filesystem, and records the candidate as pending.
 
+SSH public-key authentication authorizes access to the update endpoint. Fwup
+validates archive and resource integrity. Firmware publisher signatures are
+optional, as they are for the ordinary Nerves workflow, and are not required by
+this application. See
+[`ADR 0007`](../../docs/adr/0007-require-signed-firmware-for-device-side-updates.md).
+
+The upload reports `receiving`, the received byte count, `installing`, fwup
+write progress, and the updater's final status. If a transfer ends before SSH
+EOF, the staged file is removed and the device is not rebooted.
+
 A successful upload reboots the device. After the candidate reaches the
 application root and passes its local health checks, it is confirmed through
 `Nerves.Runtime.validate_firmware/0`. Until confirmation, the previous slot
