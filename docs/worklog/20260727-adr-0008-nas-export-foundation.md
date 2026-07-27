@@ -143,6 +143,101 @@ remaining_bytes=20
 The fixture was removed after the check. No production spool path participated
 in the eviction test.
 
+## Temporary LMDE SFTP acceptance
+
+Before provisioning the intended NAS, the LMDE 7 workstation hosted a
+temporary OTP SFTP endpoint on `192.168.10.111:10022`. The endpoint used the
+camera's dedicated public key, a temporary ED25519 host key, and OTP's
+application-level `root` option to expose only:
+
+```text
+/tmp/atomcam2-sftp-acceptance-20260727/root
+```
+
+No system SSH daemon, privileged port, password, or permanent workstation
+account change was required. The camera configuration was first installed with
+`enabled=false`, a 2 GiB spool target above the 1.46 GB backlog, and strict
+host-key verification. A zero-file authenticated preflight passed before
+export was enabled.
+
+The first attempt used a 10-second poll interval to accelerate the backlog. It
+published 52 files, while the nearly continuous SFTP work coincided with
+console and MOTD calls missing their short timeouts and the camera later
+becoming unreachable on the LAN. The temporary endpoint was stopped, leaving:
+
+```text
+remote_finalized=52
+remote_partial=20260727/08/45.mp4.uploading
+remote_partial_bytes=1310720
+local_source_bytes=1918448
+local_completion_marker=false
+```
+
+The operator power-cycled the camera. The endpoint remained stopped while the
+configuration was changed back to `enabled=false`. All 570 local recordings
+were present, the 52 final remote files had matching completion markers, and
+the interrupted local source remained intact. Volatile previous-boot evidence
+was unavailable after the physical power cycle, so this trial does not assign
+a definitive cause to the loss of reachability.
+
+The retry used the normal 60-second interval. It removed the partial temporary
+file, re-uploaded the intact local source, verified its size, published the
+final name, and only then wrote the marker. Source and destination matched:
+
+```text
+path=20260727/08/45.mp4
+sha256=dba1487a52149ddff9cf6cca02731022ce2fbf49f2a33c057bdcc9e4eca91415
+bytes=1918448
+```
+
+An earlier sample also matched at both ends:
+
+```text
+path=20260727/07/51.mp4
+sha256=9bc48d0b4205ccf938f74bd0f8966d09d84de71fa8236becfdafd15d2e7f4bb7
+bytes=612004
+```
+
+Removing only that sample's local marker and rerunning the exporter reported
+`already_present=1`, uploaded nine new files, and recreated the marker without
+duplicating the existing final path.
+
+The 20-day retention pass removed both an expired `.mp4` and an expired
+`.mp4.uploading` fixture below `20260706/00`, while preserving `keep.txt`.
+Sustained normal-cadence export then reached:
+
+```text
+remote_finalized=131
+remote_mp4_bytes=253609144
+remote_uploading=0
+local_spool_files=586
+local_spool_bytes=1537734443
+local_completion_markers=131
+local_spool_deleted=0
+```
+
+During the throttled recovery, the camera answered 45 of 45 pings and a later
+30 of 30 pings. After export was disabled and the endpoint stopped, it answered
+another 30 of 30 pings. The vendor runtime remained running, firmware remained
+validated in slot B, Nerves heart remained active, and both firmware updater
+directories remained empty.
+
+The temporary archive remains on the workstation for operator inspection.
+The camera profile is left at `enabled=false`.
+
+The exporter now rejects poll intervals below 60 seconds. Polling faster than
+the one-minute recording cadence has no steady-state value and can
+unnecessarily saturate this single-core target during backlog catch-up.
+
+Final firmware `069c6642-db31-5c6f-be14-c2756e6ee2c9` was installed into slot
+A after stopping the vendor runtime cleanly. It validated, synchronized time,
+and started the opt-in vendor runtime once. `heart` retained the physical
+watchdog, the exporter remained disabled, all 590 pre-update recordings and
+131 completion markers survived, and a 591st recording finalized after boot.
+The private key, `known_hosts`, and exporter configuration also persisted with
+mode `0600`. The deployed parser rejected a 59-second interval, the firmware
+upload directory was empty, and the running camera answered 30 of 30 pings.
+
 ## Remaining production acceptance
 
 The transport behavior is physically proven. Phase 4 still needs the intended

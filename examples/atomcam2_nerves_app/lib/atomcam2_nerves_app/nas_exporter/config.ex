@@ -67,7 +67,7 @@ defmodule Atomcam2NervesApp.NasExporter.Config do
              values,
              "poll_interval_seconds",
              @default_poll_interval_seconds,
-             10..3_600
+             60..3_600
            ),
          {:ok, retention_days} <-
            optional_integer(values, "retention_days", @default_retention_days, 1..3_650),

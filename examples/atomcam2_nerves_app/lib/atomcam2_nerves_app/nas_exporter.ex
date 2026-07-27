@@ -18,6 +18,7 @@ defmodule Atomcam2NervesApp.NasExporter do
   @default_marker_path "/data/atomcam2-vendor-camera/nas-exported"
   @default_poll_interval_ms 60_000
   @max_files_per_run 10
+  @status_timeout_ms 45_000
 
   defstruct config_path: @default_config_path,
             spool_path: @default_spool_path,
@@ -43,7 +44,7 @@ defmodule Atomcam2NervesApp.NasExporter do
 
   @spec status(GenServer.server()) :: map()
   def status(server \\ __MODULE__) do
-    GenServer.call(server, :status)
+    GenServer.call(server, :status, @status_timeout_ms)
   end
 
   @spec run_now(GenServer.server()) :: :ok

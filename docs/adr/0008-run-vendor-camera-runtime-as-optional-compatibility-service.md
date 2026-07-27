@@ -325,10 +325,12 @@ The Phase 4 application implementation adds a supervised exporter that remains
 inert unless `/data/atomcam2-vendor-camera/nas-export.conf` explicitly enables
 it. The configuration is strict, contains no password, and points OTP SSH at a
 device-private key and `known_hosts` directory. Each run handles at most ten
-new segments, then retries on the configured interval. Host tests cover config
-validation, completed-file filtering, symlink rejection, bounded spool
-eviction of successfully exported files, preservation of unexported files,
-persistent completion markers, and compact-date retention decisions.
+new segments, then waits at least 60 seconds before retrying. The minimum
+matches the recording cadence and leaves CPU time for the camera and core
+Nerves services during backlog catch-up. Host tests cover config validation,
+completed-file filtering, symlink rejection, bounded spool eviction of
+successfully exported files, preservation of unexported files, persistent
+completion markers, and compact-date retention decisions.
 Firmware `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` additionally passed a physical
 device-to-SFTP trial. A 3,556,322-byte MP4 published without a leftover
 temporary file and matched SHA-256 at both ends; a repeated attempt was

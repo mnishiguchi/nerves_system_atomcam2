@@ -115,6 +115,10 @@ retention_days=20
 max_spool_bytes=536870912
 ```
 
+The minimum poll interval is 60 seconds, matching the recording segment
+cadence. Faster backlog polling provides no steady-state benefit and can keep
+this single-core device unnecessarily busy.
+
 Before first enablement, set `max_spool_bytes` above the existing local
 backlog so the exporter can catch up without immediately shortening mobile
 playback history. The cap is a target, not permission to discard unexported

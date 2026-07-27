@@ -31,6 +31,12 @@ defmodule Atomcam2NervesApp.NasExporter.ConfigTest do
              |> then(fn {:ok, values} -> Config.build(values) end)
   end
 
+  test "rejects polling faster than the one-minute recording cadence" do
+    assert {:error, {:invalid_integer, "poll_interval_seconds"}} =
+             Config.parse("enabled=false\npoll_interval_seconds=59\n")
+             |> then(fn {:ok, values} -> Config.build(values) end)
+  end
+
   test "rejects unknown and duplicate keys" do
     assert {:error, {:unknown_key, 2, "password"}} =
              Config.parse("enabled=true\npassword=secret\n")
