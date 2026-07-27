@@ -106,14 +106,18 @@ defmodule Atomcam2NervesApp.NasExporter do
   def enforce_spool_limit(files, max_bytes, marker_path \\ nil) do
     total_bytes = Enum.reduce(files, 0, &(&1.size + &2))
 
-    removable_files =
-      if marker_path do
-        Enum.filter(files, &exported?(&1, marker_path))
-      else
-        files
-      end
+    if total_bytes <= max_bytes do
+      %{deleted_count: 0, deleted_bytes: 0, remaining_bytes: total_bytes}
+    else
+      removable_files =
+        if marker_path do
+          Enum.filter(files, &exported?(&1, marker_path))
+        else
+          files
+        end
 
-    trim_spool(removable_files, total_bytes, max_bytes, marker_path, 0, 0)
+      trim_spool(removable_files, total_bytes, max_bytes, marker_path, 0, 0)
+    end
   end
 
   defp run_once(state) do
@@ -176,28 +180,35 @@ defmodule Atomcam2NervesApp.NasExporter do
 
     batch =
       files
-      |> Enum.reject(&exported?(&1, state.marker_path))
+      |> Stream.reject(&exported?(&1, state.marker_path))
       |> Enum.take(@max_files_per_run)
 
     case state.transport.export(config, batch) do
       {:ok, summary} ->
         case mark_completed(summary, state.marker_path) do
           {:ok, summary} ->
-            handle_export_success(state, config, summary)
+            handle_export_success(state, config, files, summary)
 
           {:error, reason, summary} ->
-            handle_export_error(state, config, {:marker_write_failed, reason}, summary)
+            handle_export_error(
+              state,
+              config,
+              files,
+              {:marker_write_failed, reason},
+              summary
+            )
         end
 
       {:error, reason, summary} ->
         case mark_completed(summary, state.marker_path) do
           {:ok, summary} ->
-            handle_export_error(state, config, reason, summary)
+            handle_export_error(state, config, files, reason, summary)
 
           {:error, marker_reason, summary} ->
             handle_export_error(
               state,
               config,
+              files,
               {reason, {:marker_write_failed, marker_reason}},
               summary
             )
@@ -205,8 +216,8 @@ defmodule Atomcam2NervesApp.NasExporter do
     end
   end
 
-  defp handle_export_success(state, config, summary) do
-    spool = enforce_configured_spool_limit(state, config)
+  defp handle_export_success(state, config, files, summary) do
+    spool = enforce_configured_spool_limit(files, state, config)
     result = {:ok, Map.put(summary, :spool, spool)}
 
     state =
@@ -222,8 +233,8 @@ defmodule Atomcam2NervesApp.NasExporter do
     {state, config.poll_interval_ms}
   end
 
-  defp handle_export_error(state, config, reason, summary) do
-    spool = enforce_configured_spool_limit(state, config)
+  defp handle_export_error(state, config, files, reason, summary) do
+    spool = enforce_configured_spool_limit(files, state, config)
     result = {:error, reason, Map.put(summary, :spool, spool)}
 
     state =
@@ -239,10 +250,8 @@ defmodule Atomcam2NervesApp.NasExporter do
     {state, config.poll_interval_ms}
   end
 
-  defp enforce_configured_spool_limit(state, config) do
-    state.spool_path
-    |> completed_files()
-    |> enforce_spool_limit(config.max_spool_bytes, state.marker_path)
+  defp enforce_configured_spool_limit(files, state, config) do
+    enforce_spool_limit(files, config.max_spool_bytes, state.marker_path)
   end
 
   defp completed_file(path, spool_path) do
