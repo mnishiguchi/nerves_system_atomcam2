@@ -30,6 +30,14 @@
   temporary name and atomic rename, retry idempotently, preserve a bounded
   local playback spool, and remove dated NAS recordings after the configured
   retention period.
+- Add explicit `/data` opt-in for camera startup after firmware validation,
+  Internet connectivity, synchronized time, and the existing compatibility
+  precheck.
+- Limit automatic camera startup to one attempt per boot and report later
+  degradation without rebooting or entering an automatic restart loop.
+- Normalize stale vendor runtime markers after reboot and verify opt-in camera
+  startup, firmware validation, watchdog ownership, Wi-Fi/SSH stability, and
+  recording finalization across candidate and ordinary reboots.
 
 ## 0.2.0 - 2026-07-26
 

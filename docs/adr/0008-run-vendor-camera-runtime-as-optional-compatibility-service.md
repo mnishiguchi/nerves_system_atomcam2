@@ -24,6 +24,17 @@ and connection-failure recovery trials against a disposable endpoint. The
 intended NAS and a sustained spool/retention run remain before Phase 4 is
 complete.
 
+Phase 5 is complete. The application has an opt-in boot worker that waits for
+validated firmware, Internet connectivity, synchronized time, and a successful
+compatibility precheck. Candidate and ordinary-reboot trials pass persistent
+opt-in, stale-state recovery, one automatic start attempt, healthy vendor
+processes, watchdog ownership, Wi-Fi/SSH stability, and post-reboot recording.
+Later degradation remains visible without stopping Nerves, rebooting, or
+attempting an automatic process restart.
+
+The Phase 5 target evidence is recorded in
+[`../worklog/20260727-adr-0008-opt-in-boot-integration.md`](../worklog/20260727-adr-0008-opt-in-boot-integration.md).
+
 ## Context
 
 The v0.2.0 system provides the ordinary Nerves application workflow, persistent
@@ -245,23 +256,25 @@ older than the configured period.
 
 ### Boot, failure, and recovery behavior
 
-Manual start remains the only supported mode until the physical validation
-matrix passes.
-
-After that validation, automatic startup may be enabled only by explicit
-persistent configuration under `/data`. Startup must wait for:
+Automatic startup may be enabled only by
+`/data/atomcam2-vendor-camera/auto-start.conf` containing exactly
+`enabled=true`. Missing, disabled, or malformed configuration must never start
+the vendor runtime. Startup waits for:
 
 - `/data` mounted read-write;
 - Nerves networking healthy;
 - synchronized or otherwise trustworthy system time; and
 - a successful compatibility precheck.
 
-The supervisor must use bounded restart attempts and visible failure state. It
-must not create a reboot loop or restart Nerves networking. Stop must terminate
-only the vendor processes and remove only compatibility mounts and IPC. The
-selected modules are permanent in the protected kernel and must remain loaded
-until a deliberate reboot. The command must report this state rather than
-attempting unsafe or ineffective unload operations.
+Firmware must also be validated before automatic camera startup so the
+compatibility runtime cannot interfere with rollback confirmation.
+
+The supervisor makes at most one automatic start attempt per boot and keeps
+visible failure state. It does not automatically stop or restart a degraded
+runtime because the selected modules are permanent in the protected kernel and
+a clean stop requires a deliberate reboot before another start. It must not
+create a reboot loop or restart Nerves networking. Manual stop still terminates
+only the vendor processes and removes only compatibility mounts and IPC.
 
 A vendor runtime failure must leave Nerves, SSH, OTA, rollback, and recovery
 usable. A NAS outage must affect only export and local spool pressure, never
@@ -303,8 +316,7 @@ crash, SD-card error, process cleanup, memory measurement, private
 configuration behavior, and reboot recovery. Vendor initialization reaches
 network-connected, cloud-initialized, SD-health-success, and SD-mount-success
 state. Mobile live view, playback, storage status, and one-minute local
-recording passed on July 27. The runtime remains disabled by default and has no
-boot integration.
+recording passed on July 27. The runtime remains disabled by default.
 
 The Phase 4 application implementation adds a supervised exporter that remains
 inert unless `/data/atomcam2-vendor-camera/nas-export.conf` explicitly enables
@@ -319,6 +331,22 @@ temporary file and matched SHA-256 at both ends; a repeated attempt was
 idempotent. Retention removed only recognized old recording names, and a
 refused connection preserved the local file before successful recovery. The
 production NAS and sustained spool-pressure trial remain.
+
+The Phase 5 application implementation adds
+`Atomcam2NervesApp.VendorCamera`. Missing configuration leaves it dormant.
+When enabled, it polls the existing runtime status and readiness gates, invokes
+only `precheck` and `start`, verifies `result=running`, and consumes its single
+attempt for the boot. Host tests cover strict configuration, readiness waiting,
+successful startup, the one-attempt limit, and missing-config dormancy.
+Firmware `1d0ce1ad-c228-5764-2327-c7d7d2536017` passed both candidate and
+ordinary-reboot acceptance. The worker waited without consuming its attempt,
+started all three vendor processes after readiness, preserved Nerves watchdog
+ownership and network health, and finalized new recordings after both starts.
+Prior-boot transient runtime markers now normalize to `prepared`, while
+same-boot degradation remains visible. Exact final firmware
+`ba2a02ba-e525-5f86-cf35-40343d3f1ff5` repeated candidate validation,
+one-attempt startup, process/isolation health, clean updater state, stable
+networking, and recording finalization.
 
 ## Consequences
 

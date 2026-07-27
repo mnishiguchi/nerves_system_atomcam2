@@ -46,6 +46,7 @@ trial are recorded in:
 - [`worklog/20260726-adr-0008-vendor-camera-manual-runtime.md`](worklog/20260726-adr-0008-vendor-camera-manual-runtime.md)
 - [`worklog/20260726-adr-0008-mobile-and-storage-compatibility.md`](worklog/20260726-adr-0008-mobile-and-storage-compatibility.md)
 - [`worklog/20260727-adr-0008-nas-export-foundation.md`](worklog/20260727-adr-0008-nas-export-foundation.md)
+- [`worklog/20260727-adr-0008-opt-in-boot-integration.md`](worklog/20260727-adr-0008-opt-in-boot-integration.md)
 
 The corrected manual runtime keeps Nerves ownership boundaries intact and
 passes vendor network, cloud, SD health, mobile live-view, recorded-playback,
@@ -57,3 +58,10 @@ OTP's existing SFTP client. Host coverage and a physical device-to-disposable
 SFTP trial pass upload, checksum, atomic publication, idempotency, selective
 retention, and failure recovery. The production NAS and a sustained
 spool-pressure/retention trial remain before Phase 4 is complete.
+
+Phase 5 boot integration is opt-in through one strict `/data` setting. It waits
+for firmware, network, and time readiness, makes one camera start attempt per
+boot, and never creates an automatic reboot or process-restart loop. Candidate
+and ordinary-reboot trials pass persistent opt-in, stale-state recovery,
+one-attempt startup, watchdog ownership, stable Wi-Fi/SSH, and post-reboot
+recording.

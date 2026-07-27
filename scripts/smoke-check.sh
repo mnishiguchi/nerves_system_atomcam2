@@ -128,9 +128,11 @@ require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_ba
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/config.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/sftp.ex
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/vendor_camera.ex
 require_file examples/atomcam2_nerves_app/test/firmware_health_test.exs
 require_file examples/atomcam2_nerves_app/test/firmware_kv_backend_test.exs
 require_file examples/atomcam2_nerves_app/test/nas_exporter_test.exs
+require_file examples/atomcam2_nerves_app/test/vendor_camera_test.exs
 require_file lib/mix/tasks/atomcam2.install.ex
 require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
@@ -138,6 +140,7 @@ require_file docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-s
 require_file docs/worklog/20260726-adr-0008-vendor-camera-feasibility.md
 require_file docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md
 require_file docs/worklog/20260727-adr-0008-nas-export-foundation.md
+require_file docs/worklog/20260727-adr-0008-opt-in-boot-integration.md
 
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
@@ -353,6 +356,10 @@ require_grep 'Atomcam2NervesApp.NasExporter' examples/atomcam2_nerves_app/lib/at
 require_grep 'silently_accept_hosts: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/sftp.ex
 require_grep '\.uploading' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/sftp.ex
 require_grep '@max_files_per_run 10' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter.ex
+require_grep 'Atomcam2NervesApp.VendorCamera' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
+require_grep '@max_start_attempts 1' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/vendor_camera.ex
+require_grep 'Nerves.Runtime.firmware_validation_status()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/vendor_camera.ex
+require_grep 'NervesTime.synchronized?()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/vendor_camera.ex
 reject_grep '/system/init/app_init.sh' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 reject_grep 'exfat.ko' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 reject_grep 'rtl8189ftv.ko' rootfs_overlay/usr/bin/atomcam2-vendor-camera

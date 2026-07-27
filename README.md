@@ -242,7 +242,7 @@ another start.
 The corrected manual runtime has passed physical network, cloud, mobile live
 view, recorded playback, SD health, one-minute continuous recording,
 start/status/stop/reboot, SSH, Wi-Fi, watchdog ownership, and firmware
-validation checks. Automatic camera boot remains unimplemented.
+validation checks.
 
 Phase 4 now has an opt-in NAS exporter in the example application. The fixed
 protected kernel does not provide NFS or CIFS, so the exporter uses the OTP
@@ -256,12 +256,25 @@ production-NAS and sustained spool-pressure acceptance run. A physical
 device-to-disposable-SFTP trial already passes upload, checksum, atomic
 publication, idempotent retry, selective retention, and connection recovery.
 
+Phase 5 adds a deliberately small boot integration in the example application.
+The camera remains disabled unless
+`/data/atomcam2-vendor-camera/auto-start.conf` contains exactly
+`enabled=true`. Startup waits for validated firmware, Internet connectivity,
+synchronized time, and the existing compatibility precheck. It makes one
+attempt per boot and reports failures without rebooting or automatically
+restarting the vendor runtime. Physical candidate and ordinary-reboot trials
+pass persistent opt-in, readiness gating, one-attempt startup, stale-state
+recovery, watchdog ownership, Wi-Fi/SSH stability, and new recording
+finalization.
+
 The architecture and physical evidence are recorded in
 [`ADR 0008`](docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)
 and the
 [`manual-runtime worklog`](docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md).
 The corrected mobile/storage investigation is in the
 [`mobile/storage worklog`](docs/worklog/20260726-adr-0008-mobile-and-storage-compatibility.md).
+The opt-in boot acceptance is in the
+[`boot-integration worklog`](docs/worklog/20260727-adr-0008-opt-in-boot-integration.md).
 
 The application build preserves the final merged SquashFS at:
 

@@ -139,6 +139,37 @@ The NAS account should be confined to `remote_directory`, since the exporter
 also removes recording files in date directories older than
 `retention_days`.
 
+## Optional camera startup at boot
+
+The vendor camera runtime remains disabled by default. After one successful
+manual `prepare` and start/stop validation, opt in by creating:
+
+```text
+/data/atomcam2-vendor-camera/auto-start.conf
+```
+
+with exactly:
+
+```text
+enabled=true
+```
+
+The supervised boot integration waits for validated firmware, an Internet
+connection, synchronized time, and a successful
+`atomcam2-vendor-camera precheck`. It makes at most one automatic start attempt
+per boot. A failed start or degraded runtime is reported without stopping
+Nerves, rebooting the device, or attempting an automatic recovery loop.
+
+Inspect or recheck it from target IEx:
+
+```elixir
+Atomcam2NervesApp.VendorCamera.status()
+Atomcam2NervesApp.VendorCamera.run_now()
+```
+
+Set the file to `enabled=false` or remove it to disable startup on later boots.
+Changing it does not stop a camera runtime that is already running.
+
 ## Remote updates
 
 After the initial complete installation, standard Nerves firmware uploads are

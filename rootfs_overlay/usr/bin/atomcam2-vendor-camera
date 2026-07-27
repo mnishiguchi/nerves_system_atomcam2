@@ -1369,11 +1369,16 @@ status_runtime() {
   recorded_state="$(read_runtime_state)"
   recorded_boot_id="$(cat "$boot_id_file" 2>/dev/null || true)"
 
-  if [ "$recorded_state" = "stopped-reboot-required" ] &&
-      [ -n "$recorded_boot_id" ] &&
-      [ "$recorded_boot_id" != "$(current_boot_id)" ]; then
-    recorded_state="prepared"
-  fi
+  case "$recorded_state" in
+    running|starting|stopping|stopped-reboot-required|cleanup-failed)
+      if [ -n "$recorded_boot_id" ] &&
+          [ "$recorded_boot_id" != "$(current_boot_id)" ]; then
+        recorded_state="prepared"
+      fi
+      ;;
+    *)
+      ;;
+  esac
 
   echo "state=$recorded_state"
 
