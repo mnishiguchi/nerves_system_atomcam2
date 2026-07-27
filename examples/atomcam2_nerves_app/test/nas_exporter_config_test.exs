@@ -31,6 +31,18 @@ defmodule Atomcam2NervesApp.NasExporter.ConfigTest do
              |> then(fn {:ok, values} -> Config.build(values) end)
   end
 
+  test "accepts a dedicated SFTP session root" do
+    assert {:ok, %{remote_directory: "."}} =
+             Config.parse("""
+             enabled=true
+             host=nas.local
+             user=atomcam2
+             user_dir=/data/atomcam2-vendor-camera/nas-ssh
+             remote_directory=.
+             """)
+             |> then(fn {:ok, values} -> Config.build(values) end)
+  end
+
   test "rejects polling faster than the one-minute recording cadence" do
     assert {:error, {:invalid_integer, "poll_interval_seconds"}} =
              Config.parse("enabled=false\npoll_interval_seconds=59\n")
@@ -61,6 +73,11 @@ defmodule Atomcam2NervesApp.NasExporter.ConfigTest do
     assert {:error, {:unsafe_remote_directory, "remote_directory"}} =
              base
              |> Map.put("remote_directory", "../camera")
+             |> Config.build()
+
+    assert {:error, {:unsafe_remote_directory, "remote_directory"}} =
+             base
+             |> Map.put("remote_directory", "camera/./recordings")
              |> Config.build()
 
     assert {:error, {:path_must_be_absolute, "user_dir"}} =

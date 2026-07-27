@@ -249,6 +249,10 @@ final path. Treat an existing final path as the same upload only when its size
 matches. Otherwise report a conflict and leave the local segment for operator
 review.
 
+The configured remote directory may be `.` when the SFTP server starts the
+account inside a dedicated, confined recording directory. Reject `/`, parent
+traversal, and embedded current-directory components.
+
 Keep successfully exported files in the local spool for recent mobile-app
 playback. Record export completion outside the vendor-visible spool and remove
 the oldest successfully exported local segments only when the configured spool

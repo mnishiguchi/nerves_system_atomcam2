@@ -151,6 +151,10 @@ The NAS account should be confined to `remote_directory`, since the exporter
 also removes recording files in date directories older than
 `retention_days`.
 
+Set `remote_directory=.` only when the SFTP server starts this account inside
+its dedicated, confined recording directory. The exporter still rejects `/`,
+parent traversal, and `.` embedded in a longer path.
+
 ## Optional camera startup at boot
 
 The vendor camera runtime remains disabled by default. After one successful

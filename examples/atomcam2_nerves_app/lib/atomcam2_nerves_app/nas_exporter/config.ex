@@ -206,8 +206,11 @@ defmodule Atomcam2NervesApp.NasExporter.Config do
       |> String.split("/", trim: true)
 
     cond do
-      normalized in ["", ".", "/"] ->
+      normalized in ["", "/"] ->
         {:error, {:unsafe_remote_directory, "remote_directory"}}
+
+      normalized == "." ->
+        {:ok, normalized}
 
       Enum.any?(components, &(&1 in [".", ".."])) ->
         {:error, {:unsafe_remote_directory, "remote_directory"}}

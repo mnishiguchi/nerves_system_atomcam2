@@ -240,6 +240,35 @@ upload directory was empty, and the running camera answered 30 of 30 pings.
 After a subsequent physical power cycle, the operator confirmed SSH through
 `nerves.local` and normal operation in the standard Atom mobile application.
 
+## Production LMDE endpoint preflight
+
+The intended endpoint is the LMDE 7 workstation at `192.168.10.111:22`, using
+the dedicated `atomcam` OpenSSH `internal-sftp` account and the account's
+session start as the recording root. The workstation had 394 GB available.
+Its ED25519 host-key fingerprint was verified locally as:
+
+```text
+SHA256:GE1Kt0MHSzYd++6R4Y4vNZzZuyZ2ZCKSaxVtss/t4jU
+```
+
+The verified host key and disabled production profile were installed
+atomically on the camera. With strict host-key checking and the device-private
+key, the camera authenticated, listed `.`, wrote and statted a 22-byte probe,
+deleted it, and closed the SFTP connection. The exporter remained disabled.
+
+The first server profile forced `internal-sftp` into the recording directory
+but did not chroot the account. Production enablement therefore remains
+blocked until the account is confined. A small ignored workstation script
+stages a root-owned `/srv/atomcam-recordings` chroot, exposes only its writable
+`data` directory as the session start, disables forwarding and TTY access,
+checks the camera-key fingerprint, validates `sshd`, and reloads OpenSSH.
+
+Firmware `09dbb2e2-edf4-5a76-d202-273f245479c2` adds support for exactly `.`
+as a configured remote directory while continuing to reject `/`, parent
+traversal, and embedded current-directory components. It validated in slot B,
+left export disabled with a 2 GiB spool target, started the vendor runtime
+once, and answered 30 of 30 pings.
+
 ## Remaining production acceptance
 
 The transport behavior is physically proven. Phase 4 still needs the intended
