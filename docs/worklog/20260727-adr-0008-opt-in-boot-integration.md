@@ -178,8 +178,9 @@ of 30 pings and finalized:
 bytes=4833565
 ```
 
-## Remaining operator acceptance
+## Mobile-application acceptance
 
-The automated and physical target boundaries pass. Final standard-mobile-app
-live-view confirmation after the persistence reboot is an operator check; it
-does not require another firmware change.
+After the final candidate validated and started the runtime automatically, the
+operator confirmed that the standard Atom mobile application connected and
+worked normally. This closes the Phase 5 operator acceptance check without
+another firmware change.

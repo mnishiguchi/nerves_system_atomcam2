@@ -346,7 +346,8 @@ Prior-boot transient runtime markers now normalize to `prepared`, while
 same-boot degradation remains visible. Exact final firmware
 `ba2a02ba-e525-5f86-cf35-40343d3f1ff5` repeated candidate validation,
 one-attempt startup, process/isolation health, clean updater state, stable
-networking, and recording finalization.
+networking, and recording finalization. The operator then confirmed that the
+standard Atom mobile application connected and worked normally.
 
 ## Consequences
 
