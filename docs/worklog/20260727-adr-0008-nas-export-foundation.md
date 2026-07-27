@@ -306,13 +306,76 @@ retained `/dev/watchdog0`, 665 local recordings and all 20 production markers
 were present, both updater directories were empty, and networking passed 30 of
 30 pings.
 
+## Clean production reproduction and bounded transport
+
+With the normal 60-second cadence and two-file batch, the first production
+continuation raised the fresh marker count from 20 to 48 across 14 runs. Each
+successful run retained its local sources. The device later became unreachable
+and required a physical power cycle. Recovery with the workstation SSH service
+stopped found 687 local recordings, all 48 production markers, all 131 archived
+disposable markers, and no missing size-matching marked source. The exporter
+was immediately disabled.
+
+The backlog path was simplified before repeating the trial. Pending-file
+selection now stops after finding two unmarked files, one immutable spool
+snapshot is reused for the run, and spool enforcement performs no marker reads
+while the snapshot is below the configured limit. On target firmware
+`de5c7e2b-9ab7-53cb-ab74-7e2d26ba1566` (`table-focus`), a 693-file snapshot
+took 4,136 milliseconds while below-limit enforcement on that snapshot took
+zero milliseconds. Erlang memory remained about 26 MiB.
+
+A second production run removed the earlier interactive-console confounder.
+The only workstation-side observation was continuous ping plus OpenSSH service
+logging. OpenSSH accepted exactly 12 clean SFTP sessions; each completed and no
+server error or leaked server process appeared. The production marker count
+therefore rose from 48 to 72. No thirteenth connection reached the server.
+Ping was initially stable, then became intermittent, briefly recovered, and
+eventually stopped. The device hardware watchdog did not restore reachability,
+so the workstation SSH service was stopped before another physical power
+cycle.
+
+A temporary device-local diagnostic, persisted under `/data`, distinguished
+the failure from unbounded memory growth:
+
+```text
+baseline_erlang_total_mb=approximately 26
+trial_erlang_total_mb=approximately 26_to_28
+baseline_exporter_function=gen_server:loop/5
+stalled_exporter_function=gen:do_call/4
+```
+
+During healthy cycles the exporter returned to its GenServer loop. It later
+remained in `gen:do_call/4`, diagnostic intervals slipped, and process and port
+counts fell while total Erlang memory stayed bounded. Review of the OTP SSH
+implementation found that SFTP client-channel calls wait with an outer
+`infinity` and rely on a timer inside the channel process. The exact SFTP
+subcall was not isolated, but the failure boundary is an unreturned synchronous
+OTP transport call rather than the completed-file scan or a growing Erlang
+heap.
+
+The exporter now invokes the whole transport in an unlinked monitored process
+with a 30-second outer deadline. On expiry it kills only that attempt, reports
+a retryable `transport_timeout`, writes no completion marker, and leaves the
+local recording ineligible for spool eviction. The existing publication
+protocol keeps timeout races safe: a final remote file is recognized by size
+on retry, while a leftover `.uploading` file is removed and retransferred.
+
+All 43 host tests pass, including a transport that never returns. Firmware
+`8b3465d1-b8b8-5914-aa36-6c3e8e1c0cdd` (`lottery-cloud`) installed and
+validated in slot A with production export disabled. The opt-in vendor camera
+runtime started once, `heart` retained `/dev/watchdog0`, and networking passed
+30 of 30 pings. A target-only `/tmp` probe deliberately blocked a transport
+past a 250-millisecond deadline; the exporter recorded
+`{:transport_timeout, 250}`, remained responsive, and the temporary process and
+files were removed.
+
 ## Remaining production acceptance
 
-The transport behavior is physically proven. Phase 4 still needs the intended
-NAS account and a sustained recording trial to validate:
+The transport and intended confined account are physically proven. Phase 4
+still needs a sustained trial with the independent transport deadline to
+validate:
 
 - production backlog catch-up and oldest-first eviction of exported files;
-- the production NAS's SFTP permissions and storage layout;
 - approximately 20-day retention on that NAS; and
 - stable mobile live view, playback, Wi-Fi, SSH, watchdog ownership, and
   firmware validation during sustained export.

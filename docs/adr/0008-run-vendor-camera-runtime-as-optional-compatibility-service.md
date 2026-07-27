@@ -21,8 +21,11 @@ completed-file selection, idempotent publication, local spool bounds, and
 date-based retention have host coverage. A physical Atom Cam 2 also passed
 SFTP upload, checksum, atomic-publication, idempotency, selective-retention,
 and connection-failure recovery trials against a disposable endpoint. The
-intended NAS and a sustained spool/retention run remain before Phase 4 is
-complete.
+intended confined SFTP account also passes authentication, confinement, and
+atomic publication. A clean production trial exposed an OTP SSH/SFTP call that
+did not return after its internal timeout; the exporter now enforces a
+30-second outer transport deadline. A sustained run with that deadline and a
+spool-pressure/retention run remain before Phase 4 is complete.
 
 Phase 5 is complete. The application has an opt-in boot worker that waits for
 validated firmware, Internet connectivity, synchronized time, and a successful
@@ -261,6 +264,14 @@ never enforce it by deleting an unexported segment. Retention may delete only
 recognized recording names below date directories older than the configured
 period.
 
+Do not rely solely on OTP SSH/SFTP's internal operation timeouts. Bound the
+whole transport attempt independently, terminate only that attempt if the
+deadline expires, and leave the exporter supervisor responsive. A timeout must
+write no completion marker and must never make a local segment eligible for
+removal. A final file published immediately before a timeout remains safe:
+the next attempt verifies its size and treats it as already present. A partial
+temporary file is removed and retried.
+
 ### Boot, failure, and recovery behavior
 
 Automatic startup may be enabled only by
@@ -335,7 +346,8 @@ the camera and core Nerves services. Completion markers are specific to the
 configured endpoint and must be rotated when that endpoint changes. Host tests
 cover config validation, completed-file filtering, symlink rejection, bounded
 spool eviction of successfully exported files, preservation of unexported
-files, persistent completion markers, and compact-date retention decisions.
+files, persistent completion markers, compact-date retention decisions, and a
+transport call that never returns.
 Firmware `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` additionally passed a physical
 device-to-SFTP trial. A 3,556,322-byte MP4 published without a leftover
 temporary file and matched SHA-256 at both ends; a repeated attempt was
@@ -344,8 +356,16 @@ refused connection preserved the local file before successful recovery. The
 production NAS later accepted 20 files while preserving every local source.
 After an inconclusive reachability loss, firmware
 `174c476f-9489-50c2-548c-4b62df277f9f` reduced the batch to two files per
-minute, validated normally, restarted the camera runtime, and passed 30 of 30
-pings with export disabled. Sustained production acceptance remains.
+minute. A later clean production run reproduced the reachability loss without
+the earlier console-output confounder. Persisted diagnostics showed stable
+Erlang memory but an exporter process permanently waiting in `gen:do_call`;
+the workstation accepted 12 complete SFTP sessions and saw no thirteenth
+connection. Firmware `8b3465d1-b8b8-5914-aa36-6c3e8e1c0cdd` therefore adds
+the independent 30-second transport deadline. It validated normally, restarted
+the camera runtime, passed 30 of 30 pings with production export disabled, and
+passed a target-side probe that deliberately blocked a transport beyond a
+250-millisecond test deadline while the exporter stayed responsive. Sustained
+production acceptance remains.
 
 The Phase 5 application implementation adds
 `Atomcam2NervesApp.VendorCamera`. Missing configuration leaves it dormant.

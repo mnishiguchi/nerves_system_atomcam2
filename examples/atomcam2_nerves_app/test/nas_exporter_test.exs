@@ -15,6 +15,14 @@ defmodule Atomcam2NervesApp.NasExporterTest do
     end
   end
 
+  defmodule BlockingTransport do
+    def export(_config, _files) do
+      receive do
+        :never -> :ok
+      end
+    end
+  end
+
   setup do
     root =
       Path.join(
@@ -201,6 +209,53 @@ defmodule Atomcam2NervesApp.NasExporterTest do
              Path.join(marker_path, "20260727/08/24.mp4"),
              Path.join(marker_path, "20260727/08/25.mp4")
            ]
+  end
+
+  test "bounds a transport call that never returns", %{root: root} do
+    spool_path = Path.join(root, "spool")
+    marker_path = Path.join(root, "exported")
+    config_path = Path.join(root, "nas-export.conf")
+    process_name = :"nas-exporter-#{System.unique_integer([:positive])}"
+
+    File.write!(
+      config_path,
+      """
+      enabled=true
+      host=nas.local
+      user=atomcam2
+      user_dir=#{Path.join(root, "nas-ssh")}
+      remote_directory=recordings/atomcam2
+      """
+    )
+
+    pid =
+      start_supervised!(
+        {NasExporter,
+         name: process_name,
+         config_path: config_path,
+         spool_path: spool_path,
+         marker_path: marker_path,
+         transport: BlockingTransport,
+         transport_timeout_ms: 25}
+      )
+
+    assert_eventually(fn ->
+      match?(
+        %{
+          last_result:
+            {:error, {:transport_timeout, 25},
+             %{
+               uploaded: 0,
+               already_present: 0,
+               retained_removed: 0,
+               spool: %{deleted_count: 0}
+             }}
+        },
+        NasExporter.status(process_name)
+      )
+    end)
+
+    assert Process.alive?(pid)
   end
 
   defp assert_eventually(assertion, attempts \\ 50)

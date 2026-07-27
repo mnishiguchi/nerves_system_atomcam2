@@ -250,11 +250,13 @@ SFTP client already shipped for Nerves SSH support. It requires a dedicated
 key-based NAS account and a pre-provisioned host key, publishes completed
 segments through a temporary name and atomic rename, retries without
 duplicating equal-size remote files, bounds the local playback spool, and
-removes dated NAS recordings after the configured retention period. It remains
-disabled without persistent `/data` configuration and still requires a
-production-NAS and sustained spool-pressure acceptance run. A physical
-device-to-disposable-SFTP trial already passes upload, checksum, atomic
-publication, idempotent retry, selective retention, and connection recovery.
+removes dated NAS recordings after the configured retention period. A
+30-second outer transport deadline protects Nerves when an OTP SSH/SFTP call
+does not return after its internal timeout. It remains disabled without
+persistent `/data` configuration and still requires a sustained
+production-NAS spool-pressure acceptance run. Physical trials already pass
+upload, checksum, atomic publication, idempotent retry, selective retention,
+connection recovery, and termination of a deliberately blocked transport.
 
 Phase 5 adds a deliberately small boot integration in the example application.
 The camera remains disabled unless

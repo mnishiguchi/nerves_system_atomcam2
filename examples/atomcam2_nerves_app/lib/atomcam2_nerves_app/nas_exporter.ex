@@ -17,6 +17,7 @@ defmodule Atomcam2NervesApp.NasExporter do
   @default_spool_path "/data/atomcam2-vendor-camera/spool/record"
   @default_marker_path "/data/atomcam2-vendor-camera/nas-exported"
   @default_poll_interval_ms 60_000
+  @default_transport_timeout_ms 30_000
   @max_files_per_run 2
   @status_timeout_ms 45_000
 
@@ -24,6 +25,7 @@ defmodule Atomcam2NervesApp.NasExporter do
             spool_path: @default_spool_path,
             marker_path: @default_marker_path,
             transport: SFTP,
+            transport_timeout_ms: @default_transport_timeout_ms,
             timer_ref: nil,
             enabled: false,
             last_attempt_at: nil,
@@ -58,7 +60,9 @@ defmodule Atomcam2NervesApp.NasExporter do
       config_path: Keyword.get(options, :config_path, @default_config_path),
       spool_path: Keyword.get(options, :spool_path, @default_spool_path),
       marker_path: Keyword.get(options, :marker_path, @default_marker_path),
-      transport: Keyword.get(options, :transport, SFTP)
+      transport: Keyword.get(options, :transport, SFTP),
+      transport_timeout_ms:
+        Keyword.get(options, :transport_timeout_ms, @default_transport_timeout_ms)
     }
 
     {:ok, schedule(state, 0)}
@@ -183,7 +187,12 @@ defmodule Atomcam2NervesApp.NasExporter do
       |> Stream.reject(&exported?(&1, state.marker_path))
       |> Enum.take(@max_files_per_run)
 
-    case state.transport.export(config, batch) do
+    case run_transport(
+           state.transport,
+           config,
+           batch,
+           state.transport_timeout_ms
+         ) do
       {:ok, summary} ->
         case mark_completed(summary, state.marker_path) do
           {:ok, summary} ->
@@ -214,6 +223,64 @@ defmodule Atomcam2NervesApp.NasExporter do
             )
         end
     end
+  end
+
+  defp run_transport(transport, config, files, timeout_ms) do
+    caller = self()
+    result_ref = make_ref()
+
+    {pid, monitor_ref} =
+      spawn_monitor(fn ->
+        send(caller, {result_ref, invoke_transport(transport, config, files)})
+      end)
+
+    receive do
+      {^result_ref, result} ->
+        Process.demonitor(monitor_ref, [:flush])
+        result
+
+      {:DOWN, ^monitor_ref, :process, ^pid, reason} ->
+        {:error, {:transport_process_exit, reason}, empty_summary()}
+    after
+      timeout_ms ->
+        Process.exit(pid, :kill)
+        await_transport_exit(pid, monitor_ref)
+        flush_transport_result(result_ref)
+        {:error, {:transport_timeout, timeout_ms}, empty_summary()}
+    end
+  end
+
+  defp invoke_transport(transport, config, files) do
+    transport.export(config, files)
+  rescue
+    exception ->
+      reason = {exception.__struct__, Exception.message(exception)}
+      {:error, {:transport_exception, reason}, empty_summary()}
+  catch
+    kind, reason ->
+      {:error, {:transport_failure, kind, reason}, empty_summary()}
+  end
+
+  defp await_transport_exit(pid, monitor_ref) do
+    receive do
+      {:DOWN, ^monitor_ref, :process, ^pid, _reason} -> :ok
+    after
+      1_000 ->
+        Process.demonitor(monitor_ref, [:flush])
+        :ok
+    end
+  end
+
+  defp flush_transport_result(result_ref) do
+    receive do
+      {^result_ref, _result} -> :ok
+    after
+      0 -> :ok
+    end
+  end
+
+  defp empty_summary do
+    %{uploaded: 0, already_present: 0, retained_removed: 0, completed_files: []}
   end
 
   defp handle_export_success(state, config, files, summary) do
