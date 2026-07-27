@@ -229,7 +229,8 @@ A separate Nerves-supervised exporter owns NAS delivery. It must:
 - retry after network and NAS outages;
 - copy to a temporary destination name and rename atomically after completion;
 - make repeated attempts idempotent;
-- place a configured upper bound on the local spool; and
+- keep the local spool near a configured target without deleting unexported
+  recordings; and
 - remove NAS recordings older than the configured retention period.
 
 NFS was evaluated first. The protected v0.2.0 kernel registers neither NFS nor
@@ -250,9 +251,11 @@ review.
 
 Keep successfully exported files in the local spool for recent mobile-app
 playback. Record export completion outside the vendor-visible spool and remove
-the oldest local segments only when the configured spool limit is exceeded.
-Retention may delete only recognized recording names below date directories
-older than the configured period.
+the oldest successfully exported local segments only when the configured spool
+limit is exceeded. An outage may temporarily grow the spool past that target;
+never enforce it by deleting an unexported segment. Retention may delete only
+recognized recording names below date directories older than the configured
+period.
 
 ### Boot, failure, and recovery behavior
 
@@ -324,7 +327,8 @@ it. The configuration is strict, contains no password, and points OTP SSH at a
 device-private key and `known_hosts` directory. Each run handles at most ten
 new segments, then retries on the configured interval. Host tests cover config
 validation, completed-file filtering, symlink rejection, bounded spool
-eviction, persistent completion markers, and compact-date retention decisions.
+eviction of successfully exported files, preservation of unexported files,
+persistent completion markers, and compact-date retention decisions.
 Firmware `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` additionally passed a physical
 device-to-SFTP trial. A 3,556,322-byte MP4 published without a leftover
 temporary file and matched SHA-256 at both ends; a repeated attempt was

@@ -104,7 +104,15 @@ defmodule Atomcam2NervesApp.NasExporter do
   @spec enforce_spool_limit([completed_file()], non_neg_integer(), Path.t() | nil) :: map()
   def enforce_spool_limit(files, max_bytes, marker_path \\ nil) do
     total_bytes = Enum.reduce(files, 0, &(&1.size + &2))
-    trim_spool(files, total_bytes, max_bytes, marker_path, 0, 0)
+
+    removable_files =
+      if marker_path do
+        Enum.filter(files, &exported?(&1, marker_path))
+      else
+        files
+      end
+
+    trim_spool(removable_files, total_bytes, max_bytes, marker_path, 0, 0)
   end
 
   defp run_once(state) do

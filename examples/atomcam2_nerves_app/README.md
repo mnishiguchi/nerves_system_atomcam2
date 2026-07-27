@@ -115,6 +115,11 @@ retention_days=20
 max_spool_bytes=536870912
 ```
 
+Before first enablement, set `max_spool_bytes` above the existing local
+backlog so the exporter can catch up without immediately shortening mobile
+playback history. The cap is a target, not permission to discard unexported
+footage.
+
 `user_dir` must contain the NAS account's private key and a pre-provisioned
 `known_hosts` file in the layout expected by OTP SSH. Password authentication
 and automatic host-key acceptance are deliberately unsupported. Keep this
@@ -124,9 +129,12 @@ The exporter uploads only finalized paths shaped like
 `YYYYMMDD/HH/MM.mp4`. It writes `MM.mp4.uploading` on the NAS and renames it
 only after the byte count matches. Completed uploads are recorded under
 `/data/atomcam2-vendor-camera/nas-exported`; the local MP4 remains available
-for mobile playback until the configured spool cap removes the oldest file.
-Retries are idempotent when the final remote path already has the expected
-size.
+for mobile playback until the configured spool cap removes the oldest
+successfully exported file. Unexported files remain local even when that means
+temporarily exceeding the cap. A local file becomes eligible for removal only
+after the final remote name exists and its matching completion marker is
+persistently recorded. Retries are idempotent when the final remote path already
+has the expected size.
 
 Inspect or trigger the supervised exporter from target IEx:
 

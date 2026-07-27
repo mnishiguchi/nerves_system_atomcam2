@@ -82,6 +82,41 @@ defmodule Atomcam2NervesApp.NasExporterTest do
     assert File.exists?(Enum.at(paths, 2))
   end
 
+  test "removes only successfully exported files from the production spool", %{root: root} do
+    spool_path = Path.join(root, "spool")
+    marker_path = Path.join(root, "exported")
+
+    paths =
+      for relative <- [
+            "20260727/08/24.mp4",
+            "20260727/08/25.mp4",
+            "20260727/08/26.mp4"
+          ] do
+        path = Path.join(spool_path, relative)
+        File.mkdir_p!(Path.dirname(path))
+        File.write!(path, String.duplicate("x", 10))
+        path
+      end
+
+    exported_marker = Path.join(marker_path, "20260727/08/24.mp4")
+    stale_marker = Path.join(marker_path, "20260727/08/25.mp4")
+    File.mkdir_p!(Path.dirname(exported_marker))
+    File.write!(exported_marker, "10\n")
+    File.write!(stale_marker, "9\n")
+
+    result =
+      spool_path
+      |> NasExporter.completed_files()
+      |> NasExporter.enforce_spool_limit(10, marker_path)
+
+    assert result == %{deleted_count: 1, deleted_bytes: 10, remaining_bytes: 20}
+    refute File.exists?(Enum.at(paths, 0))
+    refute File.exists?(exported_marker)
+    assert File.exists?(Enum.at(paths, 1))
+    assert File.exists?(stale_marker)
+    assert File.exists?(Enum.at(paths, 2))
+  end
+
   test "marks uploaded files without removing them from mobile playback", %{root: root} do
     spool_path = Path.join(root, "spool")
     marker_path = Path.join(root, "exported")
