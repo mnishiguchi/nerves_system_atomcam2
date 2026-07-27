@@ -237,6 +237,8 @@ watchdog, the exporter remained disabled, all 590 pre-update recordings and
 The private key, `known_hosts`, and exporter configuration also persisted with
 mode `0600`. The deployed parser rejected a 59-second interval, the firmware
 upload directory was empty, and the running camera answered 30 of 30 pings.
+After a subsequent physical power cycle, the operator confirmed SSH through
+`nerves.local` and normal operation in the standard Atom mobile application.
 
 ## Remaining production acceptance
 
