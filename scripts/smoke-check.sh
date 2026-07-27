@@ -125,14 +125,19 @@ require_executable scripts/atomcam2-fwup-ops.sh
 require_executable scripts/test-atomcam2-firmware-update.sh
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_health.ex
 require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/firmware_kv_backend.ex
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter.ex
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/config.ex
+require_file examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/sftp.ex
 require_file examples/atomcam2_nerves_app/test/firmware_health_test.exs
 require_file examples/atomcam2_nerves_app/test/firmware_kv_backend_test.exs
+require_file examples/atomcam2_nerves_app/test/nas_exporter_test.exs
 require_file lib/mix/tasks/atomcam2.install.ex
 require_file examples/atomcam2_nerves_app/config/target.exs
 require_file docs/worklog/20260715-atomcam2-ping-ssh-bringup.md
 require_file docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md
 require_file docs/worklog/20260726-adr-0008-vendor-camera-feasibility.md
 require_file docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md
+require_file docs/worklog/20260727-adr-0008-nas-export-foundation.md
 
 require_grep 'config :vintage_net' examples/atomcam2_nerves_app/config/runtime.exs
 require_grep 'provisioning_path = "/media/mmc/nerves-provisioning.conf"' examples/atomcam2_nerves_app/config/runtime.exs
@@ -327,10 +332,10 @@ require_grep 'refusing to write SD payload to /' scripts/atomcam2-package-flat-s
 require_grep 'mode=read-only' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep '/dev/mtdblock3' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep '/dev/mtdblock6' rootfs_overlay/usr/bin/atomcam2-vendor-camera
-require_grep 'stock vendor assis also opens the watchdog' rootfs_overlay/usr/bin/atomcam2-vendor-camera
-require_grep 'result=feasible_with_unresolved_safety_gates' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'vendor assis watchdog calls can be isolated by the compatibility shim' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'result=ready_for_manual_camera_start' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'private device view excludes the hardware watchdog' rootfs_overlay/usr/bin/atomcam2-vendor-camera
-require_grep 'manual vendor camera processes are running without assis' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'manual vendor camera processes are running with isolated assis' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'BR2_PACKAGE_UTIL_LINUX_SETPRIV=y' nerves_defconfig
 require_grep 'CONFIG_IPCRM=y' busybox.fragment
 require_grep 'CONFIG_IPCS=y' busybox.fragment
@@ -344,6 +349,10 @@ require_grep 'sensor_gc2053_t31' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'ATOMCAM2_VENDOR_SENSOR_DATA_INTERFACE:-1' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'stopped-reboot-required' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 require_grep 'recorded_boot_id.*!=' rootfs_overlay/usr/bin/atomcam2-vendor-camera
+require_grep 'Atomcam2NervesApp.NasExporter' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
+require_grep 'silently_accept_hosts: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/sftp.ex
+require_grep '\.uploading' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/sftp.ex
+require_grep '@max_files_per_run 10' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter.ex
 reject_grep '/system/init/app_init.sh' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 reject_grep 'exfat.ko' rootfs_overlay/usr/bin/atomcam2-vendor-camera
 reject_grep 'rtl8189ftv.ko' rootfs_overlay/usr/bin/atomcam2-vendor-camera

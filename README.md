@@ -242,8 +242,19 @@ another start.
 The corrected manual runtime has passed physical network, cloud, mobile live
 view, recorded playback, SD health, one-minute continuous recording,
 start/status/stop/reboot, SSH, Wi-Fi, watchdog ownership, and firmware
-validation checks. It does not yet implement NAS export, retention, or boot
-integration.
+validation checks. Automatic camera boot remains unimplemented.
+
+Phase 4 now has an opt-in NAS exporter in the example application. The fixed
+protected kernel does not provide NFS or CIFS, so the exporter uses the OTP
+SFTP client already shipped for Nerves SSH support. It requires a dedicated
+key-based NAS account and a pre-provisioned host key, publishes completed
+segments through a temporary name and atomic rename, retries without
+duplicating equal-size remote files, bounds the local playback spool, and
+removes dated NAS recordings after the configured retention period. It remains
+disabled without persistent `/data` configuration and still requires a
+production-NAS and sustained spool-pressure acceptance run. A physical
+device-to-disposable-SFTP trial already passes upload, checksum, atomic
+publication, idempotent retry, selective retention, and connection recovery.
 
 The architecture and physical evidence are recorded in
 [`ADR 0008`](docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)

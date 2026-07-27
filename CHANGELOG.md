@@ -24,6 +24,12 @@
 - Verify the standard Atom mobile application, HD live view, recorded playback,
   healthy storage reporting, and finalized one-minute continuous recordings
   under the `/data` spool.
+- Add an opt-in OTP SFTP exporter for finalized recordings after confirming
+  that the protected control kernel cannot mount NFS or CIFS.
+- Require key authentication and a provisioned NAS host key, publish through a
+  temporary name and atomic rename, retry idempotently, preserve a bounded
+  local playback spool, and remove dated NAS recordings after the configured
+  retention period.
 
 ## 0.2.0 - 2026-07-26
 

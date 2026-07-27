@@ -95,6 +95,50 @@ ssh nerves@nerves.local
 Toolshed is imported automatically through `/etc/iex.exs`, so helpers such as
 `tree`, `top`, and `exit` are immediately available.
 
+## Optional NAS recording export
+
+ADR 0008 Phase 4 adds a small supervised SFTP exporter. It is inert when
+`/data/atomcam2-vendor-camera/nas-export.conf` is absent or contains
+`enabled=false`.
+
+The enabled configuration is intentionally narrow:
+
+```text
+enabled=true
+host=nas.local
+port=22
+user=atomcam2
+user_dir=/data/atomcam2-vendor-camera/nas-ssh
+remote_directory=recordings/atomcam2
+poll_interval_seconds=60
+retention_days=20
+max_spool_bytes=536870912
+```
+
+`user_dir` must contain the NAS account's private key and a pre-provisioned
+`known_hosts` file in the layout expected by OTP SSH. Password authentication
+and automatic host-key acceptance are deliberately unsupported. Keep this
+directory mode `0700` and its private files mode `0600`.
+
+The exporter uploads only finalized paths shaped like
+`YYYYMMDD/HH/MM.mp4`. It writes `MM.mp4.uploading` on the NAS and renames it
+only after the byte count matches. Completed uploads are recorded under
+`/data/atomcam2-vendor-camera/nas-exported`; the local MP4 remains available
+for mobile playback until the configured spool cap removes the oldest file.
+Retries are idempotent when the final remote path already has the expected
+size.
+
+Inspect or trigger the supervised exporter from target IEx:
+
+```elixir
+Atomcam2NervesApp.NasExporter.status()
+Atomcam2NervesApp.NasExporter.run_now()
+```
+
+The NAS account should be confined to `remote_directory`, since the exporter
+also removes recording files in date directories older than
+`retention_days`.
+
 ## Remote updates
 
 After the initial complete installation, standard Nerves firmware uploads are

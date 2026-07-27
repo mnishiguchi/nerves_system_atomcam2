@@ -45,8 +45,15 @@ trial are recorded in:
 - [`worklog/20260726-adr-0008-vendor-camera-feasibility.md`](worklog/20260726-adr-0008-vendor-camera-feasibility.md)
 - [`worklog/20260726-adr-0008-vendor-camera-manual-runtime.md`](worklog/20260726-adr-0008-vendor-camera-manual-runtime.md)
 - [`worklog/20260726-adr-0008-mobile-and-storage-compatibility.md`](worklog/20260726-adr-0008-mobile-and-storage-compatibility.md)
+- [`worklog/20260727-adr-0008-nas-export-foundation.md`](worklog/20260727-adr-0008-nas-export-foundation.md)
 
 The corrected manual runtime keeps Nerves ownership boundaries intact and
 passes vendor network, cloud, SD health, mobile live-view, recorded-playback,
 storage-screen, and one-minute local-recording checks. Phase 2 and Phase 3 are
 complete; NAS export and retention remain Phase 4.
+
+The Phase 4 implementation keeps the protected kernel unchanged and uses
+OTP's existing SFTP client. Host coverage and a physical device-to-disposable
+SFTP trial pass upload, checksum, atomic publication, idempotency, selective
+retention, and failure recovery. The production NAS and a sustained
+spool-pressure/retention trial remain before Phase 4 is complete.

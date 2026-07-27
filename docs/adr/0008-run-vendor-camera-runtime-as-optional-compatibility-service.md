@@ -12,7 +12,17 @@ boundaries.
 
 Phase 3 local continuous recording is also complete: finalized one-minute MP4
 segments appear under the `/data` spool, while the active segment remains in
-private tmpfs. NAS export and retention remain Phase 4.
+private tmpfs.
+
+Phase 4 implementation is in progress. The protected kernel cannot mount NFS
+or CIFS, so the first exporter uses the OTP SFTP client already present in the
+firmware and leaves the kernel contract unchanged. Configuration parsing,
+completed-file selection, idempotent publication, local spool bounds, and
+date-based retention have host coverage. A physical Atom Cam 2 also passed
+SFTP upload, checksum, atomic-publication, idempotency, selective-retention,
+and connection-failure recovery trials against a disposable endpoint. The
+intended NAS and a sustained spool/retention run remain before Phase 4 is
+complete.
 
 ## Context
 
@@ -211,10 +221,27 @@ A separate Nerves-supervised exporter owns NAS delivery. It must:
 - place a configured upper bound on the local spool; and
 - remove NAS recordings older than the configured retention period.
 
-Evaluate NFS first, but do not assume it is available. The protected v0.2.0
-kernel does not currently register NFS or CIFS. Phase 4 must either prove a
-small supported client path or make a separate kernel decision before adding an
-exporter. It must not silently fall back to vendor SMB code.
+NFS was evaluated first. The protected v0.2.0 kernel registers neither NFS nor
+CIFS, and the shipped kernel is intentionally fixed and verified. Do not
+replace it or import vendor SMB code for NAS recording.
+
+Use OTP SFTP as the first supported transport. It is already present in the
+firmware, needs no additional daemon or filesystem client, and keeps NAS
+failures outside the camera runtime. Require key authentication and a
+pre-provisioned `known_hosts` entry; do not accept unknown host keys or store a
+NAS password in the configuration.
+
+Mirror the vendor's `YYYYMMDD/HH/MM.mp4` path below one configured remote
+directory. Upload to `MM.mp4.uploading`, verify its size, and rename it to the
+final path. Treat an existing final path as the same upload only when its size
+matches. Otherwise report a conflict and leave the local segment for operator
+review.
+
+Keep successfully exported files in the local spool for recent mobile-app
+playback. Record export completion outside the vendor-visible spool and remove
+the oldest local segments only when the configured spool limit is exceeded.
+Retention may delete only recognized recording names below date directories
+older than the configured period.
 
 ### Boot, failure, and recovery behavior
 
@@ -279,6 +306,20 @@ state. Mobile live view, playback, storage status, and one-minute local
 recording passed on July 27. The runtime remains disabled by default and has no
 boot integration.
 
+The Phase 4 application implementation adds a supervised exporter that remains
+inert unless `/data/atomcam2-vendor-camera/nas-export.conf` explicitly enables
+it. The configuration is strict, contains no password, and points OTP SSH at a
+device-private key and `known_hosts` directory. Each run handles at most ten
+new segments, then retries on the configured interval. Host tests cover config
+validation, completed-file filtering, symlink rejection, bounded spool
+eviction, persistent completion markers, and compact-date retention decisions.
+Firmware `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` additionally passed a physical
+device-to-SFTP trial. A 3,556,322-byte MP4 published without a leftover
+temporary file and matched SHA-256 at both ends; a repeated attempt was
+idempotent. Retention removed only recognized old recording names, and a
+refused connection preserved the local file before successful recovery. The
+production NAS and sustained spool-pressure trial remain.
+
 ## Consequences
 
 The design keeps the ordinary Nerves boot and operational model intact and
@@ -292,9 +333,10 @@ The stock vendor startup path cannot be reused. A small amount of Atom Cam
 2-specific module, process, watchdog, network-status, and storage-check
 compatibility code is unavoidable.
 
-NAS support cannot begin with an in-kernel NFS mount on the current protected
-kernel. That limitation is now the next Phase 4 decision rather than a reason
-to broaden the camera runtime.
+NAS support does not require an in-kernel mount. Reusing OTP SFTP preserves the
+protected-kernel verification contract and avoids adding a second network
+daemon or a broad vendor compatibility layer. The tradeoff is that the target
+NAS must provide a restricted SFTP account.
 
 ## References
 
