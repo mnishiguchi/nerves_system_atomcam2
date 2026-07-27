@@ -34,11 +34,11 @@ Commit `3cd22ab` is the reproducible ping and SSH baseline. It uses the explicit
 An optional manual vendor-camera compatibility runtime is available for
 supervised testing. It remains disabled by default and keeps Nerves in control
 of boot, networking, the hardware watchdog, updates, and recovery. Automatic
-camera startup, recording, NAS export, RTSP, WebUI, Samba, and internal flash
-writes are not enabled. Standard mobile-application live viewing still needs
-operator confirmation before the manual-runtime milestone is complete. Remote
-firmware updates remain experimental until the physical OTA validation matrix
-is complete.
+camera startup, NAS export, retention, RTSP, WebUI, Samba, and internal flash
+writes are not enabled. Vendor network, cloud, mobile live view, recorded
+playback, SD health, and continuous one-minute local recording are physically
+verified. Remote firmware updates remain experimental until the physical OTA
+validation matrix is complete.
 
 ## Application workflow
 
@@ -232,21 +232,25 @@ atomcam2-vendor-camera stop
 memory, `/data`, IPC, Wi-Fi, watchdog ownership, and NAS filesystem
 capabilities. `prepare` makes a mode-private copy of protected vendor
 configuration below `/data` without printing its contents. `start` loads only
-the required camera modules and starts `hl_client` and `iCamera_app` in the
-isolated compatibility layout; it deliberately omits the watchdog-owning
-`assis`. `stop` removes the tracked processes, mounts, and IPC. The protected
+the required camera modules and starts `assis`, `hl_client`, and `iCamera_app`
+in the isolated compatibility layout. A narrow preload shim keeps the hardware
+watchdog and raw MicroSD under Nerves ownership. `stop` removes the vendor
+process tree, mounts, and IPC. The protected
 kernel marks the camera modules permanent, so a reboot is required before
 another start.
 
-The manual runtime has passed a physical start/status/stop/reboot trial with
-stable SSH, Wi-Fi, Nerves watchdog ownership, and firmware validation. It does
-not yet record video, export to a NAS, or start during boot. Standard
-mobile-application live viewing remains an explicit operator acceptance check.
+The corrected manual runtime has passed physical network, cloud, mobile live
+view, recorded playback, SD health, one-minute continuous recording,
+start/status/stop/reboot, SSH, Wi-Fi, watchdog ownership, and firmware
+validation checks. It does not yet implement NAS export, retention, or boot
+integration.
 
 The architecture and physical evidence are recorded in
 [`ADR 0008`](docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)
 and the
 [`manual-runtime worklog`](docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md).
+The corrected mobile/storage investigation is in the
+[`mobile/storage worklog`](docs/worklog/20260726-adr-0008-mobile-and-storage-compatibility.md).
 
 The application build preserves the final merged SquashFS at:
 

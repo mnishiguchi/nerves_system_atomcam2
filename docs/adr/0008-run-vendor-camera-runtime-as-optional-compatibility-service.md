@@ -4,9 +4,15 @@
 
 Accepted on July 26, 2026
 
-The read-only feasibility gate and console-visible Phase 2 checks are complete.
-Standard mobile-application live viewing remains an open operator acceptance
-check; recording and NAS export remain later phases.
+The read-only feasibility gate and Phase 2 are complete. On July 27, 2026, the
+operator confirmed the standard mobile application, HD live view, recorded
+playback, and a healthy storage screen. The corrected runtime reaches healthy
+vendor network, cloud, and storage state while Nerves retains its ownership
+boundaries.
+
+Phase 3 local continuous recording is also complete: finalized one-minute MP4
+segments appear under the `/data` spool, while the active segment remains in
+private tmpfs. NAS export and retention remain Phase 4.
 
 ## Context
 
@@ -49,19 +55,26 @@ watchdog-owning `assis` process.
 The evidence is recorded in
 [`../worklog/20260726-adr-0008-vendor-camera-feasibility.md`](../worklog/20260726-adr-0008-vendor-camera-feasibility.md).
 
-A subsequent physical manual-runtime trial also established that:
+A subsequent mobile failure and corrected physical trial established that:
 
-- `hl_client` and `iCamera_app` remain running without `assis`;
+- `assis`, `hl_client`, and `iCamera_app` are all required for the vendor
+  mobile/cloud path;
+- a narrow preload shim lets `assis` run without opening the hardware watchdog;
+- the vendor network flow can consume Nerves connection state without changing
+  the interface, DHCP client, supplicant, or DNS ownership;
+- the vendor SD checks can use a regular-file placeholder and the `/data` spool
+  without seeing the real MicroSD block device;
+- vendor network, cloud, SD health, and SD mount initialization complete;
 - Nerves `heart` retains sole hardware-watchdog ownership;
 - the vendor-requested GC2053 sensor interface is `data_interface=1`;
-- the two vendor processes use about 3.7 MiB combined RSS in the bounded trial;
+- the three primary vendor processes use about 23 MiB combined RSS in the
+  corrected trial;
 - Nerves Wi-Fi, SSH, firmware validation, and recovery remain healthy; and
-- the protected kernel marks every selected camera module permanent, so stop
-  can clean processes, mounts, and IPC but a reboot is required to remove the
-  modules.
+- stop cleans primary processes, vendor descendants, mounts, and IPC, while a
+  reboot remains required to remove the permanent camera modules.
 
 That evidence is recorded in
-[`../worklog/20260726-adr-0008-vendor-camera-manual-runtime.md`](../worklog/20260726-adr-0008-vendor-camera-manual-runtime.md).
+[`../worklog/20260726-adr-0008-mobile-and-storage-compatibility.md`](../worklog/20260726-adr-0008-mobile-and-storage-compatibility.md).
 
 ## Decision
 
@@ -133,15 +146,22 @@ Bind or mount only the resources the camera runtime needs. In particular:
   the device, or claim the real watchdog.
 
 Do not run the stock `app_init.sh`. Define and test a minimal ordered module and
-process list instead. Do not load the vendor Wi-Fi, exFAT, USB Ethernet, MMC
-detection, factory-test, or firmware-update components.
+process list instead. Do not load the vendor Wi-Fi, exFAT, USB Ethernet,
+factory-test, or firmware-update components.
 
 The compatibility service must not disable Nerves `heart` or release its
-hardware-watchdog ownership. If `iCamera_app` cannot remain healthy without a
-watchdog-owning `assis`, stop the implementation and revise this ADR. A small,
-explicit compatibility shim may be considered only after a manual test proves
-it is necessary; importing the broad `atomcam_tools` preload layer is not the
-default.
+hardware-watchdog ownership. `assis` is required, so a small freestanding shim
+implements only its four watchdog calls and leaves the real watchdog absent
+from the private device view. The same shim acknowledges only the already
+established `/dev/mmcblk0p1` to `/media/mmc` compatibility mapping. Importing
+the broad `atomcam_tools` preload layer is not part of this decision.
+
+The fake `/dev/mmcblk0p1` must remain a verified regular file on the bounded
+private device tmpfs, and the vendor process must not receive `CAP_MKNOD`. The
+real Nerves MicroSD block device must never be exposed to the vendor runtime.
+Vendor `tf_prepare`, `blkid`, Wi-Fi, DHCP, supplicant, DNS, and mount
+expectations may be emulated only where Nerves already owns the corresponding
+resource.
 
 ### Mobile-application compatibility
 
@@ -158,6 +178,11 @@ Success requires:
 - healthy Nerves firmware validation state; and
 - a clean, bounded stop sequence.
 
+The July 27 physical acceptance passed all five requirements. The already-paired
+application showed the camera online, opened HD live view, played recorded
+footage, and showed continuous local recording without the earlier SD-card
+error.
+
 ### Recording boundary
 
 The vendor runtime may create and finalize one-minute MP4 segments in a local
@@ -168,6 +193,10 @@ Use the smallest confirmed completion hook. `atomcam_tools` intercepts the
 vendor move of a finished recording from `/tmp` into `/media/mmc/record`; that
 behavior is useful evidence, but its combined CIFS, webhook, scheduling, and
 path-rewrite scripts are not adopted.
+
+The physical runtime confirms that no additional hook is needed. The vendor
+application writes the active minute under private `/tmp` and moves each
+finalized MP4 into `/media/mmc/record`, which is already the `/data` spool.
 
 The vendor runtime must not mount or write to the NAS directly.
 
@@ -236,18 +265,19 @@ atomcam2-vendor-camera stop
 ```
 
 `prepare` creates the private configuration and spool state. `start` uses an
-explicit module list and launches only `hl_client` and `iCamera_app`. The
-compatibility environment omits the real watchdog, hides or replaces commands
-that can alter networking, flash, mounts, modules, or power state, and removes
-the corresponding capability classes from the vendor processes.
+explicit module list and launches `assis`, `hl_client`, and `iCamera_app` in
+stock order. The compatibility environment omits the real watchdog and real SD
+block device, hides or replaces commands that can alter networking, flash,
+mounts, modules, or power state, and removes the corresponding capability
+classes from the vendor processes.
 
-The physical trial resolved the watchdog conflict, minimal process list, memory
-measurement, private configuration behavior, clean stop, and reboot recovery.
-The runtime remains disabled by default and has no boot integration.
-
-Standard mobile-app live viewing is still unconfirmed. That check is the final
-Phase 2 acceptance item and must pass before recording hooks are treated as the
-next implementation boundary.
+The corrected physical trial resolved the watchdog conflict, vendor networking
+crash, SD-card error, process cleanup, memory measurement, private
+configuration behavior, and reboot recovery. Vendor initialization reaches
+network-connected, cloud-initialized, SD-health-success, and SD-mount-success
+state. Mobile live view, playback, storage status, and one-minute local
+recording passed on July 27. The runtime remains disabled by default and has no
+boot integration.
 
 ## Consequences
 
@@ -259,12 +289,12 @@ testing is mandatory and the compatibility service can never be treated like a
 normal portable Nerves application.
 
 The stock vendor startup path cannot be reused. A small amount of Atom Cam
-2-specific mount, module, process, and possibly watchdog compatibility code is
-unavoidable.
+2-specific module, process, watchdog, network-status, and storage-check
+compatibility code is unavoidable.
 
 NAS support cannot begin with an in-kernel NFS mount on the current protected
-kernel. That limitation is deferred to Phase 4 rather than broadening the
-camera-runtime milestone.
+kernel. That limitation is now the next Phase 4 decision rather than a reason
+to broaden the camera runtime.
 
 ## References
 

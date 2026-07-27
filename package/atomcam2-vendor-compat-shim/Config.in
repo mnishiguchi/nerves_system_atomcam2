@@ -1,0 +1,7 @@
+config BR2_PACKAGE_ATOMCAM2_VENDOR_COMPAT_SHIM
+	bool "Atom Cam 2 vendor compatibility shim"
+	depends on BR2_mipsel
+	help
+	  Install a freestanding compatibility library that keeps the hardware
+	  watchdog and raw SD storage under Nerves ownership while satisfying
+	  the optional vendor runtime's narrow compatibility checks.

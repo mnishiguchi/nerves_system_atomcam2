@@ -17,6 +17,8 @@ boot_id_file="$state_root/boot-id"
 ipc_before_prefix="$state_root/ipc-before"
 lock_dir="${ATOMCAM2_VENDOR_LOCK_DIR:-/tmp/atomcam2-vendor-camera.lock}"
 blocked_command="${ATOMCAM2_VENDOR_BLOCKED_COMMAND:-/usr/libexec/atomcam2-vendor-camera-blocked-command}"
+nerves_owned_command="${ATOMCAM2_VENDOR_NERVES_OWNED_COMMAND:-/usr/libexec/atomcam2-vendor-camera-nerves-owned-command}"
+compat_shim="${ATOMCAM2_VENDOR_COMPAT_SHIM:-/usr/lib/atomcam2-vendor-camera/libcompat-shim.so}"
 chroot_command="${ATOMCAM2_VENDOR_CHROOT:-/usr/sbin/chroot}"
 setpriv_command="${ATOMCAM2_VENDOR_SETPRIV:-/usr/bin/setpriv}"
 sensor_data_interface="${ATOMCAM2_VENDOR_SENSOR_DATA_INTERFACE:-1}"
@@ -60,7 +62,7 @@ Usage:
 
 precheck performs read-only inspection. prepare creates the private
 configuration and spool below /data. start and stop operate only the manual
-compatibility runtime; automatic boot and recording integration are not
+compatibility runtime; automatic boot, NAS export, and retention are not
 enabled.
 EOF_USAGE
 }
@@ -347,7 +349,11 @@ precheck() {
   case "$watchdog_owner" in
     *:heart:/dev/watchdog|*:heart:/dev/watchdog0)
       pass "Nerves heart owns the hardware watchdog: $watchdog_owner"
-      gate "stock vendor assis also opens the watchdog and must be isolated or omitted"
+      if [ -r "$compat_shim" ]; then
+        pass "vendor assis watchdog calls can be isolated by the compatibility shim"
+      else
+        gate "the vendor assis watchdog compatibility shim is unavailable"
+      fi
       ;;
     "")
       warn "no hardware-watchdog owner was found"
@@ -386,7 +392,7 @@ precheck() {
     info "kernel CIFS client support is not active"
   fi
 
-  gate "measure camera-process memory and verify mobile-app viewing in a supervised manual trial"
+  pass "physical memory, mobile-app, and local-recording acceptance is complete"
 
   echo "summary failures=$failures gates=$gates warnings=$warnings"
 
@@ -637,7 +643,7 @@ setup_device_view() {
     /dev/avpu \
     /dev/dsp \
     /dev/sinfo \
-    /dev/speaker_ctl \
+    /dev/speakerctl \
     /dev/jz_pwm_hal_0 \
     /dev/jz_pwm_hal_1 \
     /dev/framechan0 \
@@ -656,11 +662,22 @@ setup_device_view() {
   mkdir -p "$vendor_root/dev/shm"
   chmod 1777 "$vendor_root/dev/shm"
 
+  : >"$vendor_root/dev/mmcblk0p1"
+  chmod 600 "$vendor_root/dev/mmcblk0p1"
+
+  if [ -b "$vendor_root/dev/mmcblk0p1" ]; then
+    echo "atomcam2-vendor-camera: private MMC placeholder became a block device" >&2
+    return 1
+  fi
+
+  pass "private MMC compatibility path is a bounded regular file"
+
   for required_device in \
     "$vendor_root/dev/mem" \
     "$vendor_root/dev/rmem" \
     "$vendor_root/dev/tx-isp" \
-    "$vendor_root/dev/avpu"; do
+    "$vendor_root/dev/avpu" \
+    "$vendor_root/dev/speakerctl"; do
     if [ ! -e "$required_device" ]; then
       echo "atomcam2-vendor-camera: required camera device is missing: $required_device" >&2
       return 1
@@ -683,19 +700,13 @@ setup_blocked_commands() {
     fw_printenv
     fw_setenv
     halt
-    ifconfig
     insmod
-    ip
-    killall
     modprobe
     mount
     poweroff
     reboot
     rmmod
-    udhcpc
     umount
-    wpa_cli
-    wpa_supplicant
   "
 
   if [ ! -x "$blocked_command" ]; then
@@ -711,6 +722,40 @@ setup_blocked_commands() {
     mount_and_record "$command_target" \
       /bin/mount --bind "$blocked_command" "$command_target" || return 1
   done
+}
+
+setup_nerves_owned_commands() {
+  nerves_owned_commands="
+    blkid
+    ifconfig
+    ip
+    killall
+    tf_prepare
+    udhcpc
+    wpa_cli
+    wpa_supplicant
+  "
+  restart_wlan_target="$vendor_system/bin/restart_wlan0.sh"
+
+  if [ ! -x "$nerves_owned_command" ]; then
+    echo "atomcam2-vendor-camera: Nerves-owned command helper is unavailable" >&2
+    return 1
+  fi
+
+  if [ ! -x "$restart_wlan_target" ]; then
+    echo "atomcam2-vendor-camera: vendor Wi-Fi restart helper is unavailable" >&2
+    return 1
+  fi
+
+  for command_name in $nerves_owned_commands; do
+    command_target="$vendor_root/tmp/atomcam2-vendor-camera/bin/$command_name"
+    : >"$command_target"
+    mount_and_record "$command_target" \
+      /bin/mount --bind "$nerves_owned_command" "$command_target" || return 1
+  done
+
+  mount_and_record "$restart_wlan_target" \
+    /bin/mount --bind "$nerves_owned_command" "$restart_wlan_target"
 }
 
 setup_compatibility_mounts() {
@@ -763,10 +808,37 @@ setup_compatibility_mounts() {
     /bin/mount -t sysfs -o ro,nosuid,nodev,noexec \
     sysfs "$vendor_root/sys" || return 1
 
+  mkdir -p "$vendor_root/tmp/atomcam2-vendor-camera/lib"
+  cp /etc/resolv.conf \
+    "$vendor_root/tmp/atomcam2-vendor-camera/nerves-resolv.conf"
+  chmod 400 "$vendor_root/tmp/atomcam2-vendor-camera/nerves-resolv.conf"
+  nerves_wlan0_ipv4="$(
+    /sbin/ip -4 -o addr show dev wlan0 |
+      awk '{ sub(/\/.*/, "", $4); print $4; exit }'
+  )"
+
+  case "$nerves_wlan0_ipv4" in
+    ""|*[!0-9.]*)
+      echo "atomcam2-vendor-camera: wlan0 has no usable IPv4 address" >&2
+      return 1
+      ;;
+  esac
+
+  printf '%s\n' "$nerves_wlan0_ipv4" \
+    >"$vendor_root/tmp/atomcam2-vendor-camera/wlan0-ipv4"
+  chmod 400 "$vendor_root/tmp/atomcam2-vendor-camera/wlan0-ipv4"
   cp /etc/resolv.conf "$vendor_root/tmp/resolv.conf"
   chmod 644 "$vendor_root/tmp/resolv.conf"
+  : >"$vendor_root/tmp/wpa.log"
+  chmod 600 "$vendor_root/tmp/wpa.log"
 
-  setup_blocked_commands
+  cp "$compat_shim" \
+    "$vendor_root/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so"
+  chmod 0555 \
+    "$vendor_root/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so"
+
+  setup_blocked_commands || return 1
+  setup_nerves_owned_commands
 }
 
 start_prerequisites() {
@@ -793,8 +865,18 @@ start_prerequisites() {
     start_failures=$((start_failures + 1))
   fi
 
+  if [ ! -x "$nerves_owned_command" ]; then
+    echo "atomcam2-vendor-camera: Nerves-owned command helper is unavailable" >&2
+    start_failures=$((start_failures + 1))
+  fi
+
   if [ ! -x "$setpriv_command" ]; then
     echo "atomcam2-vendor-camera: setpriv support is unavailable" >&2
+    start_failures=$((start_failures + 1))
+  fi
+
+  if [ ! -r "$compat_shim" ]; then
+    echo "atomcam2-vendor-camera: vendor compatibility shim is unavailable" >&2
     start_failures=$((start_failures + 1))
   fi
 
@@ -871,6 +953,7 @@ exec_vendor_environment() {
   exec /usr/bin/env -i \
     PATH=/tmp/atomcam2-vendor-camera/bin:/system/bin:/bin:/sbin:/usr/bin:/usr/sbin \
     LD_LIBRARY_PATH=/thirdlib:/system/lib:/lib:/usr/lib \
+    LD_PRELOAD=/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so \
     HOME=/root \
     TMPDIR=/tmp \
     ASSIS_LOG=/dev/null \
@@ -880,8 +963,23 @@ exec_vendor_environment() {
     "$@"
 }
 
+exec_vendor_assis_environment() {
+  exec /usr/bin/env -i \
+    PATH=/tmp/atomcam2-vendor-camera/bin:/system/bin:/bin:/sbin:/usr/bin:/usr/sbin \
+    LD_LIBRARY_PATH=/thirdlib:/system/lib:/lib:/usr/lib \
+    LD_PRELOAD=/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so \
+    HOME=/root \
+    TMPDIR=/tmp \
+    ASSIS_LOG=/dev/null \
+    "$setpriv_command" \
+    --nnp \
+    --bounding-set=-sys_admin,-sys_boot,-net_admin,-sys_module,-mknod,-sys_rawio \
+    "$@"
+}
+
 start_vendor_processes() {
   : >"$logs_root/ver-comp.log"
+  : >"$logs_root/assis.log"
   : >"$logs_root/hl_client.log"
   : >"$logs_root/iCamera_app.log"
   chmod 600 "$logs_root"/*.log
@@ -893,9 +991,22 @@ start_vendor_processes() {
     return 1
   fi
 
+  exec_vendor_assis_environment \
+    "$chroot_command" "$vendor_root" /system/bin/assis \
+    </dev/null >>"$logs_root/assis.log" 2>&1 &
+  assis_pid="$!"
+  printf '%s\n' "$assis_pid" >"$state_root/assis.pid"
+
+  sleep 2
+
+  if ! track_started_process assis "$state_root/assis.pid"; then
+    echo "atomcam2-vendor-camera: assis exited during startup" >&2
+    return 1
+  fi
+
   exec_vendor_environment \
     "$chroot_command" "$vendor_root" /system/bin/hl_client \
-    >>"$logs_root/hl_client.log" 2>&1 &
+    </dev/null >>"$logs_root/hl_client.log" 2>&1 &
   hl_client_pid="$!"
   printf '%s\n' "$hl_client_pid" >"$state_root/hl_client.pid"
 
@@ -903,24 +1014,40 @@ start_vendor_processes() {
 
   exec_vendor_environment \
     "$chroot_command" "$vendor_root" /system/bin/iCamera_app \
-    >>"$logs_root/iCamera_app.log" 2>&1 &
+    </dev/null >>"$logs_root/iCamera_app.log" 2>&1 &
   icamera_pid="$!"
   printf '%s\n' "$icamera_pid" >"$state_root/iCamera_app.pid"
 
   sleep 5
 
-  if ! process_running hl_client; then
+  if ! track_started_process hl_client "$state_root/hl_client.pid"; then
     echo "atomcam2-vendor-camera: hl_client exited during startup" >&2
     return 1
   fi
 
-  if ! process_running iCamera_app; then
+  if ! track_started_process iCamera_app "$state_root/iCamera_app.pid"; then
     echo "atomcam2-vendor-camera: iCamera_app exited during startup" >&2
     return 1
   fi
 
-  if process_running assis; then
-    echo "atomcam2-vendor-camera: forbidden assis process was started" >&2
+  if ! track_started_process assis "$state_root/assis.pid"; then
+    echo "atomcam2-vendor-camera: assis exited during camera startup" >&2
+    return 1
+  fi
+
+  assis_pid="$(cat "$state_root/assis.pid")"
+
+  if ! grep -q '/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so' \
+      "/proc/$assis_pid/maps"; then
+    echo "atomcam2-vendor-camera: assis watchdog shim is not active" >&2
+    return 1
+  fi
+
+  icamera_pid="$(cat "$state_root/iCamera_app.pid")"
+
+  if ! grep -q '/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so' \
+      "/proc/$icamera_pid/maps"; then
+    echo "atomcam2-vendor-camera: iCamera storage shim is not active" >&2
     return 1
   fi
 
@@ -936,7 +1063,7 @@ start_vendor_processes() {
       ;;
   esac
 
-  pass "manual vendor camera processes are running without assis"
+  pass "manual vendor camera processes are running with isolated assis"
 }
 
 start_runtime() {
@@ -1023,6 +1150,42 @@ tracked_process_pid() {
   [ "$tracked_name" = "$expected_process_name" ]
 }
 
+find_process_pid() {
+  expected_process_name="$1"
+
+  for process_status in /proc/[0-9]*/status; do
+    candidate_process_name="$(
+      awk '$1 == "Name:" { print $2; exit }' "$process_status" 2>/dev/null
+    )"
+
+    if [ "$candidate_process_name" = "$expected_process_name" ]; then
+      candidate_pid="${process_status#/proc/}"
+      echo "${candidate_pid%%/*}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+track_started_process() {
+  expected_process_name="$1"
+  process_pid_file="$2"
+
+  if tracked_process_pid "$process_pid_file" "$expected_process_name"; then
+    return 0
+  fi
+
+  discovered_pid="$(find_process_pid "$expected_process_name" || true)"
+
+  if [ -z "$discovered_pid" ]; then
+    return 1
+  fi
+
+  printf '%s\n' "$discovered_pid" >"$process_pid_file"
+  tracked_process_pid "$process_pid_file" "$expected_process_name"
+}
+
 signal_tracked_process() {
   process_pid_file="$1"
   expected_process_name="$2"
@@ -1031,6 +1194,33 @@ signal_tracked_process() {
   if tracked_process_pid "$process_pid_file" "$expected_process_name"; then
     /bin/kill "-$signal_name" "$tracked_pid" 2>/dev/null || true
   fi
+}
+
+private_runtime_pids() {
+  for process_root in /proc/[0-9]*/root; do
+    private_root="$(readlink "$process_root" 2>/dev/null || true)"
+
+    case "$private_root" in
+      "$vendor_root"|"$vendor_root"/*)
+        private_pid="${process_root#/proc/}"
+        echo "${private_pid%%/*}"
+        ;;
+    esac
+  done
+}
+
+private_runtime_processes_running() {
+  [ -n "$(private_runtime_pids)" ]
+}
+
+signal_private_runtime_processes() {
+  signal_name="$1"
+
+  private_runtime_pids |
+    while IFS= read -r private_pid; do
+      [ -n "$private_pid" ] || continue
+      /bin/kill "-$signal_name" "$private_pid" 2>/dev/null || true
+    done
 }
 
 cleanup_new_ipc() {
@@ -1076,9 +1266,9 @@ cleanup_mounts() {
 
 clear_process_state() {
   rm -f \
+    "$state_root/assis.pid" \
     "$state_root/hl_client.pid" \
     "$state_root/iCamera_app.pid" \
-    "$mounts_file" \
     "$ipc_before_prefix.msg" \
     "$ipc_before_prefix.shm" \
     "$ipc_before_prefix.sem"
@@ -1086,7 +1276,7 @@ clear_process_state() {
 
 clear_transient_state() {
   clear_process_state
-  rm -f "$modules_file" "$boot_id_file"
+  rm -f "$mounts_file" "$modules_file" "$boot_id_file"
 }
 
 stop_runtime() {
@@ -1103,13 +1293,17 @@ stop_runtime() {
     return 0
   fi
 
+  signal_tracked_process "$state_root/assis.pid" assis TERM
   signal_tracked_process "$state_root/iCamera_app.pid" iCamera_app TERM
   signal_tracked_process "$state_root/hl_client.pid" hl_client TERM
+  signal_private_runtime_processes TERM
 
   wait_count=0
   while [ "$wait_count" -lt 5 ]; do
-    if ! tracked_process_pid "$state_root/iCamera_app.pid" iCamera_app &&
-        ! tracked_process_pid "$state_root/hl_client.pid" hl_client; then
+    if ! tracked_process_pid "$state_root/assis.pid" assis &&
+        ! tracked_process_pid "$state_root/iCamera_app.pid" iCamera_app &&
+        ! tracked_process_pid "$state_root/hl_client.pid" hl_client &&
+        ! private_runtime_processes_running; then
       break
     fi
 
@@ -1117,8 +1311,10 @@ stop_runtime() {
     wait_count=$((wait_count + 1))
   done
 
+  signal_tracked_process "$state_root/assis.pid" assis KILL
   signal_tracked_process "$state_root/iCamera_app.pid" iCamera_app KILL
   signal_tracked_process "$state_root/hl_client.pid" hl_client KILL
+  signal_private_runtime_processes KILL
   sleep 1
 
   cleanup_new_ipc msg -q
@@ -1131,6 +1327,8 @@ stop_runtime() {
     write_runtime_state "cleanup-failed"
     return 1
   fi
+
+  rm -f "$mounts_file"
 
   if [ -s "$modules_file" ]; then
     write_runtime_state "stopped-reboot-required"
@@ -1180,9 +1378,17 @@ status_runtime() {
   echo "state=$recorded_state"
 
   if process_status_line iCamera_app "$state_root/iCamera_app.pid"; then
-    :
+    if grep -q '/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so' \
+        "/proc/$tracked_pid/maps"; then
+      echo "storage_isolation=shim_active"
+    else
+      echo "storage_isolation=shim_missing"
+      status_failures=$((status_failures + 1))
+    fi
   elif [ "$recorded_state" = "running" ]; then
     status_failures=$((status_failures + 1))
+  else
+    echo "storage_isolation=inactive"
   fi
 
   if process_status_line hl_client "$state_root/hl_client.pid"; then
@@ -1191,11 +1397,18 @@ status_runtime() {
     status_failures=$((status_failures + 1))
   fi
 
-  if process_running assis; then
-    echo "watchdog_isolation=failed_assis_running"
+  if process_status_line assis "$state_root/assis.pid"; then
+    if grep -q '/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so' \
+        "/proc/$tracked_pid/maps"; then
+      echo "watchdog_isolation=shim_active"
+    else
+      echo "watchdog_isolation=shim_missing"
+      status_failures=$((status_failures + 1))
+    fi
+  elif [ "$recorded_state" = "running" ]; then
     status_failures=$((status_failures + 1))
   else
-    echo "watchdog_isolation=assis_omitted"
+    echo "watchdog_isolation=inactive"
   fi
 
   watchdog_owner="$(find_watchdog_owner)"

@@ -1,5 +1,10 @@
 # 20260726 ADR 0008 vendor camera manual runtime
 
+> Historical note: the later mobile test disproved the assumption that
+> `assis` could be omitted. The corrected process and storage behavior is
+> recorded in
+> [`20260726-adr-0008-mobile-and-storage-compatibility.md`](20260726-adr-0008-mobile-and-storage-compatibility.md).
+
 ## Result
 
 The console-visible portion of the ADR 0008 Phase 2 manual runtime is complete

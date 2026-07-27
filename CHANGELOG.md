@@ -11,12 +11,19 @@
 - Add explicit `prepare`, `start`, `status`, and `stop` commands for a manual,
   disabled-by-default vendor camera compatibility runtime.
 - Keep protected vendor filesystems read-only, place private configuration and
-  spool state under `/data`, omit the watchdog-owning `assis`, expose only
-  selected devices, and drop vendor process capabilities for networking,
-  mounting, module loading, reboot, and device-node creation.
-- Verify manual camera process startup, bounded memory use, clean
-  process/mount/IPC shutdown, permanent-module reboot recovery, stable Nerves
-  Wi-Fi and watchdog ownership, and firmware validation on physical hardware.
+  spool state under `/data`, expose only selected devices, and drop vendor
+  process capabilities for networking, mounting, module loading, reboot, and
+  device-node creation.
+- Add a narrow freestanding compatibility shim so required vendor assistant,
+  network-status, and SD-card checks succeed without exposing the real
+  watchdog, Wi-Fi control, or MicroSD block device.
+- Verify vendor network, cloud, SD health, and SD mount initialization, bounded
+  memory use, descendant/process/mount/IPC shutdown, permanent-module reboot
+  recovery, stable Nerves Wi-Fi and watchdog ownership, and firmware validation
+  on physical hardware.
+- Verify the standard Atom mobile application, HD live view, recorded playback,
+  healthy storage reporting, and finalized one-minute continuous recordings
+  under the `/data` spool.
 
 ## 0.2.0 - 2026-07-26
 

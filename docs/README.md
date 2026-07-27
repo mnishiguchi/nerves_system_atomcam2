@@ -44,7 +44,9 @@ trial are recorded in:
 
 - [`worklog/20260726-adr-0008-vendor-camera-feasibility.md`](worklog/20260726-adr-0008-vendor-camera-feasibility.md)
 - [`worklog/20260726-adr-0008-vendor-camera-manual-runtime.md`](worklog/20260726-adr-0008-vendor-camera-manual-runtime.md)
+- [`worklog/20260726-adr-0008-mobile-and-storage-compatibility.md`](worklog/20260726-adr-0008-mobile-and-storage-compatibility.md)
 
-The manual runtime keeps Nerves ownership boundaries intact and passes the
-console-visible physical checks. Standard mobile-application live viewing
-remains an operator acceptance check before moving to recording integration.
+The corrected manual runtime keeps Nerves ownership boundaries intact and
+passes vendor network, cloud, SD health, mobile live-view, recorded-playback,
+storage-screen, and one-minute local-recording checks. Phase 2 and Phase 3 are
+complete; NAS export and retention remain Phase 4.
