@@ -17,7 +17,7 @@ defmodule Atomcam2NervesApp.NasExporter do
   @default_spool_path "/data/atomcam2-vendor-camera/spool/record"
   @default_marker_path "/data/atomcam2-vendor-camera/nas-exported"
   @default_poll_interval_ms 60_000
-  @max_files_per_run 10
+  @max_files_per_run 2
   @status_timeout_ms 45_000
 
   defstruct config_path: @default_config_path,

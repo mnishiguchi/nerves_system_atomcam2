@@ -158,6 +158,51 @@ defmodule Atomcam2NervesApp.NasExporterTest do
     assert File.exists?(recording_path)
   end
 
+  test "limits each run to two recordings", %{root: root} do
+    spool_path = Path.join(root, "spool")
+    marker_path = Path.join(root, "exported")
+    config_path = Path.join(root, "nas-export.conf")
+    process_name = :"nas-exporter-#{System.unique_integer([:positive])}"
+
+    for minute <- ["24", "25", "26"] do
+      recording_path = Path.join(spool_path, "20260727/08/#{minute}.mp4")
+      File.mkdir_p!(Path.dirname(recording_path))
+      File.write!(recording_path, "recording")
+    end
+
+    File.write!(
+      config_path,
+      """
+      enabled=true
+      host=nas.local
+      user=atomcam2
+      user_dir=#{Path.join(root, "nas-ssh")}
+      remote_directory=recordings/atomcam2
+      """
+    )
+
+    start_supervised!(
+      {NasExporter,
+       name: process_name,
+       config_path: config_path,
+       spool_path: spool_path,
+       marker_path: marker_path,
+       transport: SuccessfulTransport}
+    )
+
+    assert_eventually(fn ->
+      match?(
+        %{last_result: {:ok, %{uploaded: 2}}},
+        NasExporter.status(process_name)
+      )
+    end)
+
+    assert Path.wildcard(Path.join(marker_path, "**/*.mp4")) == [
+             Path.join(marker_path, "20260727/08/24.mp4"),
+             Path.join(marker_path, "20260727/08/25.mp4")
+           ]
+  end
+
   defp assert_eventually(assertion, attempts \\ 50)
 
   defp assert_eventually(assertion, attempts) when attempts > 0 do

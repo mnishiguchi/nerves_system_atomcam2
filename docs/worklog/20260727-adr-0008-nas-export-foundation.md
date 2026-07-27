@@ -45,7 +45,7 @@ The first transport:
 - deletes only recognized recordings under remote date directories older than
   the configured retention period.
 
-The exporter processes at most ten new segments per run and naturally retries
+The exporter processes at most two new segments per run and naturally retries
 after connection or NAS failures on the next poll. Missing or invalid
 configuration cannot affect camera startup, Wi-Fi, SSH, firmware health, or the
 hardware watchdog.
@@ -257,17 +257,54 @@ key, the camera authenticated, listed `.`, wrote and statted a 22-byte probe,
 deleted it, and closed the SFTP connection. The exporter remained disabled.
 
 The first server profile forced `internal-sftp` into the recording directory
-but did not chroot the account. Production enablement therefore remains
-blocked until the account is confined. A small ignored workstation script
-stages a root-owned `/srv/atomcam-recordings` chroot, exposes only its writable
-`data` directory as the session start, disables forwarding and TTY access,
-checks the camera-key fingerprint, validates `sshd`, and reloads OpenSSH.
+but did not chroot the account. Production enablement was therefore blocked
+until the account was confined. A small ignored workstation script staged a
+root-owned `/srv/atomcam-recordings` chroot, exposed only its writable `data`
+directory as the session start, disabled forwarding and TTY access, checked
+the camera-key fingerprint, validated `sshd`, and reloaded OpenSSH.
 
 Firmware `09dbb2e2-edf4-5a76-d202-273f245479c2` adds support for exactly `.`
 as a configured remote directory while continuing to reject `/`, parent
 traversal, and embedded current-directory components. It validated in slot B,
 left export disabled with a 2 GiB spool target, started the vendor runtime
 once, and answered 30 of 30 pings.
+
+The operator then applied the workstation script. The resulting account is
+chrooted to the root-owned `/srv/atomcam-recordings`, starts in its writable
+`data` directory, accepts only the camera key, and has no forwarding, TTY, or
+shell access. From the camera, listing `/etc` failed outside the chroot while a
+write, stat, and delete probe in `.` succeeded.
+
+Completion markers from the disposable port-10022 endpoint were archived
+before production enablement. Markers represent publication to one specific
+endpoint and must not be reused after changing the destination. The fresh
+production marker directory started empty; no local recording was removed.
+
+Two production runs from the ten-file firmware published 20 recordings
+atomically. The first sampled destination matched its local SHA-256 and neither
+run left an `.uploading` file. The 2 GiB spool threshold remained above the
+approximately 1.75 GB backlog, so all 20 marked source recordings remained
+available locally.
+
+After the second run, and after an interactive diagnostic accidentally printed
+an entire MP4 into the Nerves console, the camera stopped responding on the
+LAN. The two events are confounded and no definitive cause is assigned.
+OpenSSH was stopped on the workstation before the operator power-cycled the
+camera. Recovery preserved 658 finalized recordings, all 20 production
+markers, and all 20 corresponding local sources. The exporter was immediately
+disabled again.
+
+As conservative hardening for the single-core camera, the per-run batch is now
+two files at the normal one-minute interval. This sustains the one-file-per-
+minute recording rate while draining one additional backlog file per minute,
+without continuous SFTP work.
+
+Firmware `174c476f-9489-50c2-548c-4b62df277f9f` (`barrel-gain`) installed and
+validated in slot A with the workstation SFTP service still stopped. The
+exporter remained disabled, the vendor camera runtime started once, `heart`
+retained `/dev/watchdog0`, 665 local recordings and all 20 production markers
+were present, both updater directories were empty, and networking passed 30 of
+30 pings.
 
 ## Remaining production acceptance
 

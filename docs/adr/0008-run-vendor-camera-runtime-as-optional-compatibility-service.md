@@ -328,19 +328,24 @@ recording passed on July 27. The runtime remains disabled by default.
 The Phase 4 application implementation adds a supervised exporter that remains
 inert unless `/data/atomcam2-vendor-camera/nas-export.conf` explicitly enables
 it. The configuration is strict, contains no password, and points OTP SSH at a
-device-private key and `known_hosts` directory. Each run handles at most ten
-new segments, then waits at least 60 seconds before retrying. The minimum
-matches the recording cadence and leaves CPU time for the camera and core
-Nerves services during backlog catch-up. Host tests cover config validation,
-completed-file filtering, symlink rejection, bounded spool eviction of
-successfully exported files, preservation of unexported files, persistent
-completion markers, and compact-date retention decisions.
+device-private key and `known_hosts` directory. Each run handles at most two
+new segments, then waits at least 60 seconds before retrying. One slot matches
+the recording cadence and one drains the backlog, while leaving CPU time for
+the camera and core Nerves services. Completion markers are specific to the
+configured endpoint and must be rotated when that endpoint changes. Host tests
+cover config validation, completed-file filtering, symlink rejection, bounded
+spool eviction of successfully exported files, preservation of unexported
+files, persistent completion markers, and compact-date retention decisions.
 Firmware `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` additionally passed a physical
 device-to-SFTP trial. A 3,556,322-byte MP4 published without a leftover
 temporary file and matched SHA-256 at both ends; a repeated attempt was
 idempotent. Retention removed only recognized old recording names, and a
 refused connection preserved the local file before successful recovery. The
-production NAS and sustained spool-pressure trial remain.
+production NAS later accepted 20 files while preserving every local source.
+After an inconclusive reachability loss, firmware
+`174c476f-9489-50c2-548c-4b62df277f9f` reduced the batch to two files per
+minute, validated normally, restarted the camera runtime, and passed 30 of 30
+pings with export disabled. Sustained production acceptance remains.
 
 The Phase 5 application implementation adds
 `Atomcam2NervesApp.VendorCamera`. Missing configuration leaves it dormant.

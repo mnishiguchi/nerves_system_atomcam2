@@ -355,7 +355,7 @@ require_grep 'recorded_boot_id.*!=' rootfs_overlay/usr/bin/atomcam2-vendor-camer
 require_grep 'Atomcam2NervesApp.NasExporter' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_grep 'silently_accept_hosts: false' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/sftp.ex
 require_grep '\.uploading' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter/sftp.ex
-require_grep '@max_files_per_run 10' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter.ex
+require_grep '@max_files_per_run 2' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/nas_exporter.ex
 require_grep 'Atomcam2NervesApp.VendorCamera' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/application.ex
 require_grep '@max_start_attempts 1' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/vendor_camera.ex
 require_grep 'Nerves.Runtime.firmware_validation_status()' examples/atomcam2_nerves_app/lib/atomcam2_nerves_app/vendor_camera.ex
