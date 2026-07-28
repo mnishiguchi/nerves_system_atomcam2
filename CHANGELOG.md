@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-07-28
+
 - Add ADR 0008 and a read-only `atomcam2-vendor-camera precheck` for the
   optional vendor camera compatibility investigation.
 - Enable the minimal BusyBox `chroot` applet required to run the vendor uClibc
@@ -38,6 +40,16 @@
 - Normalize stale vendor runtime markers after reboot and verify opt-in camera
   startup, firmware validation, watchdog ownership, Wi-Fi/SSH stability, and
   recording finalization across candidate and ordinary reboots.
+- Preserve unexported local recordings above the spool target and evict only
+  files with size-matching persistent completion markers.
+- Confine the SFTP account root, limit each normal export cycle to two files,
+  bound individual OTP SSH/SFTP operations, and reuse one supervised session
+  across polls.
+- Check an existing ext2 `/data` filesystem offline before mounting it
+  read-write so an unclean power cycle is repaired before application access.
+- Validate atomic NAS publication, idempotent retry, outage recovery,
+  selective 20-day retention, spool safety, persistent-session cleanup, and
+  sustained camera reachability against a confined LMDE 7 endpoint.
 
 ## 0.2.0 - 2026-07-26
 
