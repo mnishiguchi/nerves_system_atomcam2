@@ -376,8 +376,26 @@ and the server had no remaining per-session `sshd` process. Final firmware
 `efc08024-9abe-5a5d-6d68-be70ce82b5bc` (`uncover-skill`) removed the
 whole-transfer deadline, validated in slot A, and repeated a two-file
 production cycle. It passed 87 of 87 pings, retained all unexported recordings,
-and again left no client or server SSH session. Sustained production acceptance
-remains.
+and again left no client or server SSH session. A subsequent ten-minute
+production run completed 11 SFTP sessions with 11 matching server-side closes
+and 614 of 614 ping replies. Target diagnostics remained bounded and showed no
+persistent SSH client.
+
+That run also exposed two completion-marker entries damaged by the preceding
+forced power cycle. Remote files had been published, both local MP4s remained,
+and marker writes failed closed with `:eio`; no unmarked source became eligible
+for deletion. Offline `e2fsck` repaired the two entries and related metadata,
+and a second full check returned clean. ADR 0005 now checks ext2 offline before
+the first read-write mount because mount success alone does not detect this
+class of directory damage. Long-running backlog, retention, and mobile-app
+acceptance remain. Firmware `b9aa5131-115a-592a-3437-b4495ac8d513`
+(`pig-oil`) physically validates the clean-filesystem path: preen completed in
+approximately 132 milliseconds, `/data` remounted read-write, and the candidate
+validated with the vendor runtime, Nerves watchdog, and local recording
+healthy. A physical power interruption then exercised the unclean path: preen
+returned status 1 after repairing the filesystem, `/data` remounted without a
+kernel filesystem error, and the operator confirmed ping, SSH, and mobile live
+view on that first boot.
 
 The Phase 5 application implementation adds
 `Atomcam2NervesApp.VendorCamera`. Missing configuration leaves it dormant.

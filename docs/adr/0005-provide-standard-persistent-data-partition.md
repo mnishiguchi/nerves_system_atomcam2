@@ -82,7 +82,8 @@ destructive reformatting.
 Override `:nerves_runtime, :init_module` with an Atom Cam 2-specific one-shot
 initializer that applies the following policy:
 
-- If `/data` is already mounted read-write, leave it mounted.
+- If the early boot environment has already mounted `/data`, unmount it before
+  checking the filesystem.
 - Read the first 128 KiB of the application-data partition.
 - Treat the partition as intentionally uninitialized only when all bytes in
   that region are `0xff`.
@@ -90,9 +91,11 @@ initializer that applies the following policy:
 - Treat read errors, short reads, and all other partition contents as an
   existing or unknown filesystem state that must not be formatted
   automatically.
-- For an existing filesystem, first attempt a read-write mount.
-- If mounting fails, ensure that the filesystem is unmounted and run
-  `e2fsck -p -f`.
+- For an existing filesystem, ensure that it is unmounted and run `e2fsck -p`
+  before the first read-write mount. This returns quickly for a clean
+  filesystem and checks one left unclean by an interrupted write. Ext2 can
+  accept a mount while still containing directory-entry damage, so mount
+  success alone is not an integrity check.
 - Retry the read-write mount only when `e2fsck` returns status `0` or `1`.
 - When the `e2fsck` status includes the reboot-required value `2`, leave
   `/data` unmounted and report that a reboot is required. This includes statuses
@@ -201,13 +204,12 @@ Do not use mount failure as permission to reformat an existing filesystem.
 
 For a partition that does not contain the explicit invalidation marker:
 
-1. Attempt to mount it read-write.
-2. If mounting fails, ensure that it is unmounted.
-3. Run `e2fsck -p -f`.
-4. Retry the mount only after status `0` or `1`.
-5. Leave `/data` unmounted when the status includes the reboot-required value
+1. Ensure that it is unmounted.
+2. Run `e2fsck -p`.
+3. Mount it read-write only after status `0` or `1`.
+4. Leave `/data` unmounted when the status includes the reboot-required value
    `2`, after an unrepaired error, after an operational failure, or after
-   another mount failure.
+   a mount failure.
 
 The `e2fsck` exit status is a sum of condition values. The reboot-required value
 `2` may therefore appear as status `2` or in combination with another value,
@@ -250,8 +252,8 @@ The protected-kernel and current-userspace capability audit is recorded in
 - Confirm a stable application-partition path derived from the boot device.
 - Confirm that only an all-`0xff` first 128 KiB region authorizes formatting.
 - Confirm that read errors and non-marker content never authorize formatting.
-- Confirm that an existing filesystem mount failure invokes
-  `e2fsck -p -f` before another mount attempt.
+- Confirm that an existing filesystem invokes `e2fsck -p` while unmounted and
+  before its first read-write mount.
 - Confirm that `e2fsck` statuses `0` and `1` permit a mount retry.
 - Confirm that statuses containing the reboot-required value `2` and all
   failure statuses leave `/data` unmounted without invoking `mkfs.ext2`.

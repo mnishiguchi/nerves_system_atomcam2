@@ -95,6 +95,17 @@ ssh nerves@nerves.local
 Toolshed is imported automatically through `/etc/iex.exs`, so helpers such as
 `tree`, `top`, and `exit` are immediately available.
 
+## Persistent data recovery
+
+The protected kernel supports ext2 but not a journaled Linux filesystem. Before
+mounting an existing `/data` partition read-write, startup runs
+`e2fsck -p` while the partition is offline. Clean filesystems return quickly;
+an unclean filesystem is checked and repaired automatically. Status 0 or 1
+permits the mount; all other statuses leave `/data` unmounted without
+formatting it. Only the explicit fwup invalidation marker authorizes a format.
+An unclean 14 GiB data partition currently adds approximately 27 seconds to
+boot; a clean check completes in well under one second.
+
 ## Optional NAS recording export
 
 ADR 0008 Phase 4 adds a small supervised SFTP exporter. It is inert when

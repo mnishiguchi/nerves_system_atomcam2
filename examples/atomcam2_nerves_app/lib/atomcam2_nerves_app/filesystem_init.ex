@@ -114,8 +114,17 @@ defmodule Atomcam2NervesApp.FilesystemInit do
   defp initialize_partition(application_partition) do
     case mount_state(application_partition.target) do
       :mounted ->
-        Logger.info("Application data partition is mounted read-write")
-        :mounted
+        Logger.info(
+          "Application data partition is mounted read-write; unmounting before filesystem check"
+        )
+
+        case unmount(application_partition.target) do
+          :ok ->
+            initialize_unmounted(application_partition)
+
+          {:error, reason} ->
+            log_unmounted_failure("could not unmount read-write filesystem", reason)
+        end
 
       :mounted_read_only ->
         Logger.warning(
@@ -188,28 +197,14 @@ defmodule Atomcam2NervesApp.FilesystemInit do
   end
 
   defp mount_or_repair(application_partition) do
-    case mount(application_partition) do
-      :ok ->
-        Logger.info("Application data partition mounted read-write")
-        :mounted
-
-      {:error, mount_reason} ->
-        Logger.warning(
-          "Application data partition mount failed; attempting ext2 repair: " <>
-            format_reason(mount_reason)
-        )
-
-        repair_and_mount(application_partition)
-    end
-  end
-
-  defp repair_and_mount(application_partition) do
     case ensure_unmounted(application_partition.target) do
       :ok ->
+        Logger.info("Checking application data filesystem before read-write mount")
+
         {_output, status} =
           runtime_cmd(
             "e2fsck",
-            ["-p", "-f", application_partition.devpath]
+            ["-p", application_partition.devpath]
           )
 
         handle_repair_status(application_partition, status)

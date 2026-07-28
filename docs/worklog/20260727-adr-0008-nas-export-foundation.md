@@ -403,3 +403,106 @@ still needs a sustained trial with the per-operation deadlines to validate:
 - approximately 20-day retention on that NAS; and
 - stable mobile live view, playback, Wi-Fi, SSH, watchdog ownership, and
   firmware validation during sustained export.
+
+## Instrumented ten-minute run and ext2 recovery
+
+The final firmware was run against the confined LMDE 7 endpoint for ten
+minutes with the 4 GiB spool target, normal 60-second cadence, two-file batch,
+and no open target console. It completed 11 SFTP sessions. The workstation
+recorded 11 accepted public-key sessions and 11 matching closes. Continuous
+reachability passed:
+
+```text
+614 packets transmitted
+614 packets received
+0% packet loss
+```
+
+The persisted ten-second diagnostic covered 209 samples. Its observed ranges
+were:
+
+```text
+Erlang total bytes: 24981352..28576640
+processes:          193..202
+ports:              16..18
+run queue:          0..5
+SSH clients:        0..1
+TCP rows:           13..15
+```
+
+The one-client samples occurred during active calls and returned to zero.
+Wi-Fi remained `:internet` and `:configured`; the exporter queue stayed empty.
+This run did not reproduce the earlier unreturned transport call or network
+loss.
+
+Disabling export after the run surfaced:
+
+```text
+{:marker_write_failed, {"20260727/12/30.mp4", :eio}}
+```
+
+The kernel log identified stale ext2 directory entries for completion markers
+`20260727/12/29.mp4` and `30.mp4`, using deleted inodes 32765 and 32764.
+Those errors were already present 28 seconds into the boot, before this export
+trial, after the preceding forced power cycle. Both source MP4s remained local,
+and the remote endpoint had already published exact-size final files. Missing
+valid local markers therefore continued to preserve the sources.
+
+With export disabled, the vendor runtime and application stopped cleanly and
+`/data` unmounted. A read-only full check returned status 4 and found only the
+two stale entries, three inode block-count corrections, and matching bitmap
+differences. The established repair command:
+
+```text
+e2fsck -p -f /dev/rootdisk0p4
+```
+
+returned status 1 and corrected them. A second `e2fsck -f -n` returned status
+0. After a normal reboot, `/data` mounted read-write, the boot log contained no
+ext2 error, both source MP4s retained their original sizes, the damaged markers
+were absent, NAS export remained disabled, and the vendor runtime returned to
+`result=running`.
+
+The incident demonstrates that ext2 can mount successfully despite stale
+directory entries. The ADR 0005 initializer therefore now runs the existing
+offline `e2fsck -p` policy before the first read-write mount of an existing
+filesystem instead of waiting for a mount failure. Preen mode returns
+immediately for a clean filesystem and checks one marked unclean after a power
+interruption; `-f` remains useful for the deliberate offline diagnostic and
+repair procedure.
+
+The first boot candidate showed that erlinit mounts `/data` before the custom
+Nerves initializer runs. The initializer now unmounts that early boot mount
+before checking it. A forced full check proved the sequence but added
+approximately 27 seconds to every boot, so the normal boot policy uses standard
+preen mode without `-f`.
+
+Final firmware `b9aa5131-115a-592a-3437-b4495ac8d513` (`pig-oil`) installed,
+validated in slot B, and recorded the clean-filesystem sequence:
+
+```text
+00:00:16.842 unmounting before filesystem check
+00:00:16.974 filesystem check completed with status 0
+00:00:16.989 partition mounted after filesystem check
+```
+
+Wi-Fi returned in the normal boot window. `/data` was ext2 read-write, the
+kernel log contained no ext2 or I/O error, NAS export remained disabled,
+Nerves retained its watchdog, all three vendor processes and both isolation
+shims were healthy, and finalized local recording continued.
+
+The operator then physically interrupted power while the camera was running.
+On the first subsequent boot, preen exercised the unclean-filesystem path:
+
+```text
+00:00:16.772 unmounting before filesystem check
+00:00:43.528 filesystem check completed with status 1
+00:00:43.562 partition mounted after filesystem check
+```
+
+The approximately 27-second check corrected the filesystem before it became
+available to applications. The post-mount kernel log contained no ext2 or I/O
+error. Firmware remained valid in slot B, NAS export remained disabled,
+Nerves retained the watchdog, the vendor runtime and both isolation shims were
+healthy, and new one-minute recordings finalized. The operator confirmed ping,
+SSH, and mobile live view on this first boot without a second power cycle.
