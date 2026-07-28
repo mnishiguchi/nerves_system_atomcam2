@@ -1,6 +1,9 @@
 defmodule Atomcam2NervesApp.NasExporter.SFTP do
   @moduledoc false
 
+  use GenServer
+
+  require Logger
   require Record
 
   alias Atomcam2NervesApp.NasExporter.Config
@@ -13,7 +16,10 @@ defmodule Atomcam2NervesApp.NasExporter.SFTP do
   @chunk_size 64 * 1024
   @timeout 15_000
   @hard_call_timeout 16_000
-  @cleanup_timeout 2_000
+  @cleanup_call_timeout @timeout
+  @cleanup_exit_timeout 2_000
+  @channel_close_timeout 5_000
+  @channel_close_poll_interval 50
 
   @type completed_file :: %{
           path: Path.t(),
@@ -21,34 +27,122 @@ defmodule Atomcam2NervesApp.NasExporter.SFTP do
           size: non_neg_integer()
         }
 
+  defstruct connection: nil, channel: nil, session_key: nil
+
+  @spec start_link(keyword()) :: GenServer.on_start()
+  def start_link(options \\ []) do
+    name = Keyword.get(options, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, :ok, name: name)
+  end
+
   @spec export(Config.t(), [completed_file()]) ::
           {:ok, map()} | {:error, term(), map()}
   def export(%Config{} = config, files) do
-    case connect(config) do
-      {:ok, connection} ->
-        try do
-          export_connection(connection, config, files)
-        after
-          close_connection(connection)
-        end
+    GenServer.call(__MODULE__, {:export, config, files}, :infinity)
+  end
 
-      {:error, reason} ->
-        {:error, {:connect_failed, reason}, empty_summary()}
+  @spec disconnect() :: :ok
+  def disconnect do
+    case Process.whereis(__MODULE__) do
+      nil -> :ok
+      _pid -> GenServer.call(__MODULE__, :disconnect, :infinity)
     end
   end
 
-  defp export_connection(connection, config, files) do
-    case start_channel(connection) do
-      {:ok, channel} ->
-        try do
-          export_channel(channel, config, files)
-        after
-          stop_channel(channel)
+  @spec status() :: map()
+  def status do
+    GenServer.call(__MODULE__, :status)
+  end
+
+  @impl GenServer
+  def init(:ok) do
+    {:ok, %__MODULE__{}}
+  end
+
+  @impl GenServer
+  def handle_call({:export, config, files}, _from, state) do
+    case ensure_session(state, config) do
+      {:ok, state} ->
+        result = export_channel(state.channel, config, files)
+        state = if match?({:ok, _summary}, result), do: state, else: close_session(state)
+        {:reply, result, state}
+
+      {:error, reason, state} ->
+        {:reply, {:error, reason, empty_summary()}, state}
+    end
+  end
+
+  def handle_call(:disconnect, _from, state) do
+    {:reply, :ok, close_session(state)}
+  end
+
+  def handle_call(:status, _from, state) do
+    status = %{
+      connected: resource_alive?(state.connection),
+      channel_ready: resource_alive?(state.channel)
+    }
+
+    {:reply, status, state}
+  end
+
+  @impl GenServer
+  def terminate(_reason, state) do
+    close_session(state)
+    :ok
+  end
+
+  defp ensure_session(state, config) do
+    key = session_key(config)
+
+    if state.session_key == key and resource_alive?(state.connection) and
+         resource_alive?(state.channel) do
+      {:ok, state}
+    else
+      state = close_session(state)
+      open_session(state, config, key)
+    end
+  end
+
+  defp open_session(state, config, key) do
+    case connect(config) do
+      {:ok, connection} ->
+        case start_channel(connection) do
+          {:ok, channel} ->
+            {:ok, %{state | connection: connection, channel: channel, session_key: key}}
+
+          {:error, reason} ->
+            close_connection(connection)
+            {:error, {:channel_failed, reason}, state}
         end
 
       {:error, reason} ->
-        {:error, {:channel_failed, reason}, empty_summary()}
+        {:error, {:connect_failed, reason}, state}
     end
+  end
+
+  defp close_session(%__MODULE__{} = state) do
+    if resource_alive?(state.channel) do
+      stop_channel(state.channel, state.connection)
+    end
+
+    if resource_alive?(state.connection) do
+      close_connection(state.connection)
+    end
+
+    %{state | connection: nil, channel: nil, session_key: nil}
+  end
+
+  defp resource_alive?(pid) when is_pid(pid), do: Process.alive?(pid)
+  defp resource_alive?(_resource), do: false
+
+  defp session_key(config) do
+    {
+      config.host,
+      config.port,
+      config.user,
+      config.user_dir,
+      config.remote_directory
+    }
   end
 
   defp export_channel(channel, config, files) do
@@ -111,31 +205,94 @@ defmodule Atomcam2NervesApp.NasExporter.SFTP do
     end)
   end
 
-  defp stop_channel(channel) do
-    case hard_call(
-           :stop_channel,
-           fn -> apply(:ssh_sftp, :stop_channel, [channel]) end,
-           @cleanup_timeout
-         ) do
-      :ok -> :ok
-      _other -> kill_process(channel)
-    end
+  defp stop_channel(channel, connection) do
+    stop_resource(
+      channel,
+      :stop_channel,
+      fn -> apply(:ssh_sftp, :stop_channel, [channel]) end
+    )
+
+    await_channel_close(connection)
   end
 
   defp close_connection(connection) do
-    case hard_call(
-           :close_connection,
-           fn -> apply(:ssh, :close, [connection]) end,
-           @cleanup_timeout
-         ) do
-      :ok -> :ok
-      _other -> kill_process(connection)
+    stop_resource(
+      connection,
+      :close_connection,
+      fn -> apply(:ssh, :close, [connection]) end
+    )
+  end
+
+  defp stop_resource(pid, operation, stop) when is_pid(pid) do
+    monitor_ref = Process.monitor(pid)
+    result = hard_call(operation, stop, @cleanup_call_timeout)
+
+    case await_resource_exit(pid, monitor_ref, @cleanup_exit_timeout) do
+      :ok ->
+        log_cleanup_error(operation, result)
+
+      :timeout ->
+        Logger.warning("NAS SFTP #{operation} did not terminate its resource; forcing shutdown")
+
+        Process.exit(pid, :kill)
+        await_forced_resource_exit(pid, monitor_ref, operation)
+    end
+
+    Process.demonitor(monitor_ref, [:flush])
+    :ok
+  end
+
+  defp await_resource_exit(pid, monitor_ref, timeout) do
+    receive do
+      {:DOWN, ^monitor_ref, :process, ^pid, _reason} -> :ok
+    after
+      timeout -> :timeout
     end
   end
 
-  defp kill_process(pid) when is_pid(pid) do
-    if Process.alive?(pid), do: Process.exit(pid, :kill)
-    :ok
+  defp await_forced_resource_exit(pid, monitor_ref, operation) do
+    case await_resource_exit(pid, monitor_ref, @cleanup_exit_timeout) do
+      :ok ->
+        :ok
+
+      :timeout ->
+        Logger.error("NAS SFTP #{operation} resource remained alive after forced shutdown")
+    end
+  end
+
+  defp log_cleanup_error(_operation, :ok), do: :ok
+
+  defp log_cleanup_error(operation, result) do
+    Logger.warning("NAS SFTP #{operation} returned #{inspect(result)}")
+  end
+
+  defp await_channel_close(connection) do
+    deadline = System.monotonic_time(:millisecond) + @channel_close_timeout
+    await_channel_close(connection, deadline)
+  end
+
+  defp await_channel_close(connection, deadline) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 1)
+
+    case hard_call(
+           :channel_close,
+           fn -> apply(:ssh, :connection_info, [connection, :channels]) end,
+           remaining
+         ) do
+      {:channels, []} ->
+        :ok
+
+      {:channels, _channels} ->
+        if System.monotonic_time(:millisecond) < deadline do
+          Process.sleep(@channel_close_poll_interval)
+          await_channel_close(connection, deadline)
+        else
+          Logger.warning("NAS SFTP channel close was not acknowledged before disconnect")
+        end
+
+      {:error, reason} ->
+        Logger.warning("NAS SFTP channel close check returned #{inspect(reason)}")
+    end
   end
 
   defp export_files(channel, config, files) do

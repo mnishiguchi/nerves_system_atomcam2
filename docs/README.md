@@ -51,16 +51,15 @@ trial are recorded in:
 The corrected manual runtime keeps Nerves ownership boundaries intact and
 passes vendor network, cloud, SD health, mobile live-view, recorded-playback,
 storage-screen, and one-minute local-recording checks. Phase 2 and Phase 3 are
-complete; NAS export and retention remain Phase 4.
+complete.
 
-The Phase 4 implementation keeps the protected kernel unchanged and uses
-OTP's existing SFTP client. Host coverage and a physical device-to-disposable
-SFTP trial pass upload, checksum, atomic publication, idempotency, selective
-retention, and failure recovery. Production testing exposed an unreturned OTP
-SSH/SFTP call, so each operation now has both the OTP timeout and a hard
-per-call deadline. Explicit channel and connection cleanup avoids abandoning
-transport resources. The intended NAS account is configured and confined; a
-sustained spool-pressure/retention trial remains before Phase 4 is complete.
+Phase 4 is complete. It keeps the protected kernel unchanged and uses OTP's
+existing SFTP client through one supervised, reusable session. Host coverage
+and physical trials pass upload, checksum, atomic publication, idempotency,
+selective retention, outage recovery, spool safety, and bounded transport
+calls. The production endpoint is confined, and a 15-minute run completed 14
+export cycles through one login with 900 of 900 ping replies. Disabling export
+closed the channel and both client and server sessions.
 
 Phase 5 boot integration is opt-in through one strict `/data` setting. It waits
 for firmware, network, and time readiness, makes one camera start attempt per

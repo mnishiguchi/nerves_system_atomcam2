@@ -125,6 +125,8 @@ defmodule Atomcam2NervesApp.NasExporter do
 
     case Config.load(state.config_path) do
       {:ok, %Config{enabled: false} = config} ->
+        disconnect_transport(state.transport)
+
         state =
           state
           |> Map.put(:enabled, false)
@@ -137,6 +139,8 @@ defmodule Atomcam2NervesApp.NasExporter do
         run_enabled(state, config)
 
       {:error, :enoent} ->
+        disconnect_transport(state.transport)
+
         state =
           state
           |> Map.put(:enabled, false)
@@ -146,6 +150,8 @@ defmodule Atomcam2NervesApp.NasExporter do
         {state, @default_poll_interval_ms}
 
       {:error, reason} ->
+        disconnect_transport(state.transport)
+
         state =
           state
           |> Map.put(:enabled, false)
@@ -160,6 +166,7 @@ defmodule Atomcam2NervesApp.NasExporter do
     end
   rescue
     exception ->
+      disconnect_transport(state.transport)
       reason = {exception.__struct__, Exception.message(exception)}
 
       state =
@@ -224,6 +231,26 @@ defmodule Atomcam2NervesApp.NasExporter do
   catch
     kind, reason ->
       {:error, {:transport_failure, kind, reason}, empty_summary()}
+  end
+
+  defp disconnect_transport(transport) do
+    if function_exported?(transport, :disconnect, 0) do
+      transport.disconnect()
+    end
+
+    :ok
+  rescue
+    exception ->
+      Logger.warning(
+        "NAS transport disconnect failed: " <>
+          Exception.format(:error, exception, __STACKTRACE__)
+      )
+
+      :ok
+  catch
+    kind, reason ->
+      Logger.warning("NAS transport disconnect failed: #{inspect({kind, reason})}")
+      :ok
   end
 
   defp empty_summary do

@@ -394,10 +394,10 @@ healthy, and cleanup again left `:sshc_sup` empty and only the NAS listener
 process. Persistent export configuration was returned to `enabled=false`.
 All 42 host tests pass.
 
-## Remaining production acceptance
+## Production acceptance gate
 
-The transport and intended confined account are physically proven. Phase 4
-still needs a sustained trial with the per-operation deadlines to validate:
+The transport and intended confined account were physically proven before the
+final acceptance run. Completion required:
 
 - production backlog catch-up and oldest-first eviction of exported files;
 - approximately 20-day retention on that NAS; and
@@ -506,3 +506,54 @@ error. Firmware remained valid in slot B, NAS export remained disabled,
 Nerves retained the watchdog, the vendor runtime and both isolation shims were
 healthy, and new one-minute recordings finalized. The operator confirmed ping,
 SSH, and mobile live view on this first boot without a second power cycle.
+
+## Persistent-session production acceptance
+
+Further clean trials reproduced a management-SSH stall after several otherwise
+successful export cycles. Completed server sessions were not leaked, Erlang
+memory remained bounded, a complete spool scan took about seven seconds, and
+the pending recordings read normally. The remaining repeated cost was the full
+OTP SSH and SFTP setup and teardown for every two-file batch.
+
+The transport was therefore reduced to one supervised SFTP session. It reuses
+that session while the destination remains enabled and unchanged, closes it
+after an operation failure, and reconnects on the next poll. Disabling export
+or loading missing or invalid configuration also closes the session. The
+existing hard deadline remains around each OTP operation.
+
+Firmware `85383715-9eba-5d8d-a716-9f81a504d7cb` (`laptop-east`) installed and
+validated in slot A. After a power cycle, the vendor runtime started
+automatically and the operator confirmed device reachability. The final
+production trial used the confined LMDE 7 account, the normal 60-second poll,
+two files per batch, and a 4 GiB spool target above the existing backlog.
+
+Across 15 minutes:
+
+```text
+ping_transmitted=900
+ping_received=900
+ping_loss=0%
+export_cycles=14
+published_files=28
+completion_markers_before=44
+completion_markers_after=72
+server_authentications=1
+local_spool_deleted=0
+local_spool_bytes_after=3336990771
+```
+
+The same SFTP channel remained ready throughout the run. OpenSSH retained one
+camera login rather than creating a session per poll, and management SSH
+worked both beyond the earlier failure threshold and at the end. The final
+target snapshot showed validated firmware, active Nerves heart, approximately
+29 MiB of Erlang memory, 208 processes, 18 ports, and one expected SSH client.
+All three vendor processes, storage and watchdog isolation shims, and local
+recording remained healthy.
+
+Export was then changed atomically back to `enabled=false`. The exporter
+reported `:disabled`, the SFTP state returned to disconnected,
+`:sshc_sup` became empty, and the server login disappeared. No unexported local
+recording was eligible for deletion. Together with the earlier checksum,
+atomic-publication, idempotency, refused-connection recovery, selective
+retention, spool-pressure, reboot, and mobile-application trials, this
+completes the Phase 4 production acceptance gate.

@@ -254,19 +254,19 @@ view, recorded playback, SD health, one-minute continuous recording,
 start/status/stop/reboot, SSH, Wi-Fi, watchdog ownership, and firmware
 validation checks.
 
-Phase 4 now has an opt-in NAS exporter in the example application. The fixed
-protected kernel does not provide NFS or CIFS, so the exporter uses the OTP
-SFTP client already shipped for Nerves SSH support. It requires a dedicated
-key-based NAS account and a pre-provisioned host key, publishes completed
-segments through a temporary name and atomic rename, retries without
+Phase 4 is complete and adds an opt-in NAS exporter in the example application.
+The fixed protected kernel does not provide NFS or CIFS, so the exporter uses
+the OTP SFTP client already shipped for Nerves SSH support. It requires a
+dedicated key-based NAS account and a pre-provisioned host key, publishes
+completed segments through a temporary name and atomic rename, retries without
 duplicating equal-size remote files, bounds the local playback spool, and
-removes dated NAS recordings after the configured retention period. Every OTP
-SSH/SFTP operation has a hard per-call deadline and unwinds through explicit
-channel and connection cleanup. It remains disabled without persistent
-`/data` configuration and still requires a sustained production-NAS
-spool-pressure acceptance run. Physical trials already pass upload, checksum,
-atomic publication, idempotent retry, selective retention, connection
-recovery, bounded blocked calls, and verified client/server session cleanup.
+removes dated NAS recordings after the configured retention period. One
+supervised SFTP session is reused across polls; every OTP operation has a hard
+per-call deadline, and failures unwind through explicit channel and connection
+cleanup. It remains disabled without persistent `/data` configuration.
+Physical trials pass upload, checksum, atomic publication, idempotent retry,
+selective retention, connection recovery, spool safety, bounded blocked calls,
+and sustained export through the confined production endpoint.
 
 Phase 5 adds a deliberately small boot integration in the example application.
 The camera remains disabled unless
@@ -285,6 +285,8 @@ and the
 [`manual-runtime worklog`](docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md).
 The corrected mobile/storage investigation is in the
 [`mobile/storage worklog`](docs/worklog/20260726-adr-0008-mobile-and-storage-compatibility.md).
+The NAS acceptance is in the
+[`NAS-export worklog`](docs/worklog/20260727-adr-0008-nas-export-foundation.md).
 The opt-in boot acceptance is in the
 [`boot-integration worklog`](docs/worklog/20260727-adr-0008-opt-in-boot-integration.md).
 

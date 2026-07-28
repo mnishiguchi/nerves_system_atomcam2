@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on July 26, 2026
+Accepted on July 26, 2026; implementation completed on July 28, 2026
 
 The read-only feasibility gate and Phase 2 are complete. On July 27, 2026, the
 operator confirmed the standard mobile application, HD live view, recorded
@@ -14,21 +14,17 @@ Phase 3 local continuous recording is also complete: finalized one-minute MP4
 segments appear under the `/data` spool, while the active segment remains in
 private tmpfs.
 
-Phase 4 implementation is in progress. The protected kernel cannot mount NFS
-or CIFS, so the first exporter uses the OTP SFTP client already present in the
-firmware and leaves the kernel contract unchanged. Configuration parsing,
-completed-file selection, idempotent publication, local spool bounds, and
-date-based retention have host coverage. A physical Atom Cam 2 also passed
-SFTP upload, checksum, atomic-publication, idempotency, selective-retention,
-and connection-failure recovery trials against a disposable endpoint. The
-intended confined SFTP account also passes authentication, confinement, and
-atomic publication. A clean production trial exposed an OTP SSH/SFTP call that
-did not return after its internal timeout. Each operation now has an additional
-hard per-call deadline and explicit channel and connection cleanup. Two
-production cycles subsequently published four files, preserved stable camera
-reachability, and left no client or server SSH sessions. The final
-whole-transfer-deadline removal repeated the result with two more files. A
-sustained spool-pressure/retention run remains before Phase 4 is complete.
+Phase 4 is complete. The protected kernel cannot mount NFS or CIFS, so the
+exporter uses the OTP SFTP client already present in the firmware and leaves
+the kernel contract unchanged. It passed physical upload, checksum,
+atomic-publication, idempotency, outage recovery, selective retention, and
+spool-safety trials against both disposable and confined production endpoints.
+The exporter reuses one supervised SFTP session across polls, applies a hard
+deadline to each OTP operation, and reconnects only after failure or
+configuration change. A final 15-minute production run completed 14 export
+cycles through one authenticated session with 900 of 900 ping replies, stable
+management SSH, validated firmware, and healthy vendor and watchdog state.
+Disabling export closed the target channel, SSH client, and server session.
 
 Phase 5 is complete. The application has an opt-in boot worker that waits for
 validated firmware, Internet connectivity, synchronized time, and a successful
@@ -249,6 +245,11 @@ failures outside the camera runtime. Require key authentication and a
 pre-provisioned `known_hosts` entry; do not accept unknown host keys or store a
 NAS password in the configuration.
 
+Reuse one supervised SFTP session while export remains enabled and its
+destination is unchanged. Close it when export is disabled, configuration
+becomes invalid, the destination changes, or an operation fails. Reconnect on
+the next poll instead of creating a new SSH session for every two-file batch.
+
 Mirror the vendor's `YYYYMMDD/HH/MM.mp4` path below one configured remote
 directory. Upload to `MM.mp4.uploading`, verify its size, and rename it to the
 final path. Treat an existing final path as the same upload only when its size
@@ -387,15 +388,28 @@ and marker writes failed closed with `:eio`; no unmarked source became eligible
 for deletion. Offline `e2fsck` repaired the two entries and related metadata,
 and a second full check returned clean. ADR 0005 now checks ext2 offline before
 the first read-write mount because mount success alone does not detect this
-class of directory damage. Long-running backlog, retention, and mobile-app
-acceptance remain. Firmware `b9aa5131-115a-592a-3437-b4495ac8d513`
-(`pig-oil`) physically validates the clean-filesystem path: preen completed in
-approximately 132 milliseconds, `/data` remounted read-write, and the candidate
-validated with the vendor runtime, Nerves watchdog, and local recording
-healthy. A physical power interruption then exercised the unclean path: preen
-returned status 1 after repairing the filesystem, `/data` remounted without a
-kernel filesystem error, and the operator confirmed ping, SSH, and mobile live
-view on that first boot.
+class of directory damage. Firmware
+`b9aa5131-115a-592a-3437-b4495ac8d513` (`pig-oil`) physically validates the
+clean-filesystem path: preen completed in approximately 132 milliseconds,
+`/data` remounted read-write, and the candidate validated with the vendor
+runtime, Nerves watchdog, and local recording healthy. A physical power
+interruption then exercised the unclean path: preen returned status 1 after
+repairing the filesystem, `/data` remounted without a kernel filesystem error,
+and the operator confirmed ping, SSH, and mobile live view on that first boot.
+
+Repeated target trials then isolated another single-core failure to
+connect/disconnect churn rather than spool scanning, heap growth, or leaked
+server sessions. Firmware `85383715-9eba-5d8d-a716-9f81a504d7cb`
+(`laptop-east`) keeps one supervised SFTP channel open while export is enabled.
+During the final 15-minute production run, the completion-marker count rose
+from 44 to 72 across 14 two-file cycles while OpenSSH recorded exactly one
+camera authentication. All 900 pings succeeded, management SSH remained
+responsive, Erlang memory and resource counts remained bounded, firmware was
+validated, Nerves heart remained active, and all three vendor processes and
+both isolation shims remained healthy. The 4 GiB spool target stayed above the
+approximately 3.34 GB backlog, so no local recording was deleted. Disabling
+export returned the SFTP state to disconnected, left `:sshc_sup` empty, and
+removed the server login session.
 
 The Phase 5 application implementation adds
 `Atomcam2NervesApp.VendorCamera`. Missing configuration leaves it dormant.

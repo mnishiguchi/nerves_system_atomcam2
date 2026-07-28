@@ -130,11 +130,16 @@ The minimum poll interval is 60 seconds, matching the recording segment
 cadence. Faster backlog polling provides no steady-state benefit and can keep
 this single-core device unnecessarily busy.
 
+While export is enabled, one supervised SFTP session is reused across polls.
+It reconnects after a transport error or destination change and closes when
+export is disabled or its configuration becomes invalid. This avoids needless
+SSH setup and teardown on the single-core camera.
+
 Each SSH and SFTP operation has both the OTP timeout and a hard per-call
-deadline. A stalled operation therefore unwinds through the normal channel and
-connection cleanup before the exporter retries on a later poll. There is no
-whole-transfer deadline: terminating the transport owner could skip cleanup,
-and a healthy transfer should be allowed to take longer on a slow NAS.
+deadline. A stalled operation therefore closes the reusable session before the
+exporter retries on a later poll. There is no whole-transfer deadline:
+terminating the transport owner could skip cleanup, and a healthy transfer
+should be allowed to take longer on a slow NAS.
 
 Before first enablement, set `max_spool_bytes` above the existing local
 backlog so the exporter can catch up without immediately shortening mobile
@@ -161,6 +166,7 @@ Inspect or trigger the supervised exporter from target IEx:
 
 ```elixir
 Atomcam2NervesApp.NasExporter.status()
+Atomcam2NervesApp.NasExporter.SFTP.status()
 Atomcam2NervesApp.NasExporter.run_now()
 ```
 
