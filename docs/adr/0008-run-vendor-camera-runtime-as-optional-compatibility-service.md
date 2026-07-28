@@ -23,9 +23,12 @@ SFTP upload, checksum, atomic-publication, idempotency, selective-retention,
 and connection-failure recovery trials against a disposable endpoint. The
 intended confined SFTP account also passes authentication, confinement, and
 atomic publication. A clean production trial exposed an OTP SSH/SFTP call that
-did not return after its internal timeout; the exporter now enforces a
-30-second outer transport deadline. A sustained run with that deadline and a
-spool-pressure/retention run remain before Phase 4 is complete.
+did not return after its internal timeout. Each operation now has an additional
+hard per-call deadline and explicit channel and connection cleanup. Two
+production cycles subsequently published four files, preserved stable camera
+reachability, and left no client or server SSH sessions. The final
+whole-transfer-deadline removal repeated the result with two more files. A
+sustained spool-pressure/retention run remains before Phase 4 is complete.
 
 Phase 5 is complete. The application has an opt-in boot worker that waits for
 validated firmware, Internet connectivity, synchronized time, and a successful
@@ -264,13 +267,14 @@ never enforce it by deleting an unexported segment. Retention may delete only
 recognized recording names below date directories older than the configured
 period.
 
-Do not rely solely on OTP SSH/SFTP's internal operation timeouts. Bound the
-whole transport attempt independently, terminate only that attempt if the
-deadline expires, and leave the exporter supervisor responsive. A timeout must
-write no completion marker and must never make a local segment eligible for
-removal. A final file published immediately before a timeout remains safe:
-the next attempt verifies its size and treats it as already present. A partial
-temporary file is removed and retried.
+Do not rely solely on OTP SSH/SFTP's internal operation timeouts. Bound each
+blocking operation independently. The process that owns the channel and
+connection must unwind through explicit cleanup after an error or timeout; do
+not impose a whole-transfer kill that can bypass cleanup. A timeout must write
+no completion marker and must never make a local segment eligible for removal.
+A final file published immediately before a timeout remains safe: the next
+attempt verifies its size and treats it as already present. A partial temporary
+file is removed and retried.
 
 ### Boot, failure, and recovery behavior
 
@@ -361,11 +365,19 @@ the earlier console-output confounder. Persisted diagnostics showed stable
 Erlang memory but an exporter process permanently waiting in `gen:do_call`;
 the workstation accepted 12 complete SFTP sessions and saw no thirteenth
 connection. Firmware `8b3465d1-b8b8-5914-aa36-6c3e8e1c0cdd` therefore adds
-the independent 30-second transport deadline. It validated normally, restarted
-the camera runtime, passed 30 of 30 pings with production export disabled, and
-passed a target-side probe that deliberately blocked a transport beyond a
-250-millisecond test deadline while the exporter stayed responsive. Sustained
-production acceptance remains.
+an independent 30-second transport deadline. Follow-up review found that
+killing the whole transport owner could bypass its SFTP cleanup, so firmware
+`eafb221d-e366-5cd1-4f2c-42ee129d9c10` (`trigger-yard`) instead bounds each
+OTP operation and explicitly stops the channel and connection. A
+connection-refused trial returned promptly without a leaked client. Two
+enabled production cycles then published four files atomically while camera
+reachability remained stable; disabling the exporter left `:sshc_sup` empty,
+and the server had no remaining per-session `sshd` process. Final firmware
+`efc08024-9abe-5a5d-6d68-be70ce82b5bc` (`uncover-skill`) removed the
+whole-transfer deadline, validated in slot A, and repeated a two-file
+production cycle. It passed 87 of 87 pings, retained all unexported recordings,
+and again left no client or server SSH session. Sustained production acceptance
+remains.
 
 The Phase 5 application implementation adds
 `Atomcam2NervesApp.VendorCamera`. Missing configuration leaves it dormant.

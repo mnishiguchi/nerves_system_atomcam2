@@ -12,6 +12,8 @@ defmodule Atomcam2NervesApp.NasExporter.SFTP do
 
   @chunk_size 64 * 1024
   @timeout 15_000
+  @hard_call_timeout 16_000
+  @cleanup_timeout 2_000
 
   @type completed_file :: %{
           path: Path.t(),
@@ -23,38 +25,56 @@ defmodule Atomcam2NervesApp.NasExporter.SFTP do
           {:ok, map()} | {:error, term(), map()}
   def export(%Config{} = config, files) do
     case connect(config) do
-      {:ok, channel, connection} ->
+      {:ok, connection} ->
         try do
-          with :ok <-
-                 ensure_parent_directories(
-                   channel,
-                   remote_path(config.remote_directory, ".keep")
-                 ) do
-            result = export_files(channel, config, files)
-
-            case result do
-              {:ok, export_summary} ->
-                case remove_expired_recordings(channel, config) do
-                  {:ok, retained_removed} ->
-                    {:ok, Map.put(export_summary, :retained_removed, retained_removed)}
-
-                  {:error, reason} ->
-                    {:error, {:retention_failed, reason}, export_summary}
-                end
-
-              {:error, reason, export_summary} ->
-                {:error, reason, export_summary}
-            end
-          else
-            {:error, reason} ->
-              {:error, {:remote_root_failed, reason}, empty_summary()}
-          end
+          export_connection(connection, config, files)
         after
-          stop(channel, connection)
+          close_connection(connection)
         end
 
       {:error, reason} ->
         {:error, {:connect_failed, reason}, empty_summary()}
+    end
+  end
+
+  defp export_connection(connection, config, files) do
+    case start_channel(connection) do
+      {:ok, channel} ->
+        try do
+          export_channel(channel, config, files)
+        after
+          stop_channel(channel)
+        end
+
+      {:error, reason} ->
+        {:error, {:channel_failed, reason}, empty_summary()}
+    end
+  end
+
+  defp export_channel(channel, config, files) do
+    with :ok <-
+           ensure_parent_directories(
+             channel,
+             remote_path(config.remote_directory, ".keep")
+           ) do
+      result = export_files(channel, config, files)
+
+      case result do
+        {:ok, export_summary} ->
+          case remove_expired_recordings(channel, config) do
+            {:ok, retained_removed} ->
+              {:ok, Map.put(export_summary, :retained_removed, retained_removed)}
+
+            {:error, reason} ->
+              {:error, {:retention_failed, reason}, export_summary}
+          end
+
+        {:error, reason, export_summary} ->
+          {:error, reason, export_summary}
+      end
+    else
+      {:error, reason} ->
+        {:error, {:remote_root_failed, reason}, empty_summary()}
     end
   end
 
@@ -73,20 +93,48 @@ defmodule Atomcam2NervesApp.NasExporter.SFTP do
       user_dir: String.to_charlist(config.user_dir),
       user_interaction: false,
       silently_accept_hosts: false,
-      connect_timeout: @timeout,
-      timeout: @timeout
+      connect_timeout: @timeout
     ]
 
-    apply(
-      :ssh_sftp,
-      :start_channel,
-      [String.to_charlist(config.host), config.port, options]
-    )
+    hard_call(:connect, fn ->
+      apply(
+        :ssh,
+        :connect,
+        [String.to_charlist(config.host), config.port, options, @timeout]
+      )
+    end)
   end
 
-  defp stop(channel, connection) do
-    _result = apply(:ssh_sftp, :stop_channel, [channel])
-    _result = apply(:ssh, :close, [connection])
+  defp start_channel(connection) do
+    hard_call(:start_channel, fn ->
+      apply(:ssh_sftp, :start_channel, [connection, [timeout: @timeout]])
+    end)
+  end
+
+  defp stop_channel(channel) do
+    case hard_call(
+           :stop_channel,
+           fn -> apply(:ssh_sftp, :stop_channel, [channel]) end,
+           @cleanup_timeout
+         ) do
+      :ok -> :ok
+      _other -> kill_process(channel)
+    end
+  end
+
+  defp close_connection(connection) do
+    case hard_call(
+           :close_connection,
+           fn -> apply(:ssh, :close, [connection]) end,
+           @cleanup_timeout
+         ) do
+      :ok -> :ok
+      _other -> kill_process(connection)
+    end
+  end
+
+  defp kill_process(pid) when is_pid(pid) do
+    if Process.alive?(pid), do: Process.exit(pid, :kill)
     :ok
   end
 
@@ -328,7 +376,63 @@ defmodule Atomcam2NervesApp.NasExporter.SFTP do
   end
 
   defp sftp(function, arguments) do
-    apply(:ssh_sftp, function, arguments ++ [@timeout])
+    hard_call(function, fn ->
+      apply(:ssh_sftp, function, arguments ++ [@timeout])
+    end)
+  end
+
+  defp hard_call(operation, function, timeout \\ @hard_call_timeout) do
+    caller = self()
+    result_ref = make_ref()
+
+    {pid, monitor_ref} =
+      spawn_monitor(fn ->
+        result =
+          try do
+            function.()
+          rescue
+            exception ->
+              {:error,
+               {:exception, operation, exception.__struct__, Exception.message(exception)}}
+          catch
+            kind, reason -> {:error, {kind, operation, reason}}
+          end
+
+        send(caller, {result_ref, result})
+      end)
+
+    receive do
+      {^result_ref, result} ->
+        Process.demonitor(monitor_ref, [:flush])
+        result
+
+      {:DOWN, ^monitor_ref, :process, ^pid, reason} ->
+        {:error, {:process_exit, operation, reason}}
+    after
+      timeout ->
+        Process.exit(pid, :kill)
+        await_call_exit(pid, monitor_ref)
+        flush_call_result(result_ref)
+        {:error, {:timeout, operation}}
+    end
+  end
+
+  defp await_call_exit(pid, monitor_ref) do
+    receive do
+      {:DOWN, ^monitor_ref, :process, ^pid, _reason} -> :ok
+    after
+      1_000 ->
+        Process.demonitor(monitor_ref, [:flush])
+        :ok
+    end
+  end
+
+  defp flush_call_result(result_ref) do
+    receive do
+      {^result_ref, _result} -> :ok
+    after
+      0 -> :ok
+    end
   end
 
   defp empty_summary do

@@ -119,11 +119,11 @@ The minimum poll interval is 60 seconds, matching the recording segment
 cadence. Faster backlog polling provides no steady-state benefit and can keep
 this single-core device unnecessarily busy.
 
-Each transport attempt also has a 30-second outer deadline. This protects the
-exporter when an OTP SSH/SFTP synchronous call does not return after its own
-internal timeout. A timed-out attempt is terminated and retried on a later
-poll; no local completion marker is written and no local recording becomes
-eligible for removal.
+Each SSH and SFTP operation has both the OTP timeout and a hard per-call
+deadline. A stalled operation therefore unwinds through the normal channel and
+connection cleanup before the exporter retries on a later poll. There is no
+whole-transfer deadline: terminating the transport owner could skip cleanup,
+and a healthy transfer should be allowed to take longer on a slow NAS.
 
 Before first enablement, set `max_spool_bytes` above the existing local
 backlog so the exporter can catch up without immediately shortening mobile
@@ -201,6 +201,18 @@ supported:
 mix firmware
 mix upload nerves.local
 ```
+
+If the optional vendor camera runtime is running, stop it before `mix upload`:
+
+```sh
+ssh nerves@nerves.local
+atomcam2-vendor-camera stop
+```
+
+The successful update reboots the device, and persistent opt-in configuration
+starts the vendor runtime again. Keeping this as an explicit operational step
+leaves updater headroom without coupling OTA to the optional compatibility
+service.
 
 The SSH firmware subsystem forwards the uploaded bundle to the Atom Cam 2
 updater. The updater stages the bundle under `/data`, validates the target

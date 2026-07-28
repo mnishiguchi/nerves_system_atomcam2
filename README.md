@@ -84,6 +84,16 @@ Subsequent application firmware can be uploaded over SSH:
     mix firmware
     mix upload nerves.local
 
+When the optional vendor camera compatibility runtime is enabled, stop it
+before uploading:
+
+    ssh nerves@nerves.local
+    atomcam2-vendor-camera stop
+
+The pending firmware reboot starts it again from persistent opt-in
+configuration. This leaves memory and flash-I/O headroom for the updater
+without coupling the core update path to the optional vendor service.
+
 The device stages the firmware under `/data`, validates its platform and
 architecture, selects the inactive application slot, writes only that slot,
 verifies the written root filesystem, and records it as pending. The SSH
@@ -250,13 +260,13 @@ SFTP client already shipped for Nerves SSH support. It requires a dedicated
 key-based NAS account and a pre-provisioned host key, publishes completed
 segments through a temporary name and atomic rename, retries without
 duplicating equal-size remote files, bounds the local playback spool, and
-removes dated NAS recordings after the configured retention period. A
-30-second outer transport deadline protects Nerves when an OTP SSH/SFTP call
-does not return after its internal timeout. It remains disabled without
-persistent `/data` configuration and still requires a sustained
-production-NAS spool-pressure acceptance run. Physical trials already pass
-upload, checksum, atomic publication, idempotent retry, selective retention,
-connection recovery, and termination of a deliberately blocked transport.
+removes dated NAS recordings after the configured retention period. Every OTP
+SSH/SFTP operation has a hard per-call deadline and unwinds through explicit
+channel and connection cleanup. It remains disabled without persistent
+`/data` configuration and still requires a sustained production-NAS
+spool-pressure acceptance run. Physical trials already pass upload, checksum,
+atomic publication, idempotent retry, selective retention, connection
+recovery, bounded blocked calls, and verified client/server session cleanup.
 
 Phase 5 adds a deliberately small boot integration in the example application.
 The camera remains disabled unless

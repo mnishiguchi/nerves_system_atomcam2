@@ -57,10 +57,10 @@ The Phase 4 implementation keeps the protected kernel unchanged and uses
 OTP's existing SFTP client. Host coverage and a physical device-to-disposable
 SFTP trial pass upload, checksum, atomic publication, idempotency, selective
 retention, and failure recovery. Production testing exposed an unreturned OTP
-SSH/SFTP call, so each transport attempt now has an independent 30-second
-deadline. The intended NAS account is configured and confined; a sustained
-spool-pressure/retention trial with the deadline remains before Phase 4 is
-complete.
+SSH/SFTP call, so each operation now has both the OTP timeout and a hard
+per-call deadline. Explicit channel and connection cleanup avoids abandoning
+transport resources. The intended NAS account is configured and confined; a
+sustained spool-pressure/retention trial remains before Phase 4 is complete.
 
 Phase 5 boot integration is opt-in through one strict `/data` setting. It waits
 for firmware, network, and time readiness, makes one camera start attempt per

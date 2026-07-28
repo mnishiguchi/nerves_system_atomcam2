@@ -353,27 +353,51 @@ subcall was not isolated, but the failure boundary is an unreturned synchronous
 OTP transport call rather than the completed-file scan or a growing Erlang
 heap.
 
-The exporter now invokes the whole transport in an unlinked monitored process
-with a 30-second outer deadline. On expiry it kills only that attempt, reports
-a retryable `transport_timeout`, writes no completion marker, and leaves the
-local recording ineligible for spool eviction. The existing publication
-protocol keeps timeout races safe: a final remote file is recognized by size
-on retry, while a leftover `.uploading` file is removed and retransferred.
+The first mitigation invoked the whole transport in an unlinked monitored
+process with a 30-second outer deadline. A target-only probe proved that it
+terminated a blocked call, but follow-up review and server-side session history
+showed an important flaw: killing the transport owner can skip the `after`
+blocks responsible for closing the SFTP channel and SSH connection.
 
-All 43 host tests pass, including a transport that never returns. Firmware
-`8b3465d1-b8b8-5914-aa36-6c3e8e1c0cdd` (`lottery-cloud`) installed and
-validated in slot A with production export disabled. The opt-in vendor camera
-runtime started once, `heart` retained `/dev/watchdog0`, and networking passed
-30 of 30 pings. A target-only `/tmp` probe deliberately blocked a transport
-past a 250-millisecond deadline; the exporter recorded
-`{:transport_timeout, 250}`, remained responsive, and the temporary process and
-files were removed.
+Firmware `eafb221d-e366-5cd1-4f2c-42ee129d9c10` (`trigger-yard`) replaces that
+whole-transfer kill with a hard deadline around each OTP SSH/SFTP operation.
+The transport owner retains the exact channel and connection handles and
+always unwinds through cleanup. Cleanup itself is bounded; as a final fallback
+it terminates the exact resource process. A connection-refused trial returned
+promptly, left `:sshc_sup` empty, preserved all unexported recordings, and
+passed 30 of 30 pings.
+
+Two subsequent production cycles against the confined LMDE 7 endpoint
+published four finalized recordings atomically. The spool policy removed only
+local recordings whose remote publication had completed, and it removed their
+completion markers with them. The remaining approximately 2.20 GB consisted
+of unexported recordings and was preserved above the configured 2 GiB target.
+Camera reachability stayed stable throughout. After export was disabled,
+`:sshc_sup` was empty and the server retained only its listener, with no
+per-session `sshd` processes.
+
+Final firmware `efc08024-9abe-5a5d-6d68-be70ce82b5bc` (`uncover-skill`)
+removes the whole-transfer deadline entirely. Its first upload attempt with the
+vendor runtime active lost reachability before committing a candidate; the
+existing validated slot B recovered on power cycle. After the runtime was
+stopped cleanly, the same bundle installed in slot A, rebooted, validated, and
+automatically restarted the opt-in runtime. This establishes a simple
+operational rule: stop the optional compatibility runtime before OTA to leave
+the constrained device maximum memory and flash-I/O headroom.
+
+The exact final image then completed one deliberately limited production
+cycle. It atomically published two recordings and removed only those two local
+files after publication. The remaining 2,818,758,555 bytes were unexported and
+therefore remained local despite exceeding the configured 2 GiB target.
+Networking passed 87 of 87 pings, the vendor runtime and Nerves watchdog stayed
+healthy, and cleanup again left `:sshc_sup` empty and only the NAS listener
+process. Persistent export configuration was returned to `enabled=false`.
+All 42 host tests pass.
 
 ## Remaining production acceptance
 
 The transport and intended confined account are physically proven. Phase 4
-still needs a sustained trial with the independent transport deadline to
-validate:
+still needs a sustained trial with the per-operation deadlines to validate:
 
 - production backlog catch-up and oldest-first eviction of exported files;
 - approximately 20-day retention on that NAS; and
