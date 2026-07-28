@@ -272,7 +272,7 @@ if [ "$publish" = "1" ]; then
     "${release_files[@]}" \
     --repo mnishiguchi/nerves_system_atomcam2 \
     --target "$(git -C "$repo_root" rev-parse HEAD)" \
-    --title "nerves_system_atomcam2 $version" \
+    --title "$release_tag" \
     --generate-notes
 fi
 
