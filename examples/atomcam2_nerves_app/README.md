@@ -95,6 +95,120 @@ ssh nerves@nerves.local
 Toolshed is imported automatically through `/etc/iex.exs`, so helpers such as
 `tree`, `top`, and `exit` are immediately available.
 
+## Persistent data recovery
+
+The protected kernel supports ext2 but not a journaled Linux filesystem. Before
+mounting an existing `/data` partition read-write, startup runs
+`e2fsck -p` while the partition is offline. Clean filesystems return quickly;
+an unclean filesystem is checked and repaired automatically. Status 0 or 1
+permits the mount; all other statuses leave `/data` unmounted without
+formatting it. Only the explicit fwup invalidation marker authorizes a format.
+An unclean 14 GiB data partition currently adds approximately 27 seconds to
+boot; a clean check completes in well under one second.
+
+## Optional NAS recording export
+
+ADR 0008 Phase 4 adds a small supervised SFTP exporter. It is inert when
+`/data/atomcam2-vendor-camera/nas-export.conf` is absent or contains
+`enabled=false`.
+
+The enabled configuration is intentionally narrow:
+
+```text
+enabled=true
+host=nas.local
+port=22
+user=atomcam2
+user_dir=/data/atomcam2-vendor-camera/nas-ssh
+remote_directory=recordings/atomcam2
+poll_interval_seconds=60
+retention_days=20
+max_spool_bytes=536870912
+```
+
+The minimum poll interval is 60 seconds, matching the recording segment
+cadence. Faster backlog polling provides no steady-state benefit and can keep
+this single-core device unnecessarily busy.
+
+While export is enabled, one supervised SFTP session is reused across polls.
+It reconnects after a transport error or destination change and closes when
+export is disabled or its configuration becomes invalid. This avoids needless
+SSH setup and teardown on the single-core camera.
+
+Each SSH and SFTP operation has both the OTP timeout and a hard per-call
+deadline. A stalled operation therefore closes the reusable session before the
+exporter retries on a later poll. There is no whole-transfer deadline:
+terminating the transport owner could skip cleanup, and a healthy transfer
+should be allowed to take longer on a slow NAS.
+
+Before first enablement, set `max_spool_bytes` above the existing local
+backlog so the exporter can catch up without immediately shortening mobile
+playback history. The cap is a target, not permission to discard unexported
+footage.
+
+`user_dir` must contain the NAS account's private key and a pre-provisioned
+`known_hosts` file in the layout expected by OTP SSH. Password authentication
+and automatic host-key acceptance are deliberately unsupported. Keep this
+directory mode `0700` and its private files mode `0600`.
+
+The exporter uploads only finalized paths shaped like
+`YYYYMMDD/HH/MM.mp4`. It writes `MM.mp4.uploading` on the NAS and renames it
+only after the byte count matches. Completed uploads are recorded under
+`/data/atomcam2-vendor-camera/nas-exported`; the local MP4 remains available
+for mobile playback until the configured spool cap removes the oldest
+successfully exported file. Unexported files remain local even when that means
+temporarily exceeding the cap. A local file becomes eligible for removal only
+after the final remote name exists and its matching completion marker is
+persistently recorded. Retries are idempotent when the final remote path already
+has the expected size.
+
+Inspect or trigger the supervised exporter from target IEx:
+
+```elixir
+Atomcam2NervesApp.NasExporter.status()
+Atomcam2NervesApp.NasExporter.SFTP.status()
+Atomcam2NervesApp.NasExporter.run_now()
+```
+
+The NAS account should be confined to `remote_directory`, since the exporter
+also removes recording files in date directories older than
+`retention_days`.
+
+Set `remote_directory=.` only when the SFTP server starts this account inside
+its dedicated, confined recording directory. The exporter still rejects `/`,
+parent traversal, and `.` embedded in a longer path.
+
+## Optional camera startup at boot
+
+The vendor camera runtime remains disabled by default. After one successful
+manual `prepare` and start/stop validation, opt in by creating:
+
+```text
+/data/atomcam2-vendor-camera/auto-start.conf
+```
+
+with exactly:
+
+```text
+enabled=true
+```
+
+The supervised boot integration waits for validated firmware, an Internet
+connection, synchronized time, and a successful
+`atomcam2-vendor-camera precheck`. It makes at most one automatic start attempt
+per boot. A failed start or degraded runtime is reported without stopping
+Nerves, rebooting the device, or attempting an automatic recovery loop.
+
+Inspect or recheck it from target IEx:
+
+```elixir
+Atomcam2NervesApp.VendorCamera.status()
+Atomcam2NervesApp.VendorCamera.run_now()
+```
+
+Set the file to `enabled=false` or remove it to disable startup on later boots.
+Changing it does not stop a camera runtime that is already running.
+
 ## Remote updates
 
 After the initial complete installation, standard Nerves firmware uploads are
@@ -104,6 +218,18 @@ supported:
 mix firmware
 mix upload nerves.local
 ```
+
+If the optional vendor camera runtime is running, stop it before `mix upload`:
+
+```sh
+ssh nerves@nerves.local
+atomcam2-vendor-camera stop
+```
+
+The successful update reboots the device, and persistent opt-in configuration
+starts the vendor runtime again. Keeping this as an explicit operational step
+leaves updater headroom without coupling OTA to the optional compatibility
+service.
 
 The SSH firmware subsystem forwards the uploaded bundle to the Atom Cam 2
 updater. The updater stages the bundle under `/data`, validates the target

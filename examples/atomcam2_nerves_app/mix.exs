@@ -23,7 +23,7 @@ defmodule Atomcam2NervesApp.MixProject do
   def application do
     [
       mod: {Atomcam2NervesApp.Application, []},
-      extra_applications: [:logger, :runtime_tools, :inets, :ssl]
+      extra_applications: extra_applications()
     ]
   end
 
@@ -59,6 +59,16 @@ defmodule Atomcam2NervesApp.MixProject do
     [
       setup: ["deps.get"]
     ]
+  end
+
+  defp extra_applications do
+    applications = [:logger, :runtime_tools, :inets, :ssl]
+
+    if Mix.target() in @all_targets do
+      [:ssh | applications]
+    else
+      applications
+    end
   end
 
   defp atomcam2_system do

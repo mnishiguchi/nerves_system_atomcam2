@@ -1,0 +1,18 @@
+#!/bin/sh
+set -u
+
+command_name="${0##*/}"
+
+if [ "$command_name" = "insmod" ]; then
+  case "${1:-}:${2:-}" in
+    /system/driver/sensor_gc2053_t31.ko:data_interface=[012])
+      echo "atomcam2-vendor-camera: blocked redundant sensor load: ${2:-}" >&2
+      exit 126
+      ;;
+    *)
+      ;;
+  esac
+fi
+
+echo "atomcam2-vendor-camera: blocked vendor command: $command_name" >&2
+exit 126

@@ -1,5 +1,44 @@
 # Changelog
 
+## Unreleased
+
+- Add ADR 0008 and a read-only `atomcam2-vendor-camera precheck` for the
+  optional vendor camera compatibility investigation.
+- Enable the minimal BusyBox `chroot` applet required to run the vendor uClibc
+  runtime without replacing the Nerves musl userspace.
+- Record the protected-filesystem, module ABI, memory, watchdog, and NAS
+  filesystem findings from the physical v0.2.0 feasibility probe.
+- Add explicit `prepare`, `start`, `status`, and `stop` commands for a manual,
+  disabled-by-default vendor camera compatibility runtime.
+- Keep protected vendor filesystems read-only, place private configuration and
+  spool state under `/data`, expose only selected devices, and drop vendor
+  process capabilities for networking, mounting, module loading, reboot, and
+  device-node creation.
+- Add a narrow freestanding compatibility shim so required vendor assistant,
+  network-status, and SD-card checks succeed without exposing the real
+  watchdog, Wi-Fi control, or MicroSD block device.
+- Verify vendor network, cloud, SD health, and SD mount initialization, bounded
+  memory use, descendant/process/mount/IPC shutdown, permanent-module reboot
+  recovery, stable Nerves Wi-Fi and watchdog ownership, and firmware validation
+  on physical hardware.
+- Verify the standard Atom mobile application, HD live view, recorded playback,
+  healthy storage reporting, and finalized one-minute continuous recordings
+  under the `/data` spool.
+- Add an opt-in OTP SFTP exporter for finalized recordings after confirming
+  that the protected control kernel cannot mount NFS or CIFS.
+- Require key authentication and a provisioned NAS host key, publish through a
+  temporary name and atomic rename, retry idempotently, preserve a bounded
+  local playback spool, and remove dated NAS recordings after the configured
+  retention period.
+- Add explicit `/data` opt-in for camera startup after firmware validation,
+  Internet connectivity, synchronized time, and the existing compatibility
+  precheck.
+- Limit automatic camera startup to one attempt per boot and report later
+  degradation without rebooting or entering an automatic restart loop.
+- Normalize stale vendor runtime markers after reboot and verify opt-in camera
+  startup, firmware validation, watchdog ownership, Wi-Fi/SSH stability, and
+  recording finalization across candidate and ordinary reboots.
+
 ## 0.2.0 - 2026-07-26
 
 - Adopt standard fwup media creation and `mix burn` workflows while preserving

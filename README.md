@@ -31,7 +31,14 @@ The verified IEx node is:
 
 Commit `3cd22ab` is the reproducible ping and SSH baseline. It uses the explicit minimal runtime stack without `nerves_pack` or `nerves_motd`.
 
-Camera runtime, RTSP, WebUI, Samba, vendor application compatibility, and internal flash writes remain out of scope. Remote firmware updates remain experimental until the physical OTA validation matrix is complete.
+An optional manual vendor-camera compatibility runtime is available for
+supervised testing. It remains disabled by default and keeps Nerves in control
+of boot, networking, the hardware watchdog, updates, and recovery. Automatic
+camera startup, NAS export, retention, RTSP, WebUI, Samba, and internal flash
+writes are not enabled. Vendor network, cloud, mobile live view, recorded
+playback, SD health, and continuous one-minute local recording are physically
+verified. Remote firmware updates remain experimental until the physical OTA
+validation matrix is complete.
 
 ## Application workflow
 
@@ -76,6 +83,16 @@ Subsequent application firmware can be uploaded over SSH:
 
     mix firmware
     mix upload nerves.local
+
+When the optional vendor camera compatibility runtime is enabled, stop it
+before uploading:
+
+    ssh nerves@nerves.local
+    atomcam2-vendor-camera stop
+
+The pending firmware reboot starts it again from persistent opt-in
+configuration. This leaves memory and flash-I/O headroom for the updater
+without coupling the core update path to the optional vendor service.
 
 The device stages the firmware under `/data`, validates its platform and
 architecture, selects the inactive application slot, writes only that slot,
@@ -203,6 +220,75 @@ verified Atom Cam 2 control kernel
 +
 Nerves-generated root filesystem and application
 ```
+
+ADR 0008 defines a second, optional boundary for camera compatibility. It reads
+the vendor camera binaries, libraries, drivers, and protected configuration
+already exposed below `/atom`, while keeping Nerves in control of boot,
+networking, the hardware watchdog, updates, and recovery. It does not adopt the
+complete `atomcam_tools` runtime.
+
+The target command supports a read-only precheck and a deliberately manual
+runtime:
+
+```sh
+atomcam2-vendor-camera precheck
+atomcam2-vendor-camera prepare
+atomcam2-vendor-camera start
+atomcam2-vendor-camera status
+atomcam2-vendor-camera stop
+```
+
+`precheck` verifies the live vendor mounts, required files, module ABI, reserved
+memory, `/data`, IPC, Wi-Fi, watchdog ownership, and NAS filesystem
+capabilities. `prepare` makes a mode-private copy of protected vendor
+configuration below `/data` without printing its contents. `start` loads only
+the required camera modules and starts `assis`, `hl_client`, and `iCamera_app`
+in the isolated compatibility layout. A narrow preload shim keeps the hardware
+watchdog and raw MicroSD under Nerves ownership. `stop` removes the vendor
+process tree, mounts, and IPC. The protected
+kernel marks the camera modules permanent, so a reboot is required before
+another start.
+
+The corrected manual runtime has passed physical network, cloud, mobile live
+view, recorded playback, SD health, one-minute continuous recording,
+start/status/stop/reboot, SSH, Wi-Fi, watchdog ownership, and firmware
+validation checks.
+
+Phase 4 is complete and adds an opt-in NAS exporter in the example application.
+The fixed protected kernel does not provide NFS or CIFS, so the exporter uses
+the OTP SFTP client already shipped for Nerves SSH support. It requires a
+dedicated key-based NAS account and a pre-provisioned host key, publishes
+completed segments through a temporary name and atomic rename, retries without
+duplicating equal-size remote files, bounds the local playback spool, and
+removes dated NAS recordings after the configured retention period. One
+supervised SFTP session is reused across polls; every OTP operation has a hard
+per-call deadline, and failures unwind through explicit channel and connection
+cleanup. It remains disabled without persistent `/data` configuration.
+Physical trials pass upload, checksum, atomic publication, idempotent retry,
+selective retention, connection recovery, spool safety, bounded blocked calls,
+and sustained export through the confined production endpoint.
+
+Phase 5 adds a deliberately small boot integration in the example application.
+The camera remains disabled unless
+`/data/atomcam2-vendor-camera/auto-start.conf` contains exactly
+`enabled=true`. Startup waits for validated firmware, Internet connectivity,
+synchronized time, and the existing compatibility precheck. It makes one
+attempt per boot and reports failures without rebooting or automatically
+restarting the vendor runtime. Physical candidate and ordinary-reboot trials
+pass persistent opt-in, readiness gating, one-attempt startup, stale-state
+recovery, watchdog ownership, Wi-Fi/SSH stability, and new recording
+finalization.
+
+The architecture and physical evidence are recorded in
+[`ADR 0008`](docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)
+and the
+[`manual-runtime worklog`](docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md).
+The corrected mobile/storage investigation is in the
+[`mobile/storage worklog`](docs/worklog/20260726-adr-0008-mobile-and-storage-compatibility.md).
+The NAS acceptance is in the
+[`NAS-export worklog`](docs/worklog/20260727-adr-0008-nas-export-foundation.md).
+The opt-in boot acceptance is in the
+[`boot-integration worklog`](docs/worklog/20260727-adr-0008-opt-in-boot-integration.md).
 
 The application build preserves the final merged SquashFS at:
 
