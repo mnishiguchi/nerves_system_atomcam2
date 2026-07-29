@@ -2,9 +2,14 @@
 
 Experimental Nerves system for Atom Cam 2.
 
+New here? Follow the [`Getting started`](docs/getting-started.md) guide.
+
+For the system design and its boot, update, camera, and recording boundaries,
+see the [`Architecture overview`](docs/architecture.md).
+
 ## Current status
 
-The first hardware milestone is verified from a clean source build:
+The v0.3.0 MVP is verified from a clean source build and on physical hardware:
 
 ```text
 Atom Cam 2 boots from MicroSD
@@ -16,110 +21,13 @@ Atom Cam 2 boots from MicroSD
 -> NervesSSH accepts SSH
 ```
 
-The verified host commands are:
-
-```sh
-ping nerves.local
-ssh nerves@nerves.local
-```
-
-The verified IEx node is:
-
-```elixir
-:"atomcam2_nerves_app@127.0.0.1"
-```
-
-Commit `3cd22ab` is the reproducible ping and SSH baseline. It uses the explicit minimal runtime stack without `nerves_pack` or `nerves_motd`.
-
-An optional manual vendor-camera compatibility runtime is available for
-supervised testing. It remains disabled by default and keeps Nerves in control
-of boot, networking, the hardware watchdog, updates, and recovery. Automatic
-camera startup, NAS export, retention, RTSP, WebUI, Samba, and internal flash
-writes are not enabled. Vendor network, cloud, mobile live view, recorded
-playback, SD health, and continuous one-minute local recording are physically
-verified. Remote firmware updates remain experimental until the physical OTA
-validation matrix is complete.
-
-## Application workflow
-
-Application developers consume the tagged system source and its prebuilt system
-and custom toolchain artifacts from the matching GitHub release.
-
-Configure Wi-Fi credentials before building:
-
-```sh
-export NERVES_WIFI_SSID=your-ssid
-export NERVES_WIFI_PASSPHRASE=your-passphrase
-```
-
-Then run from the example application:
-
-```sh
-cd examples/atomcam2_nerves_app
-export MIX_TARGET=atomcam2
-export MIX_ENV=prod
-
-mix setup
-mix firmware.burn
-```
-
-`mix setup` only retrieves dependencies. Target compatibility is supplied by the
-system artifact; application dependency source is not modified.
-
-`mix firmware.burn` builds the firmware and writes it through the fwup
-`complete` task. After running `mix firmware`, use `mix burn` to write the
-existing firmware bundle without rebuilding it.
-
-## Remote firmware updates
-
-The ADR 0006 A/B layout supports standard `mix upload` after the device is
-running firmware that includes the safe updater.
-
-The first installation must still use removable media:
-
-    mix firmware.burn
-
-Subsequent application firmware can be uploaded over SSH:
-
-    mix firmware
-    mix upload nerves.local
-
-When the optional vendor camera compatibility runtime is enabled, stop it
-before uploading:
-
-    ssh nerves@nerves.local
-    atomcam2-vendor-camera stop
-
-The pending firmware reboot starts it again from persistent opt-in
-configuration. This leaves memory and flash-I/O headroom for the updater
-without coupling the core update path to the optional vendor service.
-
-The device stages the firmware under `/data`, validates its platform and
-architecture, selects the inactive application slot, writes only that slot,
-verifies the written root filesystem, and records it as pending. The SSH
-subsystem then reboots the device.
-
-SSH public-key authentication authorizes access to the update endpoint. Fwup
-validates archive and resource integrity; the Atom Cam 2 updater adds the
-platform, architecture, inactive-slot, and written-rootfs checks required by its
-custom media layout. Mandatory firmware signing is deliberately not part of the
-baseline workflow, matching the ordinary Nerves system model. The rationale is
-recorded in
-[`ADR 0007`](docs/adr/0007-require-signed-firmware-for-device-side-updates.md).
-
-The upload reports its receiving and installation phases, received byte count,
-fwup write progress, and final updater status. An interrupted transfer removes
-its staged file and does not reboot the device.
-
-After the pending firmware boots, the application waits for local services and
-the persistent data filesystem to become healthy before confirming the new
-slot. The previous confirmed slot remains available for rollback.
-
-Remote updates do not rewrite the FAT boot partition, protected control kernel,
-boot manager, active application slot, or persistent data partition. Physical
-happy-path OTA and `Nerves.Runtime.revert/0` testing has passed on an Atom Cam 2.
-Power-interruption, crash-loop, and the remaining physical failure matrix are
-still required before treating this path as production-ready.
+The optional vendor-camera compatibility runtime remains disabled by default
+and keeps Nerves in control of boot, networking, the hardware watchdog,
+updates, and recovery. Standard mobile live view and playback, continuous
+one-minute local recording, opt-in camera startup, and SFTP NAS export with
+retention are implemented and physically verified. RTSP, WebUI, Samba, and
+internal flash writes are not supported. Remote firmware updates remain
+experimental until the remaining physical failure matrix is complete.
 
 ## System-maintainer workflow
 

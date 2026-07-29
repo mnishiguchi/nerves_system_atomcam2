@@ -1,5 +1,16 @@
 # Project documents
 
+## Start here
+
+[`getting-started.md`](getting-started.md) provides the shortest path from a
+firmware build to a working device.
+
+## Architecture
+
+[`architecture.md`](architecture.md) explains the v0.3.0 boot, runtime
+ownership, A/B updates, optional mobile-app compatibility, recording, and NAS
+export design.
+
 ## ADR
 
 Architecture Decision Records are stored in `adr/`.
@@ -35,7 +46,9 @@ Supporting investigations are retained separately:
 - [`worklog/20260714-first-ping-ssh-wifi-and-boot-investigation.md`](worklog/20260714-first-ping-ssh-wifi-and-boot-investigation.md)
 - [`worklog/20260714-sdio-wifi-driver-bring-up.md`](worklog/20260714-sdio-wifi-driver-bring-up.md)
 
-Camera runtime, RTSP, WebUI, Samba, firmware updates, and production hardening remain outside that milestone.
+Camera runtime and firmware updates were outside that historical milestone.
+Their current architecture and status are summarized in
+[`architecture.md`](architecture.md).
 
 ## Vendor camera compatibility
 

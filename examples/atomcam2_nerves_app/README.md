@@ -2,6 +2,11 @@
 
 This app proves the supported Atom Cam 2 application workflow.
 
+For the complete system model, see the
+[`Architecture overview`](../../docs/architecture.md). The
+[`Getting started`](../../docs/getting-started.md) guide covers the first
+installation and device checks.
+
 Perform the initial installation through removable media:
 
 ```sh
@@ -211,19 +216,28 @@ Changing it does not stop a camera runtime that is already running.
 
 ## Remote updates
 
-After the initial complete installation, standard Nerves firmware uploads are
-supported:
+After the initial complete installation, build the next firmware on the host:
 
 ```sh
 mix firmware
-mix upload nerves.local
 ```
 
-If the optional vendor camera runtime is running, stop it before `mix upload`:
+If the optional vendor camera runtime is running, connect to target IEx and
+stop it before `mix upload`:
 
 ```sh
 ssh nerves@nerves.local
-atomcam2-vendor-camera stop
+```
+
+```elixir
+cmd("atomcam2-vendor-camera stop")
+exit()
+```
+
+Then upload from the host:
+
+```sh
+mix upload nerves.local
 ```
 
 The successful update reboots the device, and persistent opt-in configuration
