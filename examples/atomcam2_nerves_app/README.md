@@ -1,123 +1,137 @@
-# AtomCam2 minimal Nerves app
+# Atom Cam 2 向け最小 Nerves アプリ
 
-This app proves the supported Atom Cam 2 application workflow.
+Atom Cam 2 で Nerves アプリを動かすためのサンプルです。Wi-Fi 接続、mDNS、
+SSH、ターゲット上の IEx、永続データ領域、リモートファームウェア更新を
+利用できます。
 
-For the complete system model, see the
-[`Architecture overview`](../../docs/architecture.md). The
-[`Getting started`](../../docs/getting-started.md) guide covers the first
-installation and device checks.
+システム全体については
+[アーキテクチャ概要](../../docs/architecture.md)、初めてセットアップする場合は
+[スタートガイド](../../docs/getting-started.md)も参照してください。
 
-Perform the initial installation through removable media:
+## 必要なもの
+
+- Atom Cam 2
+- MicroSD カード
+- Elixir、Mix、Nerves、fwup を利用できる開発環境
+- 2.4 GHz 帯の Wi-Fi 接続情報
+- SSH 公開鍵（通常は `~/.ssh/*.pub`）
+
+> `mix firmware.burn` は選択した MicroSD カードの内容を消去します。
+> fwup が表示するデバイス名を必ず確認してから書き込んでください。
+
+## 初回セットアップ
+
+このディレクトリでターゲット、Wi-Fi、必要に応じて SSH 公開鍵を設定します。
+
+```sh
+export MIX_TARGET=atomcam2
+export MIX_ENV=prod
+export NERVES_WIFI_SSID="your-ssid"
+export NERVES_WIFI_PASSPHRASE="your-passphrase"
+
+# 使用する鍵を明示したい場合のみ設定
+export ATOMCAM2_AUTHORIZED_KEYS="$HOME/.ssh/id_ed25519.pub"
+```
+
+依存関係を取得し、ファームウェアをビルドして MicroSD カードへ書き込みます。
 
 ```sh
 mix setup
 mix firmware.burn
 ```
 
-After the device is running firmware with ADR 0006 update support, subsequent
-application firmware can be installed remotely:
+fwup の案内に従って書き込み先を選択します。完了後は Atom Cam 2 の電源を切り、
+MicroSD カードを挿入してから電源を入れてください。
+
+ビルド済みのファームウェアをもう一度書き込む場合は、次のコマンドを使います。
 
 ```sh
-mix firmware
-mix upload nerves.local
-```
-
-It configures Wi-Fi through VintageNet, advertises `nerves.local` through
-`mdns_lite`, starts NervesSSH, and imports Toolshed in target IEx sessions.
-
-## System dependency
-
-The default dependency uses the tagged `nerves_system_atomcam2` source and
-retrieves its prebuilt system and custom toolchain artifacts from the matching
-GitHub release:
-
-```sh
-mix setup
-```
-
-## Local development environment
-
-System maintainers can build against the current repository checkout through the
-tracked direnv example:
-
-```sh
-cp .envrc.example .envrc
-direnv allow
-```
-
-The real `.envrc` is ignored because it may contain machine-specific paths, SSH
-keys, and Wi-Fi credentials. Review the copied file before building.
-
-The important variables are:
-
-- `ATOMCAM2_SYSTEM_SOURCE=local` selects the system from the current repository.
-- `ATOMCAM2_KERNEL_IMAGE` points to the verified Atom Cam 2 control kernel.
-- `NERVES_TOOLCHAIN` selects the validated custom compiler when it is not
-  already configured.
-- `ATOMCAM2_AUTHORIZED_KEYS`, `NERVES_WIFI_SSID`, and
-  `NERVES_WIFI_PASSPHRASE` are optional local settings.
-
-The normal local workflow remains:
-
-```sh
-mix setup
-mix firmware.burn
-```
-
-Unset `ATOMCAM2_SYSTEM_SOURCE` when explicitly validating a published system
-artifact instead of the current checkout.
-
-The Linux 3.10 compatibility definition required by VintageNet is supplied by
-the Nerves system staging headers. The application no longer modifies dependency
-source code during setup.
-
-## Build and install
-
-Build and write firmware:
-
-```sh
-mix firmware.burn
-```
-
-To write an existing firmware bundle:
-
-```sh
-mix firmware
 mix burn
 ```
 
-Both workflows use the fwup `complete` task by default. Pass `--device` to
-select specific media.
+## 接続を確認する
 
-`mix atomcam2.install` remains only as a deprecated compatibility wrapper around `mix burn`.
-
-## Target IEx
+起動と Wi-Fi 接続を待ってから、ホスト側で確認します。
 
 ```sh
+ping nerves.local
 ssh nerves@nerves.local
 ```
 
-Toolshed is imported automatically through `/etc/iex.exs`, so helpers such as
-`tree`, `top`, and `exit` are immediately available.
+SSH 接続するとターゲット上の IEx が開きます。Toolshed は自動的に読み込まれる
+ため、`tree`、`top`、`exit` などをすぐに利用できます。
 
-## Persistent data recovery
+`nerves.local` を名前解決できない場合は、同じネットワークに接続していること、
+Wi-Fi の SSID とパスフレーズ、mDNS が利用可能であることを確認してください。
 
-The protected kernel supports ext2 but not a journaled Linux filesystem. Before
-mounting an existing `/data` partition read-write, startup runs
-`e2fsck -p` while the partition is offline. Clean filesystems return quickly;
-an unclean filesystem is checked and repaired automatically. Status 0 or 1
-permits the mount; all other statuses leave `/data` unmounted without
-formatting it. Only the explicit fwup invalidation marker authorizes a format.
-An unclean 14 GiB data partition currently adds approximately 27 seconds to
-boot; a clean check completes in well under one second.
+## 永続データ
 
-## Optional NAS recording export
+`/data` はファームウェア更新後も保持される永続領域です。起動時には、アンマウント
+状態でファイルシステムを検査し、必要であれば自動修復してから読み書き可能な状態で
+マウントします。安全に修復できない場合は、データを初期化せず `/data` を
+アンマウントのままにします。
 
-ADR 0008 Phase 4 adds a small supervised SFTP exporter. It is inert when
-`/data/atomcam2-vendor-camera/nas-export.conf` is absent or contains
-`enabled=false`.
+## Atom アプリとの互換機能
 
-The enabled configuration is intentionally narrow:
+標準の Atom モバイルアプリでライブ映像や録画を利用するためのベンダー製カメラ
+ランタイムは、初期状態では無効です。この機能を試す前に、Atom Cam 2 が
+モバイルアプリとペアリング済みであることを確認してください。
+
+初回だけ `prepare` を実行し、手動で起動します。
+
+```elixir
+cmd("atomcam2-vendor-camera precheck")
+cmd("atomcam2-vendor-camera prepare")
+cmd("atomcam2-vendor-camera start")
+cmd("atomcam2-vendor-camera status")
+```
+
+`status` に `result=running` と表示されたら、モバイルアプリでライブ映像と録画再生を
+確認します。停止するには次を実行します。
+
+```elixir
+cmd("atomcam2-vendor-camera stop")
+```
+
+カメラ用カーネルモジュールは停止後も読み込まれたままになるため、再度起動する前に
+Atom Cam 2 を再起動してください。
+
+### 起動時に自動実行する
+
+手動での起動と停止を確認できた後、次のファイルを作成します。
+
+```text
+/data/atomcam2-vendor-camera/auto-start.conf
+```
+
+内容は次の 1 行です。
+
+```text
+enabled=true
+```
+
+次回以降の起動時に、ファームウェア、ネットワーク接続、時刻同期などの準備が
+整ってからカメラランタイムを起動します。状態の確認と再チェックは IEx から
+実行できます。
+
+```elixir
+Atomcam2NervesApp.VendorCamera.status()
+Atomcam2NervesApp.VendorCamera.run_now()
+```
+
+自動起動を無効にするには、設定を `enabled=false` に変更するかファイルを削除します。
+設定を変更しても、すでに動作中のカメラランタイムは停止しません。
+
+## NAS へ録画を転送する
+
+録画を SFTP で NAS へ転送できます。次の設定ファイルが存在しない場合、または
+`enabled=false` の場合、転送機能は動作しません。
+
+```text
+/data/atomcam2-vendor-camera/nas-export.conf
+```
+
+設定例:
 
 ```text
 enabled=true
@@ -131,43 +145,29 @@ retention_days=20
 max_spool_bytes=536870912
 ```
 
-The minimum poll interval is 60 seconds, matching the recording segment
-cadence. Faster backlog polling provides no steady-state benefit and can keep
-this single-core device unnecessarily busy.
+主な設定項目:
 
-While export is enabled, one supervised SFTP session is reused across polls.
-It reconnects after a transport error or destination change and closes when
-export is disabled or its configuration becomes invalid. This avoids needless
-SSH setup and teardown on the single-core camera.
+- `remote_directory`: NAS 上の保存先。SFTP ユーザーのホームからの相対パス
+- `poll_interval_seconds`: 転送確認の間隔。指定できる最小値は 60 秒
+- `retention_days`: NAS 上で録画を保持する日数
+- `max_spool_bytes`: ローカルに保持する転送済み録画の上限サイズ
 
-Each SSH and SFTP operation has both the OTP timeout and a hard per-call
-deadline. A stalled operation therefore closes the reusable session before the
-exporter retries on a later poll. There is no whole-transfer deadline:
-terminating the transport owner could skip cleanup, and a healthy transfer
-should be allowed to take longer on a slow NAS.
+`user_dir` には、NAS 用アカウントの秘密鍵と、接続先を登録済みの
+`known_hosts` を OTP SSH が期待する構成で配置してください。パスワード認証と
+接続先ホスト鍵の自動承認には対応していません。ディレクトリのパーミッションは
+`0700`、秘密鍵などのファイルは `0600` にします。
 
-Before first enablement, set `max_spool_bytes` above the existing local
-backlog so the exporter can catch up without immediately shortening mobile
-playback history. The cap is a target, not permission to discard unexported
-footage.
+NAS 用アカウントは `remote_directory` だけへアクセスできるよう制限することを
+推奨します。転送機能は `retention_days` を過ぎた日付ディレクトリの録画を
+NAS から削除します。
 
-`user_dir` must contain the NAS account's private key and a pre-provisioned
-`known_hosts` file in the layout expected by OTP SSH. Password authentication
-and automatic host-key acceptance are deliberately unsupported. Keep this
-directory mode `0700` and its private files mode `0600`.
+転送対象は、録画が完了した `YYYYMMDD/HH/MM.mp4` 形式のファイルだけです。
+アップロード中は NAS 上で拡張子 `.uploading` を付け、サイズを確認してから正式な
+ファイル名へ変更します。未転送の録画は `max_spool_bytes` を超えても削除されません。
+初めて有効にするときは、既存の録画量より大きい `max_spool_bytes` を設定して
+ください。
 
-The exporter uploads only finalized paths shaped like
-`YYYYMMDD/HH/MM.mp4`. It writes `MM.mp4.uploading` on the NAS and renames it
-only after the byte count matches. Completed uploads are recorded under
-`/data/atomcam2-vendor-camera/nas-exported`; the local MP4 remains available
-for mobile playback until the configured spool cap removes the oldest
-successfully exported file. Unexported files remain local even when that means
-temporarily exceeding the cap. A local file becomes eligible for removal only
-after the final remote name exists and its matching completion marker is
-persistently recorded. Retries are idempotent when the final remote path already
-has the expected size.
-
-Inspect or trigger the supervised exporter from target IEx:
+状態の確認と即時実行は IEx から行えます。
 
 ```elixir
 Atomcam2NervesApp.NasExporter.status()
@@ -175,55 +175,12 @@ Atomcam2NervesApp.NasExporter.SFTP.status()
 Atomcam2NervesApp.NasExporter.run_now()
 ```
 
-The NAS account should be confined to `remote_directory`, since the exporter
-also removes recording files in date directories older than
-`retention_days`.
+## リモートファームウェア更新
 
-Set `remote_directory=.` only when the SFTP server starts this account inside
-its dedicated, confined recording directory. The exporter still rejects `/`,
-parent traversal, and `.` embedded in a longer path.
+リモート更新を利用するには、最初に `mix firmware.burn` で v0.3.0 以降の
+ファームウェアを MicroSD カードへインストールしておく必要があります。
 
-## Optional camera startup at boot
-
-The vendor camera runtime remains disabled by default. After one successful
-manual `prepare` and start/stop validation, opt in by creating:
-
-```text
-/data/atomcam2-vendor-camera/auto-start.conf
-```
-
-with exactly:
-
-```text
-enabled=true
-```
-
-The supervised boot integration waits for validated firmware, an Internet
-connection, synchronized time, and a successful
-`atomcam2-vendor-camera precheck`. It makes at most one automatic start attempt
-per boot. A failed start or degraded runtime is reported without stopping
-Nerves, rebooting the device, or attempting an automatic recovery loop.
-
-Inspect or recheck it from target IEx:
-
-```elixir
-Atomcam2NervesApp.VendorCamera.status()
-Atomcam2NervesApp.VendorCamera.run_now()
-```
-
-Set the file to `enabled=false` or remove it to disable startup on later boots.
-Changing it does not stop a camera runtime that is already running.
-
-## Remote updates
-
-After the initial complete installation, build the next firmware on the host:
-
-```sh
-mix firmware
-```
-
-If the optional vendor camera runtime is running, connect to target IEx and
-stop it before `mix upload`:
+カメラランタイムが動作中の場合は、先にターゲットへ SSH 接続して停止します。
 
 ```sh
 ssh nerves@nerves.local
@@ -234,50 +191,23 @@ cmd("atomcam2-vendor-camera stop")
 exit()
 ```
 
-Then upload from the host:
+ホスト側で新しいファームウェアをビルドしてアップロードします。
 
 ```sh
+mix firmware
 mix upload nerves.local
 ```
 
-The successful update reboots the device, and persistent opt-in configuration
-starts the vendor runtime again. Keeping this as an explicit operational step
-leaves updater headroom without coupling OTA to the optional compatibility
-service.
+更新は次の順序で進みます。
 
-The SSH firmware subsystem forwards the uploaded bundle to the Atom Cam 2
-updater. The updater stages the bundle under `/data`, validates the target
-platform and architecture, selects the inactive application slot, writes and
-verifies the root filesystem, and records the candidate as pending.
+1. ファームウェアを `/data` に一時保存して内容を検証する
+2. 現在使用していないアプリケーションスロットへ書き込んで検証する
+3. 新しいスロットを次回起動候補に設定して再起動する
+4. 起動後のヘルスチェックに成功したら新しいファームウェアを確定する
 
-SSH public-key authentication authorizes access to the update endpoint. Fwup
-validates archive and resource integrity. Firmware publisher signatures are
-optional, as they are for the ordinary Nerves workflow, and are not required by
-this application. See
-[`ADR 0007`](../../docs/adr/0007-require-signed-firmware-for-device-side-updates.md).
+転送が途中で中断された場合は一時ファイルを削除し、再起動しません。新しい
+ファームウェアが確定するまでは、以前のスロットがロールバック先として残ります。
+リモート更新では、Wi-Fi や SSH の設定、永続データ、保護された制御カーネルは
+書き換えません。
 
-The upload reports `receiving`, the received byte count, `installing`, fwup
-write progress, and the updater's final status. If a transfer ends before SSH
-EOF, the staged file is removed and the device is not rebooted.
-
-A successful upload reboots the device. After the candidate reaches the
-application root and passes its local health checks, it is confirmed through
-`Nerves.Runtime.validate_firmware/0`. Until confirmation, the previous slot
-remains the rollback target.
-
-The upload path does not rewrite the FAT boot partition, protected control
-kernel, boot manager, active application slot, or persistent data partition.
-The first firmware containing this support must therefore be installed with
-`mix firmware.burn`.
-
-Every firmware build preserves the merged application rootfs at:
-
-```text
-_build/<target>_<env>/nerves/images/rootfs_hack.final.squashfs
-```
-
-The complete flat-SD payload is generated at:
-
-```text
-_build/<target>_<env>/nerves/images/atomcam2-sd/
-```
+自動起動を設定している場合、更新後の準備が整うとカメラランタイムも再び起動します。

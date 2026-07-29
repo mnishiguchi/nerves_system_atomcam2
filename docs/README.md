@@ -1,82 +1,28 @@
-# Project documents
+# プロジェクト文書
 
-## Start here
+## 最初に読む文書
 
-[`getting-started.md`](getting-started.md) provides the shortest path from a
-firmware build to a working device.
+- [スタートガイド](getting-started.md): MicroSD への初回インストールから SSH 接続まで
+- [アーキテクチャ概要](architecture.md): 起動、A/B 更新、カメラ互換機能、録画、NAS 転送
+- [サンプルアプリの README](../examples/atomcam2_nerves_app/README.md): 設定項目と日常の操作
 
-## Architecture
+初めて利用する場合は、スタートガイドの手順で Nerves の起動と SSH 接続を確認して
+から、カメラ互換機能や NAS 転送を個別に有効にしてください。
 
-[`architecture.md`](architecture.md) explains the v0.3.0 boot, runtime
-ownership, A/B updates, optional mobile-app compatibility, recording, and NAS
-export design.
+## 文書作成ポリシー
 
-## ADR
+- README、導入手順、利用方法、設定方法など、プロジェクト利用者に向けた文書は
+  日本語で記述します。
+- ADR、worklog、実装調査、保守・リリース手順など、開発者および保守担当者だけを
+  対象とする文書は英語で記述します。
+- 文書ごとに対象読者を明確にし、利用者向け文書へ内部開発用の手順や調査途中の情報を
+  混在させません。利用者にも必要な技術情報は、日本語で要点を説明します。
 
-Architecture Decision Records are stored in `adr/`.
+## 設計記録
 
-Use ADRs for decisions that should remain true beyond a particular build or hardware test.
+`adr/` には、現在の設計を選択した理由と長期的な制約を記録しています。
+`worklog/` は開発時の調査、ビルド、実機試験の履歴です。これらは実装の経緯を
+確認する保守担当者向けであり、通常のセットアップには必要ありません。
 
-The optional vendor camera compatibility design is accepted in:
-
-- [`adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md`](adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)
-
-## Worklog
-
-Dated development notes, build attempts, hardware tests, and troubleshooting records are stored in `worklog/`.
-
-Worklogs are historical records. Earlier documents may describe an intermediate boundary that was resolved later. When conclusions differ, prefer the newest worklog with confirmed hardware evidence.
-
-## First network milestone
-
-The first Atom Cam 2 milestone was completed on July 15, 2026:
-
-```sh
-ping nerves.local
-ssh nerves@nerves.local
-```
-
-The authoritative result and confirmed blockers are documented in:
-
-- [`worklog/20260715-atomcam2-ping-ssh-bringup.md`](worklog/20260715-atomcam2-ping-ssh-bringup.md)
-
-Supporting investigations are retained separately:
-
-- [`worklog/20260713-atomcam2-toolchain-dsp-ase-investigation.md`](worklog/20260713-atomcam2-toolchain-dsp-ase-investigation.md)
-- [`worklog/20260714-first-ping-ssh-wifi-and-boot-investigation.md`](worklog/20260714-first-ping-ssh-wifi-and-boot-investigation.md)
-- [`worklog/20260714-sdio-wifi-driver-bring-up.md`](worklog/20260714-sdio-wifi-driver-bring-up.md)
-
-Camera runtime and firmware updates were outside that historical milestone.
-Their current architecture and status are summarized in
-[`architecture.md`](architecture.md).
-
-## Vendor camera compatibility
-
-The read-only v0.2.0 hardware investigation and the subsequent manual-runtime
-trial are recorded in:
-
-- [`worklog/20260726-adr-0008-vendor-camera-feasibility.md`](worklog/20260726-adr-0008-vendor-camera-feasibility.md)
-- [`worklog/20260726-adr-0008-vendor-camera-manual-runtime.md`](worklog/20260726-adr-0008-vendor-camera-manual-runtime.md)
-- [`worklog/20260726-adr-0008-mobile-and-storage-compatibility.md`](worklog/20260726-adr-0008-mobile-and-storage-compatibility.md)
-- [`worklog/20260727-adr-0008-nas-export-foundation.md`](worklog/20260727-adr-0008-nas-export-foundation.md)
-- [`worklog/20260727-adr-0008-opt-in-boot-integration.md`](worklog/20260727-adr-0008-opt-in-boot-integration.md)
-
-The corrected manual runtime keeps Nerves ownership boundaries intact and
-passes vendor network, cloud, SD health, mobile live-view, recorded-playback,
-storage-screen, and one-minute local-recording checks. Phase 2 and Phase 3 are
-complete.
-
-Phase 4 is complete. It keeps the protected kernel unchanged and uses OTP's
-existing SFTP client through one supervised, reusable session. Host coverage
-and physical trials pass upload, checksum, atomic publication, idempotency,
-selective retention, outage recovery, spool safety, and bounded transport
-calls. The production endpoint is confined, and a 15-minute run completed 14
-export cycles through one login with 900 of 900 ping replies. Disabling export
-closed the channel and both client and server sessions.
-
-Phase 5 boot integration is opt-in through one strict `/data` setting. It waits
-for firmware, network, and time readiness, makes one camera start attempt per
-boot, and never creates an automatic reboot or process-restart loop. Candidate
-and ordinary-reboot trials pass persistent opt-in, stale-state recovery,
-one-attempt startup, watchdog ownership, stable Wi-Fi/SSH, and post-reboot
-recording.
+過去の作業記録には、後の実装で解決済みの問題や途中段階の仕様が含まれます。
+現在の利用方法については、上記 3 つの利用者向け文書を優先してください。

@@ -1,78 +1,67 @@
-# Getting started
+# スタートガイド
 
-This guide takes a source checkout through the first MicroSD installation,
-network check, and optional mobile-app camera startup.
+このガイドでは、ソースコードからファームウェアを作成し、MicroSD カードへ
+インストールして SSH 接続を確認します。
 
-For the system design and safety boundaries, see the
-[Architecture overview](architecture.md). For all example-application options,
-see its [README](../examples/atomcam2_nerves_app/README.md).
+## 準備
 
-## Before you begin
+次のものが必要です。
 
-You need:
+- Atom Cam 2 と MicroSD カード
+- Elixir、Mix、Nerves、fwup を利用できる開発環境
+- 2.4 GHz Wi-Fi の SSID とパスフレーズ
+- `~/.ssh` にある SSH 公開鍵
 
-- an Atom Cam 2 and a MicroSD card;
-- a working Nerves development environment with `elixir`, `mix`, and `fwup`;
-- Wi-Fi credentials; and
-- at least one SSH public key under `~/.ssh`.
+リリース済みの system と専用ツールチェーンはビルド時に取得されるため、通常の
+アプリ開発で system やツールチェーンを自分でビルドする必要はありません。
 
-The complete installation erases the selected MicroSD card. Verify the device
-path shown by fwup before confirming the write.
+> 初回インストールでは選択した MicroSD カードを消去します。fwup が表示する
+> デバイス名を必ず確認してください。
 
-Application developers consume the tagged system source and its prebuilt system
-and custom toolchain artifacts from the matching GitHub release. Building the
-system or toolchain locally is not required for this workflow.
+## 1. ビルドしてインストールする
 
-## 1. Build and install
-
-Start from the repository root, enter the example application, and configure
-the target and Wi-Fi:
+リポジトリのルートからサンプルアプリへ移動し、ターゲットと Wi-Fi を設定します。
 
 ```sh
 cd examples/atomcam2_nerves_app
 
 export MIX_TARGET=atomcam2
 export MIX_ENV=prod
-export NERVES_WIFI_SSID=your-ssid
-export NERVES_WIFI_PASSPHRASE=your-passphrase
+export NERVES_WIFI_SSID="your-ssid"
+export NERVES_WIFI_PASSPHRASE="your-passphrase"
 
 mix setup
 mix firmware.burn
 ```
 
-`mix setup` only retrieves dependencies. Target compatibility is supplied by
-the released system artifact; application dependency source is not modified.
+fwup の案内に従って MicroSD カードを選択します。書き込みが完了したらカメラの
+電源を切り、カードを挿入してから電源を入れてください。
 
-`mix firmware.burn` builds the firmware and writes it through the fwup
-`complete` task. Select the MicroSD device when fwup prompts, power off the
-camera, insert the card, and power it on.
+ビルド時には通常 `~/.ssh/*.pub` の公開鍵が追加されます。使用する鍵を明示する
+場合は、`mix firmware.burn` の前に設定します。
 
-The build includes public keys found under `~/.ssh/*.pub`. A specific key file
-can instead be selected through the example application's
-[local environment](../examples/atomcam2_nerves_app/README.md#local-development-environment).
+```sh
+export ATOMCAM2_AUTHORIZED_KEYS="$HOME/.ssh/id_ed25519.pub"
+```
 
-After running `mix firmware`, use `mix burn` to write the existing firmware
-bundle without rebuilding it.
+ビルド済みファームウェアを再度書き込む場合は `mix burn` を実行します。
 
-## 2. Confirm the core system
+## 2. Nerves の起動を確認する
 
-Allow time for the camera to boot and join Wi-Fi, then run:
+起動と Wi-Fi 接続を待ち、ホスト側から確認します。
 
 ```sh
 ping nerves.local
 ssh nerves@nerves.local
 ```
 
-The SSH session opens target IEx. At this point the core Nerves platform is
-working; camera compatibility and NAS export are still optional.
+SSH 接続するとターゲット上の IEx が開きます。ここまで成功すれば、Nerves の
+基本機能は動作しています。カメラ互換機能と NAS 転送はまだ無効です。
 
-## 3. Try the standard mobile application
+## 3. Atom モバイルアプリで確認する
 
-This step assumes the device is already paired with the standard Atom mobile
-application.
-
-From target IEx, prepare the private compatibility state once and start the
-vendor runtime:
+この手順には、標準 Atom アプリとペアリング済みのカメラが必要です。ターゲットの
+IEx で、初回準備と手動起動を実行します。
 
 ```elixir
 cmd("atomcam2-vendor-camera precheck")
@@ -81,80 +70,37 @@ cmd("atomcam2-vendor-camera start")
 cmd("atomcam2-vendor-camera status")
 ```
 
-`status` should report `result=running`. Test live view and recording playback
-in the mobile application.
-
-To stop the optional runtime:
+`result=running` と表示されたら、モバイルアプリでライブ映像と録画再生を確認します。
+停止するには次を実行します。
 
 ```elixir
 cmd("atomcam2-vendor-camera stop")
 ```
 
-The protected kernel keeps the loaded camera modules resident, so a deliberate
-reboot is required before another start after a stop.
+停止後にもう一度起動する場合は、先に Atom Cam 2 を再起動してください。自動起動と
+NAS 転送の設定は[サンプルアプリの README](../examples/atomcam2_nerves_app/README.md)
+を参照してください。
 
-Once manual operation is proven, see
-[Optional camera startup at boot](../examples/atomcam2_nerves_app/README.md#optional-camera-startup-at-boot).
+## リモート更新
 
-## 4. Continue from a working baseline
+最初の v0.3.0 以降のファームウェアは MicroSD カードからインストールする必要が
+あります。以後はホスト側から更新できます。
 
-- Use the [remote firmware update](#remote-firmware-updates) workflow for later
-  application firmware.
-- Configure the
-  [optional SFTP exporter](../examples/atomcam2_nerves_app/README.md#optional-nas-recording-export)
-  only after the core system and mobile live view are healthy.
-- Read the [Architecture overview](architecture.md) before changing the boot,
-  storage, update, watchdog, or vendor-runtime boundaries.
-
-## Remote firmware updates
-
-The first installation must use removable media. After the device is running
-firmware with A/B update support, build subsequent application firmware on the
-host:
-
-```sh
-mix firmware
-```
-
-When the optional vendor camera compatibility runtime is enabled, stop it from
-target IEx before uploading. Connect with:
-
-```sh
-ssh nerves@nerves.local
-```
-
-Then stop it and leave IEx:
+カメラランタイムが動作中の場合は、ターゲットの IEx で停止して接続を終了します。
 
 ```elixir
 cmd("atomcam2-vendor-camera stop")
 exit()
 ```
 
-Upload from the host:
+ホスト側でビルドとアップロードを実行します。
 
 ```sh
+mix firmware
 mix upload nerves.local
 ```
 
-The successful upload writes the inactive application slot and reboots. The
-persistent opt-in configuration starts the vendor runtime again after the new
-firmware is validated and its readiness checks pass.
-
-The updater stages the firmware under `/data`, checks its platform and
-architecture, writes and verifies only the inactive application slot, and then
-records that slot as pending. An interrupted transfer removes its staged file
-and does not reboot the device.
-
-SSH public-key authentication controls access to the update endpoint. Fwup
-validates archive and resource integrity. Mandatory firmware signing is not
-part of the baseline workflow, matching ordinary Nerves systems; see
-[ADR 0007](adr/0007-require-signed-firmware-for-device-side-updates.md).
-
-The candidate is confirmed only after its local health checks pass. Until then,
-the previous confirmed slot remains the rollback target. Remote updates do not
-rewrite the FAT boot partition, protected control kernel, boot manager, active
-application slot, or persistent data partition.
-
-Happy-path OTA and `Nerves.Runtime.revert/0` testing has passed on physical
-hardware. Power-interruption, crash-loop, and the remaining physical failure
-matrix are still required before treating remote updates as production-ready.
+アップロードしたファームウェアは非アクティブスロットへ書き込まれ、検証後に
+再起動します。起動後のヘルスチェックに合格するまでは、以前のスロットが
+ロールバック先として残ります。転送が中断された場合は再起動せず、現在の
+ファームウェアを継続して使用します。

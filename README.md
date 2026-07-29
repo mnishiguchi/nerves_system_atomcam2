@@ -1,265 +1,107 @@
 # nerves_system_atomcam2
 
-Experimental Nerves system for Atom Cam 2.
+Atom Cam 2 で Nerves を動かすための実験的な Nerves system です。
 
-New here? Follow the [`Getting started`](docs/getting-started.md) guide.
+初めて利用する場合は[スタートガイド](docs/getting-started.md)から始めてください。
+起動、更新、カメラ、録画の仕組みは
+[アーキテクチャ概要](docs/architecture.md)で説明しています。
 
-For the system design and its boot, update, camera, and recording boundaries,
-see the [`Architecture overview`](docs/architecture.md).
+## 現在の状態
 
-## Current status
-
-The v0.3.0 MVP is verified from a clean source build and on physical hardware:
+v0.3.0 は、クリーンなソースからのビルドと実機で次の動作を確認済みです。
 
 ```text
-Atom Cam 2 boots from MicroSD
--> initramfs mounts rootfs_hack.squashfs
--> erlinit starts the Nerves release
--> the vendor SDIO Wi-Fi driver exposes wlan0
--> VintageNet joins Wi-Fi
--> mdns_lite advertises nerves.local
--> NervesSSH accepts SSH
+MicroSD から起動
+  -> Nerves アプリを開始
+  -> Wi-Fi に接続
+  -> nerves.local を mDNS で通知
+  -> SSH とターゲット IEx を開始
 ```
 
-The optional vendor-camera compatibility runtime remains disabled by default
-and keeps Nerves in control of boot, networking, the hardware watchdog,
-updates, and recovery. Standard mobile live view and playback, continuous
-one-minute local recording, opt-in camera startup, and SFTP NAS export with
-retention are implemented and physically verified. RTSP, WebUI, Samba, and
-internal flash writes are not supported. Remote firmware updates remain
-experimental until the remaining physical failure matrix is complete.
+主な機能:
 
-## System-maintainer workflow
+- Nerves の標準的なアプリケーション開発フロー
+- VintageNet による Wi-Fi 接続、mDNS、SSH、ターゲット IEx
+- `/data` の永続データ領域
+- A/B スロットによるリモート更新とロールバック
+- 標準 Atom モバイルアプリとの任意の互換機能
+- 1 分単位の連続録画
+- SFTP による NAS 転送、再試行、容量上限、保存期間の管理
 
-System maintainers can opt into local system compilation:
+カメラ互換機能と NAS 転送は初期状態では無効です。Nerves が起動、ネットワーク、
+ハードウェア watchdog、更新、復旧を管理します。RTSP、Web UI、Samba、内蔵フラッシュ
+への書き込みには対応していません。
+
+> このプロジェクトは実験段階です。無人環境や重要な用途へ導入する前に、停電、
+> クラッシュの反復、長時間運転、温度、ファイルシステム復旧を利用環境で検証して
+> ください。
+
+## クイックスタート
+
+Atom Cam 2、MicroSD カード、Nerves 開発環境、2.4 GHz Wi-Fi、SSH 公開鍵を
+用意します。
 
 ```sh
-export ATOMCAM2_SYSTEM_SOURCE=local
-export NERVES_TOOLCHAIN=/absolute/path/to/x-tools/mipsel-nerves-linux-musl
-
-./scripts/prepare-toolchain-archive.sh
-./scripts/check-prereqs.sh
-./scripts/smoke-check.sh
-
 cd examples/atomcam2_nerves_app
+
+export MIX_TARGET=atomcam2
+export MIX_ENV=prod
+export NERVES_WIFI_SSID="your-ssid"
+export NERVES_WIFI_PASSPHRASE="your-passphrase"
+
 mix setup
-mix firmware
+mix firmware.burn
 ```
 
-The custom compiler must target MIPS32R2 soft-float without DSP ASE. Buildroot
-consumes its prepared archive, while Nerves uses the same compiler for ERTS,
-ports, NIFs, and other target-native dependencies.
-
-The system installs `atomcam2-linux-3.10-compat.h` into its staging sysroot and
-adds it to target compiler flags. This supplies the `IFA_FLAGS` definition needed
-by VintageNet without patching `deps/vintage_net`.
-
-## Releasing artifacts
-
-Prepare each release in a focused pull request that:
-
-- bumps `VERSION`, `toolchain/VERSION`, and the example application's system
-  dependency version;
-- bumps the example application version when its firmware changes;
-- moves the completed changes into a dated `CHANGELOG.md` section; and
-- keeps the release tag, system, toolchain, and example system dependency
-  aligned.
-
-After that pull request is merged, fast-forward a clean `main` checkout and
-publish the matching tag, GitHub Release, system artifact, toolchain artifact,
-and checksum manifest:
+`mix firmware.burn` は選択した MicroSD カードを消去します。fwup が表示する
+デバイス名を確認してから書き込んでください。カードをカメラへ挿入して起動した後、
+次のコマンドで接続を確認します。
 
 ```sh
-git switch main
-git pull --ff-only
-./scripts/release-artifacts.sh --publish
+ping nerves.local
+ssh nerves@nerves.local
 ```
 
-The script derives the tag from `VERSION` and uses GitHub-generated release
-notes. Run it without flags to build the artifacts locally without publishing.
+詳しい手順と任意機能の設定は
+[サンプルアプリの README](examples/atomcam2_nerves_app/README.md)を参照してください。
 
-After publication, prove that an isolated checkout of the tag downloads both
-artifacts and builds without `NERVES_SYSTEM`, `NERVES_TOOLCHAIN`, or a local
-system override:
+## システムの構成
 
-```sh
-./scripts/release-artifacts.sh --verify
-```
-
-The release tag, system package version, toolchain package version, and example
-application system version must remain aligned.
-
-The architectural decision is recorded in
-[`docs/adr/0001-separate-application-workflow-from-system-maintenance.md`](docs/adr/0001-separate-application-workflow-from-system-maintenance.md).
-
-## Atom Cam 2 boot contract
-
-The supported first-boot path is a flat MicroSD payload:
+Atom Cam 2 固有の起動とハードウェア制御に必要な既存コンポーネントを限定して利用し、
+その後のユーザー空間を Nerves が管理します。
 
 ```text
-factory_t31_ZMC6tiIDQN
-rootfs_hack.squashfs
-hostname
-authorized_keys
-nerves-provisioning.conf
+Atom Cam 2 の U-Boot と保護された制御カーネル
+  -> Nerves のブートマネージャー
+  -> アプリケーションスロット A または B
+  -> Erlang VM と Elixir アプリケーション
 ```
 
-The first four files participate in the Atom Cam 2 boot handoff. `nerves-provisioning.conf` is consumed by the Nerves application after rootfs handoff.
+通常のリモート更新は、実行中ではないスロットだけを書き換えます。新しい
+ファームウェアがヘルスチェックに合格するまでは、直前に確認済みのスロットを
+ロールバック先として保持します。Wi-Fi、SSH、永続データ、保護された制御カーネルは
+リモート更新で書き換えません。
 
-## Relationship to atomcam_tools
+カメラ互換機能は、標準 Atom アプリに必要な既存のカメラバイナリを分離した環境で
+任意に動かします。ネットワーク、watchdog、更新、再起動は引き続き Nerves が
+管理するため、カメラ機能や NAS に障害が発生しても SSH と復旧経路を維持できます。
 
-This project began by using [`mnakada/atomcam_tools`](https://github.com/mnakada/atomcam_tools) as a hardware reference. The supported system no longer uses its root filesystem, application services, or on-device update flow.
+## Wi-Fi と SSH
 
-The remaining direct dependencies are deliberately narrow:
-
-- the verified `factory_t31_ZMC6tiIDQN` control kernel, including its active vendor initramfs
-- the matching `atbm603x_wifi_sdio.ko` Wi-Fi module
-
-The project also retains adapted hardware conventions from `atomcam_tools`:
-
-- the `factory_t31_ZMC6tiIDQN` and `rootfs_hack.squashfs` boot filenames
-- the loop-mounted SquashFS and `switch_root` handoff
-- the vendor kernel configuration as a baseline for future custom-kernel work
-
-Apart from the retained Wi-Fi module, everything after the root filesystem handoff is owned by this project: the Nerves root filesystem, Elixir application, custom Nerves toolchain, VintageNet provisioning, SSH runtime, fwup media workflows, and safety checks. The supported firmware is therefore intentionally hybrid:
-
-```text
-verified Atom Cam 2 control kernel
-+
-Nerves-generated root filesystem and application
-```
-
-ADR 0008 defines a second, optional boundary for camera compatibility. It reads
-the vendor camera binaries, libraries, drivers, and protected configuration
-already exposed below `/atom`, while keeping Nerves in control of boot,
-networking, the hardware watchdog, updates, and recovery. It does not adopt the
-complete `atomcam_tools` runtime.
-
-The target command supports a read-only precheck and a deliberately manual
-runtime:
+ビルド時の `NERVES_WIFI_SSID` と `NERVES_WIFI_PASSPHRASE` は、MicroSD の
+`nerves-provisioning.conf` に保存されます。SSH では通常 `~/.ssh/*.pub` の公開鍵を
+使用します。鍵を指定する場合は、ビルド前に次を設定してください。
 
 ```sh
-atomcam2-vendor-camera precheck
-atomcam2-vendor-camera prepare
-atomcam2-vendor-camera start
-atomcam2-vendor-camera status
-atomcam2-vendor-camera stop
+export ATOMCAM2_AUTHORIZED_KEYS="$HOME/.ssh/id_ed25519.pub"
 ```
 
-`precheck` verifies the live vendor mounts, required files, module ABI, reserved
-memory, `/data`, IPC, Wi-Fi, watchdog ownership, and NAS filesystem
-capabilities. `prepare` makes a mode-private copy of protected vendor
-configuration below `/data` without printing its contents. `start` loads only
-the required camera modules and starts `assis`, `hl_client`, and `iCamera_app`
-in the isolated compatibility layout. A narrow preload shim keeps the hardware
-watchdog and raw MicroSD under Nerves ownership. `stop` removes the vendor
-process tree, mounts, and IPC. The protected
-kernel marks the camera modules permanent, so a reboot is required before
-another start.
+認証情報を変更する場合は、FAT パーティションの `nerves-provisioning.conf` と
+`authorized_keys` を編集できます。
 
-The corrected manual runtime has passed physical network, cloud, mobile live
-view, recorded playback, SD health, one-minute continuous recording,
-start/status/stop/reboot, SSH, Wi-Fi, watchdog ownership, and firmware
-validation checks.
+## 関連文書
 
-Phase 4 is complete and adds an opt-in NAS exporter in the example application.
-The fixed protected kernel does not provide NFS or CIFS, so the exporter uses
-the OTP SFTP client already shipped for Nerves SSH support. It requires a
-dedicated key-based NAS account and a pre-provisioned host key, publishes
-completed segments through a temporary name and atomic rename, retries without
-duplicating equal-size remote files, bounds the local playback spool, and
-removes dated NAS recordings after the configured retention period. One
-supervised SFTP session is reused across polls; every OTP operation has a hard
-per-call deadline, and failures unwind through explicit channel and connection
-cleanup. It remains disabled without persistent `/data` configuration.
-Physical trials pass upload, checksum, atomic publication, idempotent retry,
-selective retention, connection recovery, spool safety, bounded blocked calls,
-and sustained export through the confined production endpoint.
-
-Phase 5 adds a deliberately small boot integration in the example application.
-The camera remains disabled unless
-`/data/atomcam2-vendor-camera/auto-start.conf` contains exactly
-`enabled=true`. Startup waits for validated firmware, Internet connectivity,
-synchronized time, and the existing compatibility precheck. It makes one
-attempt per boot and reports failures without rebooting or automatically
-restarting the vendor runtime. Physical candidate and ordinary-reboot trials
-pass persistent opt-in, readiness gating, one-attempt startup, stale-state
-recovery, watchdog ownership, Wi-Fi/SSH stability, and new recording
-finalization.
-
-The architecture and physical evidence are recorded in
-[`ADR 0008`](docs/adr/0008-run-vendor-camera-runtime-as-optional-compatibility-service.md)
-and the
-[`manual-runtime worklog`](docs/worklog/20260726-adr-0008-vendor-camera-manual-runtime.md).
-The corrected mobile/storage investigation is in the
-[`mobile/storage worklog`](docs/worklog/20260726-adr-0008-mobile-and-storage-compatibility.md).
-The NAS acceptance is in the
-[`NAS-export worklog`](docs/worklog/20260727-adr-0008-nas-export-foundation.md).
-The opt-in boot acceptance is in the
-[`boot-integration worklog`](docs/worklog/20260727-adr-0008-opt-in-boot-integration.md).
-
-The application build preserves the final merged SquashFS at:
-
-```text
-examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/rootfs_hack.final.squashfs
-```
-
-This is the final rootfs after Nerves adds the Erlang release under `/srv/erlang`. Do not install the smaller base-system `rootfs.squashfs` or `target/atomcam2-sd/`; they do not contain the application release.
-
-Inspect the generated summary with:
-
-```sh
-cat examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/rootfs_hack.final.squashfs.summary.txt
-```
-
-## Custom toolchain
-
-Atom Cam 2 requires a MIPS32R2 soft-float toolchain without DSP ASE. The stock Nerves MIPSEL toolchain targets `24kec`, whose musl runtime enables instructions that raise `SIGILL` on the Ingenic T31.
-
-Build the replacement toolchain from a checkout of [`nerves-project/toolchains`](https://github.com/nerves-project/toolchains), then point `NERVES_TOOLCHAIN` at the unpacked toolchain:
-
-```sh
-export NERVES_TOOLCHAIN=/absolute/path/to/x-tools/mipsel-nerves-linux-musl
-./scripts/prepare-toolchain-archive.sh
-```
-
-Buildroot consumes the generated archive through `nerves_defconfig`. Released application builds download the matching custom toolchain artifact automatically; `NERVES_TOOLCHAIN` is only required for system maintenance and release creation.
-
-For the investigation that established this requirement, see [`docs/worklog/20260713-atomcam2-toolchain-dsp-ase-investigation.md`](docs/worklog/20260713-atomcam2-toolchain-dsp-ase-investigation.md).
-
-## Wi-Fi provisioning
-
-The example application configures `wlan0` through VintageNet. Credential priority is:
-
-1. `/media/mmc/nerves-provisioning.conf`
-2. environment variables embedded into the release build
-3. `/media/mmc/wpa_supplicant.conf`
-
-The packaging helper reuses an existing generated `nerves-provisioning.conf` from the images directory when present.
-
-The preferred first test is explicit provisioning. The packaged file can also be edited before installation:
-
-```sh
-cat > _build/atomcam2_prod/nerves/images/atomcam2-sd/nerves-provisioning.conf <<'EOF_PROVISIONING'
-NERVES_WIFI_SSID=your-ssid
-NERVES_WIFI_PASSPHRASE=your-passphrase
-EOF_PROVISIONING
-```
-
-## Recovery and diagnostics
-
-When a firmware experiment breaks networking, restore the most recent known-good payload before investigating further.
-
-For boot failures, power down the camera, mount the MicroSD card, and collect the FAT-partition breadcrumbs:
-
-```sh
-./scripts/collect-boot-report.sh --mount /path/to/mounted/sd
-```
-
-Reports are copied to:
-
-```text
-target/atomcam2-boot-reports/
-```
-
-The confirmed first network milestone and resolved blockers are documented in [`docs/worklog/20260715-atomcam2-ping-ssh-bringup.md`](docs/worklog/20260715-atomcam2-ping-ssh-bringup.md).
+- [スタートガイド](docs/getting-started.md)
+- [アーキテクチャ概要](docs/architecture.md)
+- [サンプルアプリの設定と操作](examples/atomcam2_nerves_app/README.md)
+- [変更履歴](CHANGELOG.md)
