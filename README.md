@@ -6,6 +6,8 @@ Atom Cam 2 で Nerves を動かすための実験的な Nerves system です。
 起動、更新、カメラ、録画の仕組みは
 [アーキテクチャ概要](docs/architecture.md)で説明しています。
 
+[![Atom Cam 2 の既存ブートコンポーネント、Nerves が管理する A/B アプリケーションスロット、実行時サービス、MicroSD の構成を示すアーキテクチャ概要](docs/assets/architecture-overview.svg)](docs/architecture.md)
+
 ## 現在の状態
 
 v0.3.0 は、クリーンなソースからのビルドと実機で次の動作を確認済みです。
