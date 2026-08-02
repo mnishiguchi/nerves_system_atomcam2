@@ -64,6 +64,39 @@ SSH 接続するとターゲット上の IEx が開きます。Toolshed は自�
 `nerves.local` を名前解決できない場合は、同じネットワークに接続していること、
 Wi-Fi の SSID とパスフレーズ、mDNS が利用可能であることを確認してください。
 
+## IP アドレスを固定する(推奨)
+
+初期状態では DHCP でアドレスを取得するため、**再起動やリース更新のたびに IP が
+変わることがあります。** RTSP の URL やファームウェア更新の宛先を IP で指定して
+いると、そのたびに設定を直すことになります。
+
+`nerves.local` による mDNS 名でも接続できますが、ホスト側で mDNS が使えない環境
+(avahi 未導入の Linux など)では解決できません。
+
+**ルーターの DHCP 予約(MAC アドレスに対する固定割り当て)を設定してください。**
+これがもっとも確実です。カメラ側の設定変更は不要です。
+
+対象となる MAC アドレスは次のコマンドで確認できます。
+
+```elixir
+cmd("ip -o link show")
+```
+
+- **無線(`wlan0`)**: カメラ固有の MAC。本体を替えない限り変わりません
+- **有線(`eth0`)**: USB Ethernet アダプタ固有の MAC。**アダプタを交換すると
+  変わります**
+
+有線と無線の両方を使う場合は、**それぞれ別の MAC なので 2 件とも予約**して
+ください。両方が同時に接続されている場合、Nerves は有線を優先します。
+
+> ホスト側で mDNS を使う場合、Linux では avahi の導入と、ファイアウォールでの
+> mDNS 許可が必要です。
+>
+> ```sh
+> sudo dnf install avahi nss-mdns && sudo systemctl enable --now avahi-daemon
+> sudo firewall-cmd --add-service=mdns --permanent && sudo firewall-cmd --reload
+> ```
+
 ## 有線 LAN(任意)
 
 USB Ethernet アダプタ(実績: Realtek RTL8152、ASIX AX88772 系)を接続すると、
