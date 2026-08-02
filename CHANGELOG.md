@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Add wired LAN support through USB Ethernet adapters. The control kernel now
+  builds the `r8152`, `usbnet`, `asix`, `ax88179_178a`, `cdc_ether`, and
+  `rndis_host` modules, matching the driver set proven by atomcam_tools.
+- Add `atomcam2-eth-driver`, invoked from `atomcam2-pre-run` before the Wi-Fi
+  driver, which probes the class and vendor drivers in order and reports
+  progress to `atomcam2-eth-driver.env` on the FAT partition. Disable it with
+  `ATOMCAM2_PRE_RUN_ETH_DRIVER=0`.
+- Report `eth0` presence and address in the pre-run and network-check
+  breadcrumb files.
+- Configure `eth0` with DHCP in the example application through
+  `vintage_net_ethernet`. VintageNet prefers the wired route and falls back to
+  Wi-Fi when the cable or adapter is absent.
+- Update the pinned control kernel to the USB-enabled build
+  (`sha256 914d7782…`) stored at `target/atomcam2-control/`. Existing
+  installations keep their control kernel: the new modules load into it
+  because the module vermagic is unchanged, so `mix upload` alone enables
+  wired networking. Verified on hardware with a Realtek RTL8152 adapter
+  (`0bda:8152`).
+
 ## 0.3.0 - 2026-07-28
 
 - Add ADR 0008 and a read-only `atomcam2-vendor-camera precheck` for the

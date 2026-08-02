@@ -24,6 +24,7 @@ MicroSD から起動
 
 - Nerves の標準的なアプリケーション開発フロー
 - VintageNet による Wi-Fi 接続、mDNS、SSH、ターゲット IEx
+- USB Ethernet アダプタによる有線 LAN 接続(任意、有線優先)
 - `/data` の永続データ領域
 - A/B スロットによるリモート更新とロールバック
 - 標準 Atom モバイルアプリとの任意の互換機能

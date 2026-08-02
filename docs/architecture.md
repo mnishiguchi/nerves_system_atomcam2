@@ -111,6 +111,9 @@ Atomcam2NervesApp.Supervisor
 ```
 
 - VintageNet が `wlan0`、Wi-Fi 接続、DHCP を管理します。
+- USB Ethernet アダプタを接続すると、`atomcam2-eth-driver` がドライバを
+  ロードし、VintageNet が `eth0` を DHCP で構成して有線を優先します。
+  ケーブルやアダプタがない場合は Wi-Fi へフォールバックします。
 - `mdns_lite` が `nerves.local` を通知します。
 - NervesSSH が IEx、SFTP、ファームウェアアップロードを提供します。
 - NervesTime が `/data` の時刻を復元して同期します。
