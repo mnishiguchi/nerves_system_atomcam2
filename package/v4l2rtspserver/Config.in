@@ -1,0 +1,14 @@
+config BR2_PACKAGE_V4L2RTSPSERVER
+	bool "v4l2rtspserver (atomcam2)"
+	select BR2_PACKAGE_LIVE555
+	select BR2_PACKAGE_V4L2CPP
+	depends on BR2_INSTALL_LIBSTDCPP
+	help
+	  RTSP server for V4L2 devices. Publishes the already-encoded
+	  frames that the vendor camera runtime writes into the
+	  v4l2loopback devices, without re-encoding.
+
+	  https://github.com/mpromonet/v4l2rtspserver
+
+comment "v4l2rtspserver needs a toolchain with C++ support"
+	depends on !BR2_INSTALL_LIBSTDCPP

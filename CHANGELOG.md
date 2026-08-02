@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Add optional RTSP publishing of the vendor camera's already-encoded video.
+  A preloaded frame hook mirrors the encoder output into a v4l2loopback
+  device, which `v4l2rtspserver` publishes without re-encoding. Enable it by
+  writing `enabled=true` to `/data/atomcam2-rtsp/auto-start.conf`; the
+  server follows the vendor camera runtime and stops when it does.
+- Load `v4l2loopback` from `atomcam2-pre-run` so the devices exist before the
+  vendor runtime starts. `ATOMCAM2_VIDEO_LOOPBACK_DEVICES` and
+  `ATOMCAM2_VIDEO_LOOPBACK_VIDEO_NR` select how many nodes are created and
+  which numbers they take.
+- Patch v4l2loopback to honour a caller-supplied `sizeimage` for compressed
+  formats. It previously derived the buffer from raw geometry, reserving
+  7.91 MiB per buffer at 1080p for a stream whose frames are a fraction of
+  that, and `v4l2rtspserver` propagates that size into live555's
+  `OutPacketBuffer::maxSize`. On an 87 MiB board this exhausted memory as
+  soon as a server attached. Verified on hardware: 1920x1080 H.264 at
+  ~18 fps and ~950 kbps alongside the vendor runtime.
+- Report loopback device availability from `atomcam2-vendor-camera precheck`.
+
 - Add wired LAN support through USB Ethernet adapters. The control kernel now
   builds the `r8152`, `usbnet`, `asix`, `ax88179_178a`, `cdc_ether`, and
   `rndis_host` modules, matching the driver set proven by atomcam_tools.
@@ -14,12 +32,10 @@
 - Configure `eth0` with DHCP in the example application through
   `vintage_net_ethernet`. VintageNet prefers the wired route and falls back to
   Wi-Fi when the cable or adapter is absent.
-- Update the pinned control kernel to the USB-enabled build
-  (`sha256 914d7782…`) stored at `target/atomcam2-control/`. Existing
-  installations keep their control kernel: the new modules load into it
-  because the module vermagic is unchanged, so `mix upload` alone enables
-  wired networking. Verified on hardware with a Realtek RTL8152 adapter
-  (`0bda:8152`).
+- Keep shipping the verified vendor-compatible control kernel unchanged. The
+  Buildroot kernel build exists to produce loadable modules whose vermagic
+  matches it, so `mix upload` alone enables wired networking. Verified on
+  hardware with a Realtek RTL8152 adapter (`0bda:8152`).
 
 ## 0.3.0 - 2026-07-28
 

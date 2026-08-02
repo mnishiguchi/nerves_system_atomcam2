@@ -1,0 +1,100 @@
+#!/bin/sh
+set -eu
+
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+if [ -f /etc/atomcam2.env ]; then
+  . /etc/atomcam2.env
+fi
+
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
+report_file="${ATOMCAM2_VIDEO_LOOPBACK_REPORT:-/media/mmc/atomcam2-video-loopback.env}"
+module_path="${ATOMCAM2_VIDEO_LOOPBACK_MODULE:-/lib/modules/v4l2loopback.ko}"
+device_count="${ATOMCAM2_VIDEO_LOOPBACK_DEVICES:-3}"
+max_buffers="${ATOMCAM2_VIDEO_LOOPBACK_MAX_BUFFERS:-2}"
+# Selects which /dev/videoN nodes are created. Each loopback device costs
+# buffers sized for the stream it carries, so on this 87 MiB board it is
+# usually right to create only the node for the channel actually published.
+video_nr="${ATOMCAM2_VIDEO_LOOPBACK_VIDEO_NR:-}"
+
+stage="starting"
+devices=""
+last_error=""
+
+write_report() {
+  {
+    echo "stage=$stage"
+    echo "module=$module_path"
+    echo "device_count=$device_count"
+    echo "video_nr=$video_nr"
+    echo "devices=$devices"
+    echo "last_error=$last_error"
+  } > "$report_file" 2>/dev/null || true
+}
+
+list_devices() {
+  found=""
+
+  for device in /dev/video0 /dev/video1 /dev/video2; do
+    [ -c "$device" ] || continue
+    found="${found:+$found }$device"
+  done
+
+  devices="$found"
+}
+
+# The devices must exist before the vendor camera runtime starts, otherwise
+# the frame hook has nothing to open and gives up for the lifetime of that
+# process. Loading here keeps that ordering under pre-run's control.
+list_devices
+
+if [ -n "$devices" ]; then
+  stage="already_loaded"
+  write_report
+  exit 0
+fi
+
+if [ ! -f "$module_path" ]; then
+  stage="module_unavailable"
+  last_error="module is missing: $module_path"
+  write_report
+  exit 0
+fi
+
+stage="loading_module"
+write_report
+
+set +e
+if [ -n "$video_nr" ]; then
+  insmod "$module_path" "devices=$device_count" "max_buffers=$max_buffers" \
+    "video_nr=$video_nr" >/dev/null 2>&1
+else
+  insmod "$module_path" "devices=$device_count" "max_buffers=$max_buffers" \
+    >/dev/null 2>&1
+fi
+insmod_status=$?
+set -e
+
+if [ "$insmod_status" -ne 0 ]; then
+  stage="insmod_failed"
+  last_error="insmod exited with status $insmod_status"
+  write_report
+  exit 0
+fi
+
+list_devices
+
+if [ -z "$devices" ]; then
+  stage="no_devices"
+  last_error="module loaded but no loopback device appeared"
+  write_report
+  exit 0
+fi
+
+stage="devices_present"
+write_report
+exit 0

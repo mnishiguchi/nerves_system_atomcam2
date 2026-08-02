@@ -1,0 +1,6 @@
+config BR2_PACKAGE_ATOMCAM2_VIDEO_HOOK
+	bool "atomcam2-video-hook"
+	help
+	  Install the preloaded library that mirrors the vendor camera
+	  runtime's already-encoded frames into the v4l2loopback devices
+	  so they can be published over RTSP without re-encoding.

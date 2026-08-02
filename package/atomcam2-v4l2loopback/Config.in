@@ -1,0 +1,13 @@
+config BR2_PACKAGE_ATOMCAM2_V4L2LOOPBACK
+	bool "atomcam2-v4l2loopback"
+	depends on BR2_LINUX_KERNEL
+	help
+	  Virtual V4L2 loopback devices, pinned to a revision that builds
+	  against the Atom Cam 2 control kernel. The vendor camera runtime
+	  writes already-encoded frames into these devices and the RTSP
+	  server reads them, so no re-encoding is required.
+
+	  https://github.com/umlaeute/v4l2loopback
+
+comment "atomcam2-v4l2loopback needs a Linux kernel to be built"
+	depends on !BR2_LINUX_KERNEL

@@ -134,6 +134,65 @@ Atomcam2NervesApp.VendorCamera.run_now()
 自動起動を無効にするには、設定を `enabled=false` に変更するかファイルを削除します。
 設定を変更しても、すでに動作中のカメラランタイムは停止しません。
 
+## RTSP でライブ映像を配信する(任意)
+
+カメラ互換ランタイムがエンコードした映像を、再エンコードせずに RTSP で
+配信できます。VLC や Home Assistant などの標準的なクライアントから利用できます。
+
+**カメラ互換ランタイムが動作していることが前提です。**映像の供給元がそれだけの
+ためで、ランタイムが停止すると配信も自動的に停止します。
+
+有効にするには次のファイルを作成します。
+
+```text
+/data/atomcam2-rtsp/auto-start.conf
+```
+
+内容は次の 1 行です。
+
+```text
+enabled=true
+```
+
+IEx からは次のように作成できます。
+
+```elixir
+File.mkdir_p!("/data/atomcam2-rtsp")
+File.write!("/data/atomcam2-rtsp/auto-start.conf", "enabled=true\n")
+```
+
+配信 URL は作成された仮想デバイスに対応します。
+
+```text
+rtsp://<カメラのIP>:8554/video0_unicast
+```
+
+状態の確認は IEx から行えます。
+
+```elixir
+Atomcam2NervesApp.RtspServer.status()
+```
+
+### 配信するチャンネルを選ぶ
+
+ベンダーランタイムは 3 系統をエンコードしており、どれを配信するかは
+MicroSD の FAT パーティションにある `atomcam2.env` で選びます。
+
+| 仮想デバイス | 解像度 | コーデック |
+| --- | --- | --- |
+| `/dev/video0` | 1920×1080 | H.264 |
+| `/dev/video1` | 640×360 | H.265 |
+| `/dev/video2` | 1920×1080 | H.265 |
+
+```text
+ATOMCAM2_VIDEO_LOOPBACK_DEVICES=1
+ATOMCAM2_VIDEO_LOOPBACK_VIDEO_NR=0
+```
+
+上記は `/dev/video0`(1080p H.264)だけを作成する設定です。**本機の RAM は
+87MB しかないため、仮想デバイスは配信するチャンネルの分だけ作成してください。**
+3 系統すべてを作成するとメモリが不足します。設定の変更後は再起動が必要です。
+
 ## NAS へ録画を転送する
 
 録画を SFTP で NAS へ転送できます。次の設定ファイルが存在しない場合、または

@@ -22,7 +22,10 @@ boot_manager_image="$images_dir/atomcam2-boot-manager.squashfs"
 output_dir="$images_dir/atomcam2-sd"
 artifact_dir=$(CDPATH= cd -- "$images_dir/.." && pwd)
 artifact_scripts_dir="$artifact_dir/scripts"
-expected_kernel_sha256="914d7782bec00aebab67f1933dda1ff5d002723afbdd0d0b172aa0030ab0603d"
+# The verified vendor-compatible control kernel. U-Boot only boots this image,
+# so it is never replaced by the kernel Buildroot builds here: that build exists
+# to produce loadable modules whose vermagic matches this kernel.
+expected_kernel_sha256="b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc"
 
 mkdir -p "$artifact_scripts_dir"
 for script_name in merge-squashfs rel2fw.sh scrub-otp-release.sh; do

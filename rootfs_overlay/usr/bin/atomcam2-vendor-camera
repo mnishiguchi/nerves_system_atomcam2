@@ -19,6 +19,7 @@ lock_dir="${ATOMCAM2_VENDOR_LOCK_DIR:-/tmp/atomcam2-vendor-camera.lock}"
 blocked_command="${ATOMCAM2_VENDOR_BLOCKED_COMMAND:-/usr/libexec/atomcam2-vendor-camera-blocked-command}"
 nerves_owned_command="${ATOMCAM2_VENDOR_NERVES_OWNED_COMMAND:-/usr/libexec/atomcam2-vendor-camera-nerves-owned-command}"
 compat_shim="${ATOMCAM2_VENDOR_COMPAT_SHIM:-/usr/lib/atomcam2-vendor-camera/libcompat-shim.so}"
+video_hook="${ATOMCAM2_VENDOR_VIDEO_HOOK:-/usr/lib/atomcam2-vendor-camera/libvideo-hook.so}"
 chroot_command="${ATOMCAM2_VENDOR_CHROOT:-/usr/sbin/chroot}"
 setpriv_command="${ATOMCAM2_VENDOR_SETPRIV:-/usr/bin/setpriv}"
 sensor_data_interface="${ATOMCAM2_VENDOR_SENSOR_DATA_INTERFACE:-1}"
@@ -299,6 +300,20 @@ precheck() {
     pass "System V IPC is available"
   else
     block "System V IPC is unavailable"
+  fi
+
+  # RTSP publishing is optional, so a missing loopback device is reported
+  # rather than blocking the camera runtime itself.
+  loopback_devices=""
+  for loopback_device in /dev/video0 /dev/video1 /dev/video2; do
+    [ -c "$loopback_device" ] || continue
+    loopback_devices="${loopback_devices:+$loopback_devices }$loopback_device"
+  done
+
+  if [ -n "$loopback_devices" ]; then
+    pass "loopback video devices are present for RTSP: $loopback_devices"
+  else
+    echo "INFO no loopback video device; RTSP publishing is unavailable"
   fi
 
   mem_total_kb="$(
@@ -653,6 +668,16 @@ setup_device_view() {
     bind_device "$device_source" || return 1
   done
 
+  # Virtual loopback devices only. They carry encoded frames out to the RTSP
+  # server and expose no real capture hardware, so the boundary that keeps
+  # the MicroSD, watchdog, and network under Nerves ownership is unchanged.
+  for device_source in \
+    /dev/video0 \
+    /dev/video1 \
+    /dev/video2; do
+    bind_device "$device_source" || return 1
+  done
+
   if [ -d /dev/snd ]; then
     mkdir -p "$vendor_root/dev/snd"
     mount_and_record "$vendor_root/dev/snd" \
@@ -837,6 +862,13 @@ setup_compatibility_mounts() {
   chmod 0555 \
     "$vendor_root/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so"
 
+  if [ -r "$video_hook" ]; then
+    cp "$video_hook" \
+      "$vendor_root/tmp/atomcam2-vendor-camera/lib/libvideo-hook.so"
+    chmod 0555 \
+      "$vendor_root/tmp/atomcam2-vendor-camera/lib/libvideo-hook.so"
+  fi
+
   setup_blocked_commands || return 1
   setup_nerves_owned_commands
 }
@@ -963,6 +995,28 @@ exec_vendor_environment() {
     "$@"
 }
 
+# iCamera_app is the only vendor process that encodes video, so the frame
+# hook is preloaded there and nowhere else.
+exec_vendor_video_environment() {
+  vendor_preload=/tmp/atomcam2-vendor-camera/lib/libcompat-shim.so
+
+  if [ -r "$vendor_root/tmp/atomcam2-vendor-camera/lib/libvideo-hook.so" ]; then
+    vendor_preload="$vendor_preload:/tmp/atomcam2-vendor-camera/lib/libvideo-hook.so"
+  fi
+
+  exec /usr/bin/env -i \
+    PATH=/tmp/atomcam2-vendor-camera/bin:/system/bin:/bin:/sbin:/usr/bin:/usr/sbin \
+    LD_LIBRARY_PATH=/thirdlib:/system/lib:/lib:/usr/lib \
+    LD_PRELOAD="$vendor_preload" \
+    HOME=/root \
+    TMPDIR=/tmp \
+    ASSIS_LOG=/dev/null \
+    "$setpriv_command" \
+    --nnp \
+    --bounding-set=-sys_admin,-sys_boot,-net_admin,-sys_module,-mknod \
+    "$@"
+}
+
 exec_vendor_assis_environment() {
   exec /usr/bin/env -i \
     PATH=/tmp/atomcam2-vendor-camera/bin:/system/bin:/bin:/sbin:/usr/bin:/usr/sbin \
@@ -1012,7 +1066,7 @@ start_vendor_processes() {
 
   sleep 1
 
-  exec_vendor_environment \
+  exec_vendor_video_environment \
     "$chroot_command" "$vendor_root" /system/bin/iCamera_app \
     </dev/null >>"$logs_root/iCamera_app.log" 2>&1 &
   icamera_pid="$!"

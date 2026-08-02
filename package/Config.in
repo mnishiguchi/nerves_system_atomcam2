@@ -1,2 +1,6 @@
 source "$NERVES_DEFCONFIG_DIR/package/atomcam2-compat-headers/Config.in"
 source "$NERVES_DEFCONFIG_DIR/package/atomcam2-vendor-compat-shim/Config.in"
+source "$NERVES_DEFCONFIG_DIR/package/atomcam2-video-hook/Config.in"
+source "$NERVES_DEFCONFIG_DIR/package/atomcam2-v4l2loopback/Config.in"
+source "$NERVES_DEFCONFIG_DIR/package/v4l2cpp/Config.in"
+source "$NERVES_DEFCONFIG_DIR/package/v4l2rtspserver/Config.in"

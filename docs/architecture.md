@@ -106,6 +106,7 @@ Atomcam2NervesApp.Supervisor
   |-- TimeSync
   |-- FirmwareHealth
   |-- VendorCamera（任意）
+  |-- RtspServer（任意）
   |-- NasExporter.SFTP（任意）
   `-- NasExporter（任意）
 ```
@@ -117,6 +118,8 @@ Atomcam2NervesApp.Supervisor
 - `mdns_lite` が `nerves.local` を通知します。
 - NervesSSH が IEx、SFTP、ファームウェアアップロードを提供します。
 - NervesTime が `/data` の時刻を復元して同期します。
+- RtspServer は、カメラ互換ランタイムが動作している間だけ RTSP 配信を行い、
+  停止すれば配信も止めます（フレームの供給元がそのランタイムのため）。
 - 任意機能の失敗は状態として報告し、Nerves の基本機能は停止させません。
 
 ## カメラ互換機能

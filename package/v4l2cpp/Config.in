@@ -1,0 +1,11 @@
+config BR2_PACKAGE_V4L2CPP
+	bool "v4l2cpp (atomcam2)"
+	select BR2_PACKAGE_LOG4CPP
+	depends on BR2_INSTALL_LIBSTDCPP
+	help
+	  C++ wrapper around the V4L2 API, used by v4l2rtspserver.
+
+	  https://github.com/mpromonet/libv4l2cpp
+
+comment "v4l2cpp needs a toolchain with C++ support"
+	depends on !BR2_INSTALL_LIBSTDCPP
