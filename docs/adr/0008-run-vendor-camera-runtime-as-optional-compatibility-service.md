@@ -161,6 +161,11 @@ compatibility boundary for paths and libraries, not a security sandbox.
 Bind or mount only the resources the camera runtime needs. In particular:
 
 - expose the camera device nodes created by the selected modules;
+- expose the v4l2loopback nodes when RTSP publishing is built, so the runtime
+  can write encoded frames out to a server that Nerves owns. These are virtual
+  devices with no capture hardware behind them, so the boundary is unchanged:
+  the vendor runtime still cannot reach a real capture device, the MicroSD, the
+  watchdog, or the network;
 - expose procfs and the required sysfs paths;
 - provide a private writable tmpfs for `/tmp`;
 - map the private configuration copy to `/configs`;
