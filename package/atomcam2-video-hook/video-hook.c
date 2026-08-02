@@ -37,6 +37,38 @@ extern long write(int fd, const void *buffer, unsigned long count);
 extern void *dlopen(const char *path, int flags);
 extern void *dlsym(void *handle, const char *symbol);
 
+#define O_CREAT 0100
+#define O_TRUNC 01000
+
+/*
+ * Frame heartbeat. The supervisor cannot see whether encoded frames are still
+ * flowing — the loopback device exposes no counter, and the vendor runtime
+ * reports "running" even while its pipeline is stalled. So the hook rewrites a
+ * small file every HEARTBEAT_FRAMES frames; its mtime advances while frames
+ * flow and freezes when they stop, which the supervisor reads with a plain
+ * stat. One byte, reopened infrequently, keeps this cheap on the 87 MiB board.
+ */
+#define HEARTBEAT_PATH "/tmp/atomcam2-video-hook.beat"
+#define HEARTBEAT_FRAMES 64
+
+static unsigned long heartbeat_counter;
+
+static void heartbeat_tick(void)
+{
+	int fd;
+
+	if (++heartbeat_counter % HEARTBEAT_FRAMES != 0) {
+		return;
+	}
+
+	fd = open(HEARTBEAT_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+	if (fd >= 0) {
+		write(fd, ".", 1);
+		close(fd);
+	}
+}
+
 struct vendor_frame {
 	unsigned char *buffer;
 	unsigned long length;
@@ -174,6 +206,7 @@ static int capture(int index, struct vendor_frame *frame)
 	if (entry->fd >= 0 && frame != 0 && frame->buffer != 0 &&
 	    frame->length <= entry->frame_bytes) {
 		write(entry->fd, frame->buffer, frame->length);
+		heartbeat_tick();
 	}
 
 	return entry->vendor_callback(frame);

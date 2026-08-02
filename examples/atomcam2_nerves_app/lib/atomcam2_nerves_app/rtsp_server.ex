@@ -14,19 +14,29 @@ defmodule Atomcam2NervesApp.RtspServer do
 
   @command "/usr/bin/atomcam2-rtsp-server"
   @config_path "/data/atomcam2-rtsp/auto-start.conf"
+  @beat_path "/tmp/atomcam2-video-hook.beat"
   @poll_interval_ms 10_000
   @status_timeout_ms 45_000
+
+  # Number of consecutive polls with no fresh frame heartbeat before the stall
+  # is treated as more than the brief HD-contention window (which self-recovers
+  # when the mobile app releases the channel). At the default poll interval this
+  # is about a minute.
+  @stall_strikes_before_warn 6
 
   defstruct config_path: @config_path,
             poll_interval_ms: @poll_interval_ms,
             command_runner: nil,
             vendor_status: nil,
+            frame_health: nil,
             timer_ref: nil,
             enabled: false,
             phase: :not_checked,
             last_checked_at: nil,
             last_result: :not_run,
-            last_log_key: nil
+            last_log_key: nil,
+            last_beat: :unknown,
+            stall_strikes: 0
 
   @type phase ::
           :not_checked
@@ -67,7 +77,8 @@ defmodule Atomcam2NervesApp.RtspServer do
       config_path: Keyword.get(options, :config_path, @config_path),
       poll_interval_ms: Keyword.get(options, :poll_interval_ms, @poll_interval_ms),
       command_runner: Keyword.get(options, :command_runner, &run_command/1),
-      vendor_status: Keyword.get(options, :vendor_status, &vendor_status/0)
+      vendor_status: Keyword.get(options, :vendor_status, &vendor_status/0),
+      frame_health: Keyword.get(options, :frame_health, &frame_health/0)
     }
 
     {:ok, schedule(state, 0)}
@@ -81,7 +92,8 @@ defmodule Atomcam2NervesApp.RtspServer do
         :enabled,
         :phase,
         :last_checked_at,
-        :last_result
+        :last_result,
+        :stall_strikes
       ])
 
     {:reply, status, state}
@@ -160,9 +172,10 @@ defmodule Atomcam2NervesApp.RtspServer do
         |> Map.put(:phase, :running)
         |> Map.put(:last_result, :running)
         |> log_change(:running, :info, "RTSP publishing is running")
+        |> monitor_frames()
 
       {:running, :stopped} ->
-        start_server(state)
+        start_server(reset_stall(state))
 
       # Without the vendor runtime there are no frames, so a server left
       # behind would publish an empty stream and hold the loopback device.
@@ -224,6 +237,8 @@ defmodule Atomcam2NervesApp.RtspServer do
   end
 
   defp ensure_stopped(state, key, message) do
+    state = reset_stall(state)
+
     case server_status(state.command_runner) do
       :running ->
         _ = state.command_runner.("stop")
@@ -284,6 +299,64 @@ defmodule Atomcam2NervesApp.RtspServer do
   defp read_config(path) do
     with {:ok, contents} <- File.read(path) do
       parse_config(contents)
+    end
+  end
+
+  # Frame-delivery health, checked only while both the server and the vendor
+  # runtime report running. The hook rewrites a heartbeat file for each frame it
+  # forwards, so a heartbeat that stops advancing means encoded frames stopped
+  # arriving even though every process is still "up".
+  #
+  # This deliberately observes and warns rather than restarting. A brief stall
+  # is the ordinary HD-contention case that self-recovers when the mobile app
+  # releases the channel, and the only stall this system cannot recover from
+  # needs a reboot that would also kill a mobile app legitimately viewing HD.
+  # Distinguishing those two safely needs a hardware-validated load signal, so
+  # automatic recovery from a frame stall is a separate, later step. For now the
+  # stall is made visible through the log and `status`.
+  defp monitor_frames(state) do
+    beat = state.frame_health.()
+
+    cond do
+      beat == :absent ->
+        %{state | last_beat: :absent, stall_strikes: 0}
+
+      beat != state.last_beat ->
+        %{state | last_beat: beat, stall_strikes: 0}
+        |> clear_stall_log()
+
+      true ->
+        strikes = state.stall_strikes + 1
+        state = %{state | stall_strikes: strikes}
+
+        if strikes == @stall_strikes_before_warn do
+          state
+          |> Map.put(:last_result, {:frame_stall, strikes})
+          |> log_change(
+            :frame_stall,
+            :warning,
+            "RTSP frames have not advanced for #{strikes} checks; " <>
+              "the vendor pipeline may be stalled (e.g. HD contention)"
+          )
+        else
+          state
+        end
+    end
+  end
+
+  defp reset_stall(state), do: %{state | last_beat: :unknown, stall_strikes: 0}
+
+  # Let a later recovery re-log if the stall returns, without spamming while
+  # frames flow normally.
+  defp clear_stall_log(%{last_log_key: :frame_stall} = state),
+    do: %{state | last_log_key: nil}
+
+  defp clear_stall_log(state), do: state
+
+  defp frame_health do
+    case File.stat(@beat_path, time: :posix) do
+      {:ok, %{mtime: mtime}} -> mtime
+      {:error, _reason} -> :absent
     end
   end
 

@@ -165,6 +165,98 @@ defmodule Atomcam2NervesApp.RtspServerTest do
     end
   end
 
+  test "keeps stall_strikes at zero while frames advance", %{root: root} do
+    config_path = Path.join(root, "auto-start.conf")
+    File.write!(config_path, "enabled=true\n")
+
+    {:ok, commands} = Agent.start_link(fn -> [] end)
+    {:ok, server} = Agent.start_link(fn -> :running end)
+    {:ok, beat} = Agent.start_link(fn -> 0 end)
+
+    start_supervised!(
+      {RtspServer,
+       name: name(),
+       config_path: config_path,
+       poll_interval_ms: 60_000,
+       command_runner: runner(commands, server),
+       vendor_status: fn -> :running end,
+       frame_health: fn -> Agent.get_and_update(beat, fn n -> {n, n + 1} end) end}
+    )
+
+    for _ <- 1..8 do
+      RtspServer.run_now(last_name())
+      Process.sleep(5)
+    end
+
+    assert %{phase: :running, stall_strikes: 0} = RtspServer.status(last_name())
+  end
+
+  test "counts strikes and warns once when frames stall", %{root: root} do
+    config_path = Path.join(root, "auto-start.conf")
+    File.write!(config_path, "enabled=true\n")
+
+    {:ok, commands} = Agent.start_link(fn -> [] end)
+    {:ok, server} = Agent.start_link(fn -> :running end)
+
+    start_supervised!(
+      {RtspServer,
+       name: name(),
+       config_path: config_path,
+       poll_interval_ms: 60_000,
+       command_runner: runner(commands, server),
+       vendor_status: fn -> :running end,
+       # Frozen heartbeat: the same value every poll.
+       frame_health: fn -> 12_345 end}
+    )
+
+    # First poll fires at startup and records the (frozen) beat; drive six more
+    # so the stall crosses the warn threshold.
+    for _ <- 1..7, do: (RtspServer.run_now(last_name()); Process.sleep(5))
+
+    assert_eventually(fn ->
+      match?(%{phase: :running, last_result: {:frame_stall, 6}}, RtspServer.status(last_name()))
+    end)
+
+    # A frozen heartbeat never restarts anything — no start/stop is issued.
+    refute "start" in Agent.get(commands, & &1)
+    refute "stop" in Agent.get(commands, & &1)
+  end
+
+  test "recovers stall count when frames resume", %{root: root} do
+    config_path = Path.join(root, "auto-start.conf")
+    File.write!(config_path, "enabled=true\n")
+
+    {:ok, commands} = Agent.start_link(fn -> [] end)
+    {:ok, server} = Agent.start_link(fn -> :running end)
+    {:ok, beat} = Agent.start_link(fn -> {:frozen, 7} end)
+
+    start_supervised!(
+      {RtspServer,
+       name: name(),
+       config_path: config_path,
+       poll_interval_ms: 60_000,
+       command_runner: runner(commands, server),
+       vendor_status: fn -> :running end,
+       frame_health: fn ->
+         case Agent.get(beat, & &1) do
+           {:frozen, v} -> v
+           {:moving, v} -> Agent.update(beat, fn _ -> {:moving, v + 1} end) && v
+         end
+       end}
+    )
+
+    for _ <- 1..3, do: (RtspServer.run_now(last_name()); Process.sleep(5))
+    assert RtspServer.status(last_name()).stall_strikes >= 2
+
+    Agent.update(beat, fn _ -> {:moving, 100} end)
+    RtspServer.run_now(last_name())
+    Process.sleep(5)
+    RtspServer.run_now(last_name())
+    Process.sleep(5)
+
+    assert RtspServer.status(last_name()).stall_strikes == 0
+  end
+
   defp name do
     generated = :"rtsp-server-#{System.unique_integer([:positive])}"
     Process.put(:rtsp_server_name, generated)
