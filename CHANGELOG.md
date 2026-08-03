@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-08-03
 
 - Support multiple Wi-Fi locations. `nerves-provisioning.conf` now accepts
   numbered SSID/passphrase pairs (`NERVES_WIFI_SSID_2`, ...) in addition to

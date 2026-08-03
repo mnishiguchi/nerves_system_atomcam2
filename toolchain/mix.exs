@@ -5,7 +5,7 @@ defmodule NervesToolchainAtomcam2.MixProject do
   @version Path.join(__DIR__, "VERSION")
            |> File.read!()
            |> String.trim()
-  @source_url "https://github.com/mnishiguchi/nerves_system_atomcam2"
+  @source_url "https://github.com/piyopiyoex/nerves_system_atomcam2"
 
   def project do
     [
@@ -31,7 +31,7 @@ defmodule NervesToolchainAtomcam2.MixProject do
       platform: NervesToolchainAtomcam2,
       target_tuple: :mipsel_nerves_linux_musl,
       artifact_sites: [
-        {:github_releases, "mnishiguchi/nerves_system_atomcam2"}
+        {:github_releases, "piyopiyoex/nerves_system_atomcam2"}
       ],
       checksum: checksum_files()
     ]

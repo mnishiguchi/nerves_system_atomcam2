@@ -262,7 +262,7 @@ if [ "$publish" = "1" ]; then
 
   gh auth status >/dev/null
 
-  if gh release view "$release_tag" --repo mnishiguchi/nerves_system_atomcam2 >/dev/null 2>&1; then
+  if gh release view "$release_tag" --repo piyopiyoex/nerves_system_atomcam2 >/dev/null 2>&1; then
     fail "GitHub release already exists: $release_tag"
   fi
 
@@ -270,7 +270,7 @@ if [ "$publish" = "1" ]; then
 
   gh release create "$release_tag" \
     "${release_files[@]}" \
-    --repo mnishiguchi/nerves_system_atomcam2 \
+    --repo piyopiyoex/nerves_system_atomcam2 \
     --target "$(git -C "$repo_root" rev-parse HEAD)" \
     --title "$release_tag" \
     --generate-notes
@@ -285,7 +285,7 @@ if [ "$verify" = "1" ]; then
   git clone \
     --branch "$release_tag" \
     --depth 1 \
-    https://github.com/mnishiguchi/nerves_system_atomcam2.git \
+    https://github.com/piyopiyoex/nerves_system_atomcam2.git \
     "$verification_root/repository"
 
   verification_app="$verification_root/repository/examples/atomcam2_nerves_app"
