@@ -1,0 +1,88 @@
+#!/bin/sh
+# Play the boot announcement through the speaker while blinking the blue
+# status LED. The caller must have the camera kernel modules loaded
+# (audio.ko, speaker_ctl.ko) with the audio device still unclaimed, so the
+# only safe boot-time window is inside atomcam2-vendor-camera between module
+# setup and the vendor process launch. A native camera runtime can reuse the
+# script under the same precondition.
+set -u
+
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+if [ -f /etc/atomcam2.env ]; then
+  . /etc/atomcam2.env
+fi
+
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
+enabled="${ATOMCAM2_BOOT_ANNOUNCE:-enabled}"
+sound_file="${ATOMCAM2_BOOT_ANNOUNCE_SOUND:-/usr/share/atomcam2/boot-announce.raw}"
+player="${ATOMCAM2_BOOT_ANNOUNCE_PLAYER:-/usr/bin/atomcam2-aoplay}"
+gain="${ATOMCAM2_BOOT_ANNOUNCE_GAIN:-1}"
+rate="${ATOMCAM2_BOOT_ANNOUNCE_RATE:-8000}"
+volume="${ATOMCAM2_BOOT_ANNOUNCE_VOLUME:-60}"
+blue_led_gpio="${ATOMCAM2_BLUE_LED_GPIO:-39}"
+blink_count="${ATOMCAM2_BOOT_ANNOUNCE_BLINKS:-3}"
+vendor_root="${ATOMCAM2_VENDOR_ROOT:-/atom}"
+vendor_system="${ATOMCAM2_VENDOR_SYSTEM:-/atom/system}"
+
+[ "$enabled" = "enabled" ] || exit 0
+
+# The blue status LED is wired to a plain GPIO (no /sys/class/leds on this
+# kernel). Leave it lit afterwards as the "system is up" indicator.
+blink_blue_led() {
+  gpio_root="/sys/class/gpio/gpio$blue_led_gpio"
+
+  if [ ! -d "$gpio_root" ]; then
+    echo "$blue_led_gpio" > /sys/class/gpio/export 2>/dev/null || return 0
+  fi
+
+  echo out > "$gpio_root/direction" 2>/dev/null || return 0
+  echo 0 > "$gpio_root/active_low" 2>/dev/null || true
+
+  blink_index=0
+  while [ "$blink_index" -lt "$blink_count" ]; do
+    echo 1 > "$gpio_root/value"
+    sleep 1
+    echo 0 > "$gpio_root/value"
+    sleep 1
+    blink_index=$((blink_index + 1))
+  done
+
+  echo 1 > "$gpio_root/value"
+}
+
+announce_ready() {
+  if [ ! -x "$player" ]; then
+    echo "atomcam2-boot-announce: player is missing: $player" >&2
+    return 1
+  fi
+
+  if [ ! -f "$sound_file" ]; then
+    echo "atomcam2-boot-announce: sound file is missing: $sound_file" >&2
+    return 1
+  fi
+
+  if [ ! -c /dev/dsp ] || [ ! -c /dev/speakerctl ]; then
+    echo "atomcam2-boot-announce: audio devices are not ready" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+blink_blue_led &
+blink_pid="$!"
+
+if announce_ready; then
+  if ! LD_LIBRARY_PATH="$vendor_system/lib:$vendor_root/lib" \
+      "$player" "$sound_file" "$gain" "$rate" "$volume" >/dev/null 2>&1; then
+    echo "atomcam2-boot-announce: playback failed" >&2
+  fi
+fi
+
+wait "$blink_pid" 2>/dev/null || true
+exit 0

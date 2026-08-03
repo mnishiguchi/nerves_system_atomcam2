@@ -23,6 +23,7 @@ video_hook="${ATOMCAM2_VENDOR_VIDEO_HOOK:-/usr/lib/atomcam2-vendor-camera/libvid
 chroot_command="${ATOMCAM2_VENDOR_CHROOT:-/usr/sbin/chroot}"
 setpriv_command="${ATOMCAM2_VENDOR_SETPRIV:-/usr/bin/setpriv}"
 sensor_data_interface="${ATOMCAM2_VENDOR_SENSOR_DATA_INTERFACE:-1}"
+boot_announce_command="${ATOMCAM2_BOOT_ANNOUNCE_COMMAND:-/usr/bin/atomcam2-boot-announce}"
 
 failures=0
 gates=0
@@ -1192,6 +1193,17 @@ start_runtime() {
     echo "atomcam2-vendor-camera: private device setup failed" >&2
     stop_runtime
     return 1
+  fi
+
+  # The audio device is only free between camera module setup and the vendor
+  # process launch (iCamera_app holds the IMPAudio lock once running), so the
+  # boot announcement has to happen here.
+  if [ -x "$boot_announce_command" ]; then
+    if "$boot_announce_command"; then
+      pass "boot announcement played"
+    else
+      echo "atomcam2-vendor-camera: boot announcement failed (continuing)" >&2
+    fi
   fi
 
   if ! start_vendor_processes; then

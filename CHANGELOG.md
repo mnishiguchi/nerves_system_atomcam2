@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Announce readiness at boot. When the vendor camera runtime starts, the
+  camera now says 「起動しました。」 through the speaker and blinks the blue
+  status LED three times, leaving it lit. The announcement runs in the only
+  safe window — after the camera kernel modules load and before
+  `iCamera_app` claims the audio device. Playback uses a new
+  `atomcam2-aoplay` tool (libimp `IMP_AO`, prebuilt with the vendor uClibc
+  toolchain; source under `package/atomcam2-boot-announce/`). Disable with
+  `ATOMCAM2_BOOT_ANNOUNCE=disabled` or swap the PCM via
+  `ATOMCAM2_BOOT_ANNOUNCE_SOUND` in `atomcam2.env` on the MicroSD.
+
 ## 0.4.0 - 2026-08-03
 
 - Support multiple Wi-Fi locations. `nerves-provisioning.conf` now accepts
