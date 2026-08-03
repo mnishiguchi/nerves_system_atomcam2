@@ -1,11 +1,13 @@
 #!/bin/sh
 # Play the boot announcement through the speaker. Assumes native-only
 # operation (no iCamera_app, which would otherwise hold the IMPAudio
-# lock): the audio device is always free, and the audio kernel modules
-# are loaded here if nothing loaded them yet. Requires /atom/system
-# mounted (done by atomcam2-wifi-driver in pre-run). The status LEDs are
-# driven by the application (Atomcam2NervesApp.StatusLed), not here —
-# busybox sleep cannot do the sub-second blink timing.
+# lock). The audio kernel modules are normally loaded by CameraNative in
+# the vendor's order (tx_isp before audio — loading audio first leaves
+# the codec broken), so this script waits for the audio devices and only
+# falls back to loading the modules itself when nothing else does.
+# Requires /atom/system mounted (done by atomcam2-wifi-driver in
+# pre-run). The status LEDs are driven by the application
+# (Atomcam2NervesApp.StatusLed), not here.
 set -u
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
@@ -30,14 +32,39 @@ vendor_system="${ATOMCAM2_VENDOR_SYSTEM:-/atom/system}"
 
 [ "$enabled" = "enabled" ] || exit 0
 
-# devtmpfs creates /dev/dsp and /dev/speakerctl as soon as the modules load.
-ensure_audio_modules() {
+audio_devices_present() {
+  [ -c /dev/dsp ] && [ -c /dev/speakerctl ]
+}
+
+wait_for_audio_devices() {
+  waited=0
+
+  while [ "$waited" -lt "${ATOMCAM2_BOOT_ANNOUNCE_WAIT_S:-20}" ]; do
+    if audio_devices_present; then
+      return 0
+    fi
+
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  return 1
+}
+
+# Standalone fallback for when the camera auto-start is disabled and
+# nothing else loads the modules. tx_isp has to come first: loading
+# audio.ko without it leaves the codec broken (IMP_AO_Enable = -1).
+load_audio_modules() {
+  if ! grep -q "^tx_isp_t31 " /proc/modules 2>/dev/null; then
+    /sbin/insmod "$vendor_system/driver/tx-isp-t31.ko" isp_clk=100000000 || true
+  fi
+
   if [ ! -c /dev/dsp ]; then
-    /sbin/insmod "$vendor_system/driver/audio.ko" spk_gpio=-1 2>/dev/null || true
+    /sbin/insmod "$vendor_system/driver/audio.ko" spk_gpio=-1 || true
   fi
 
   if [ ! -c /dev/speakerctl ]; then
-    /sbin/insmod "$vendor_system/driver/speaker_ctl.ko" 2>/dev/null || true
+    /sbin/insmod "$vendor_system/driver/speaker_ctl.ko" || true
   fi
 }
 
@@ -52,9 +79,11 @@ announce_ready() {
     return 1
   fi
 
-  ensure_audio_modules
+  if ! wait_for_audio_devices; then
+    load_audio_modules
+  fi
 
-  if [ ! -c /dev/dsp ] || [ ! -c /dev/speakerctl ]; then
+  if ! audio_devices_present; then
     echo "atomcam2-boot-announce: audio devices are not ready" >&2
     return 1
   fi

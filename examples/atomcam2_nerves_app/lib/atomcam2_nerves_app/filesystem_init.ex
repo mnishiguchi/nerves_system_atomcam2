@@ -19,8 +19,23 @@ defmodule Atomcam2NervesApp.FilesystemInit do
 
   @impl GenServer
   def init(_args) do
-    initialize()
+    # Run the check and mount asynchronously: a full e2fsck after an
+    # unclean shutdown takes minutes on this hardware, and blocking here
+    # would hold up the whole boot (announcement, LEDs, networking, SSH,
+    # camera). Early consumers either avoid /data (SSH host keys and the
+    # time file live on /media/mmc) or poll until the mount appears.
+    {:ok, _pid} = Task.start(&timed_initialize/0)
     :ignore
+  end
+
+  defp timed_initialize do
+    started_at = System.monotonic_time(:millisecond)
+    result = initialize()
+    elapsed_ms = System.monotonic_time(:millisecond) - started_at
+
+    Logger.info(
+      "Application data initialization finished (#{inspect(result)}) in #{elapsed_ms} ms"
+    )
   end
 
   @doc false
@@ -326,12 +341,18 @@ defmodule Atomcam2NervesApp.FilesystemInit do
     end
   end
 
-  defp unmount(target) do
+  # Now that initialization runs off the boot critical path, another
+  # process may briefly hold the mount open; retry before giving up.
+  defp unmount(target, attempts_left \\ 5) do
     {_output, status} = runtime_cmd("umount", [target])
 
     case mount_state(target) do
       :unmounted ->
         :ok
+
+      _state when attempts_left > 1 ->
+        Process.sleep(1_000)
+        unmount(target, attempts_left - 1)
 
       state ->
         {:error, %{command_status: status, mount_state: state}}

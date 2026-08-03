@@ -3,15 +3,16 @@ defmodule Atomcam2NervesApp.CameraNative do
   Boot integration for the native camera stack (Stage 5, first slice).
 
   Drives the iCamera_app-free pipeline: loads the camera kernel modules,
-  then supervises `camd` (libimp capture + H.264 encode into v4l2loopback)
-  and `v4l2rtspserver` as OS processes via `MuonTrap.Daemon`, restarting
-  them if they exit. `camd` still lives on `/data` until it is packaged
-  into the system, so startup waits until the binary and the loopback
-  device are present.
+  then supervises `atomcam2-camd` (libimp capture + H.264 encode into
+  v4l2loopback) and `v4l2rtspserver` as OS processes via
+  `MuonTrap.Daemon`, restarting them if they exit. Everything needed
+  lives in the rootfs, /atom, and /tmp, so the camera comes up even while
+  a long /data filesystem check is still running.
 
   Auto-start is opt-out: `/data/atomcam2-native-camera/auto-start.conf`
-  with `enabled=false` disables it; a missing file means enabled, because
-  native is the only camera mode in this deployment.
+  with `enabled=false` disables it; a missing (or not yet mounted) file
+  means enabled, because native is the only camera mode in this
+  deployment.
   """
 
   use GenServer
@@ -19,7 +20,7 @@ defmodule Atomcam2NervesApp.CameraNative do
   require Logger
 
   @config_path "/data/atomcam2-native-camera/auto-start.conf"
-  @camd_path "/data/camd"
+  @camd_path "/usr/bin/atomcam2-camd"
   @loopback_device "/dev/video0"
   @libimp_path "/atom/system/lib/libimp.so"
   @driver_root "/atom/system/driver"
@@ -29,7 +30,7 @@ defmodule Atomcam2NervesApp.CameraNative do
   # daemon supervisor starts it again.
   @camd_frames "2000000000"
   @camd_args [@camd_frames, @loopback_device, "gc2053", "0x37"]
-  @camd_ctl_path "/data/camd.ctl"
+  @camd_ctl_path "/tmp/camd.ctl"
   @rtsp_args ["-Q", "2", "-P", "8554", @loopback_device]
 
   # The loopback writer has to set the H.264 format (S_FMT) before
@@ -37,11 +38,18 @@ defmodule Atomcam2NervesApp.CameraNative do
   @rtsp_delay_ms 8_000
   @poll_interval_ms 5_000
 
+  # The vendor start sequence loads tx_isp first and audio right after;
+  # loading audio.ko before tx_isp leaves the codec half-initialized
+  # (IMP_AO_Enable returns -1 and /dev/dsp never appears), so all camera
+  # and audio modules are loaded here, in this exact order. The boot
+  # announcement waits for the audio devices instead of loading modules.
   @camera_modules [
     {"tx_isp_t31", "tx-isp-t31.ko", ["isp_clk=100000000"]},
-    {"sensor_gc2053_t31", "sensor_gc2053_t31.ko", ["data_interface=1"]},
+    {"audio", "audio.ko", ["spk_gpio=-1"]},
     {"avpu", "avpu.ko", []},
-    {"sinfo", "sinfo.ko", []}
+    {"sinfo", "sinfo.ko", []},
+    {"sensor_gc2053_t31", "sensor_gc2053_t31.ko", ["data_interface=1"]},
+    {"speaker_ctl", "speaker_ctl.ko", []}
   ]
 
   defstruct phase: :not_checked,
@@ -125,6 +133,7 @@ defmodule Atomcam2NervesApp.CameraNative do
 
   defp start_stack(state) do
     with :ok <- load_camera_modules(),
+         :ok <- ensure_dsp_node(),
          {:ok, camd_pid} <- start_camd() do
       # The boot logo stays hidden: camd shows its OSD logo by default and
       # consumes the control file on its first poll, one command per write.
@@ -184,16 +193,11 @@ defmodule Atomcam2NervesApp.CameraNative do
 
   defp missing do
     checks = [
-      {@camd_path, &camd_present?/0},
       {@loopback_device, &loopback_present?/0},
       {@libimp_path, fn -> File.exists?(@libimp_path) end}
     ]
 
     for {name, present?} <- checks, not present?.(), do: name
-  end
-
-  defp camd_present? do
-    match?({:ok, %File.Stat{type: :regular}}, File.stat(@camd_path))
   end
 
   defp loopback_present? do
@@ -219,6 +223,25 @@ defmodule Atomcam2NervesApp.CameraNative do
         end
       end
     end)
+  end
+
+  # devtmpfs has been seen skipping the OSS node even after a successful
+  # codec probe; the driver registers char major 14 ("sound"), so create
+  # the classic /dev/dsp (14, 3) ourselves when it is missing.
+  defp ensure_dsp_node do
+    if File.exists?("/dev/dsp") do
+      :ok
+    else
+      case System.cmd("/bin/mknod", ["/dev/dsp", "c", "14", "3"], stderr_to_stdout: true) do
+        {_output, 0} ->
+          Logger.info("Created /dev/dsp device node")
+          :ok
+
+        {output, status} ->
+          Logger.warning("mknod /dev/dsp failed (#{status}): #{String.trim(output)}")
+          :ok
+      end
+    end
   end
 
   defp module_loaded?(name) do

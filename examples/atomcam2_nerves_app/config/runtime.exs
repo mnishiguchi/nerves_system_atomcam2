@@ -1,13 +1,18 @@
 import Config
 
 if config_target() != :host do
+  # SSH host keys and the time file live on the FAT boot partition, which
+  # pre-run mounts before the BEAM starts. Keeping them off /data lets
+  # sshd come up with a stable host key and the clock restore early while
+  # the (possibly minutes-long) /data filesystem check still runs in the
+  # background.
   config :nerves_time,
-    time_file: "/data/.nerves_time",
+    time_file: "/media/mmc/.nerves_time",
     await_initialization_timeout: 5_000
 
   config :nerves_ssh,
-    system_dir: "/data/nerves_ssh",
-    user_dir: "/data/nerves_ssh/default_user"
+    system_dir: "/media/mmc/nerves_ssh",
+    user_dir: "/media/mmc/nerves_ssh/default_user"
 
   provisioning_path = "/media/mmc/nerves-provisioning.conf"
 
