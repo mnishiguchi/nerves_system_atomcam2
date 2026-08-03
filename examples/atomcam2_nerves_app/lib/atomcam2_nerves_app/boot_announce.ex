@@ -3,11 +3,12 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   Play the boot announcement once at application startup.
 
   The work happens in `/usr/bin/atomcam2-boot-announce`: it loads the audio
-  kernel modules if nothing loaded them yet, says 「起動しました。」 through
-  the speaker, and blinks the blue status LED, leaving it lit. This only
-  works because operation is native-only — a running `iCamera_app` would
-  hold the IMPAudio lock. The task is fire-and-forget: failures are logged
-  and never affect the rest of the supervision tree.
+  kernel modules if nothing loaded them yet and says 「起動しました。」
+  through the speaker. This only works because operation is native-only —
+  a running `iCamera_app` would hold the IMPAudio lock. The status LEDs
+  are driven separately by `Atomcam2NervesApp.StatusLed`. The task is
+  fire-and-forget: failures are logged and never affect the rest of the
+  supervision tree.
   """
 
   use Task, restart: :temporary

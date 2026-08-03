@@ -29,6 +29,7 @@ defmodule Atomcam2NervesApp.CameraNative do
   # daemon supervisor starts it again.
   @camd_frames "2000000000"
   @camd_args [@camd_frames, @loopback_device, "gc2053", "0x37"]
+  @camd_ctl_path "/data/camd.ctl"
   @rtsp_args ["-Q", "2", "-P", "8554", @loopback_device]
 
   # The loopback writer has to set the H.264 format (S_FMT) before
@@ -125,6 +126,9 @@ defmodule Atomcam2NervesApp.CameraNative do
   defp start_stack(state) do
     with :ok <- load_camera_modules(),
          {:ok, camd_pid} <- start_camd() do
+      # The boot logo stays hidden: camd shows its OSD logo by default and
+      # consumes the control file on its first poll, one command per write.
+      File.write(@camd_ctl_path, "logo off\n")
       Process.send_after(self(), :start_rtsp, @rtsp_delay_ms)
       Logger.info("Native camera started (camd)")
       %{state | phase: :starting, camd_pid: camd_pid, last_error: nil}
