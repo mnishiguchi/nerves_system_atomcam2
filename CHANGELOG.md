@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Keep the /data filesystem check off the boot critical path. After an
+  unclean power-off the full e2fsck of the ext2 data partition takes
+  about 165 s and used to block everything (announcement, LEDs,
+  networking, SSH, camera) because it ran synchronously as the
+  nerves_runtime init module. The check now runs in the background:
+  SSH host keys and the nerves_time file move to the FAT boot partition
+  (`/media/mmc`) so sshd comes up with a stable host key and the clock
+  restores early, and the boot announcement, status LEDs, and camera
+  never touch /data at startup. A clean shutdown still passes the
+  `e2fsck -p` preen in about two seconds.
+- Ship the native camera daemon in the rootfs as `atomcam2-camd`
+  (package `atomcam2-camera`), replacing the `/data/camd` prebuilt. Its
+  runtime control file moves from `/data/camd.ctl` to `/tmp/camd.ctl` so
+  the camera is fully /data-independent and starts while the filesystem
+  check is still running.
+
 - Signal state on the status LEDs. While booting, the yellow LED
   double-blinks once a second (100 ms on / 200 ms off / 100 ms on /
   600 ms off) with the blue LED dark; once RTSP is publishing, the

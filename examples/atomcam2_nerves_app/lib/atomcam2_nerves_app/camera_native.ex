@@ -3,15 +3,16 @@ defmodule Atomcam2NervesApp.CameraNative do
   Boot integration for the native camera stack (Stage 5, first slice).
 
   Drives the iCamera_app-free pipeline: loads the camera kernel modules,
-  then supervises `camd` (libimp capture + H.264 encode into v4l2loopback)
-  and `v4l2rtspserver` as OS processes via `MuonTrap.Daemon`, restarting
-  them if they exit. `camd` still lives on `/data` until it is packaged
-  into the system, so startup waits until the binary and the loopback
-  device are present.
+  then supervises `atomcam2-camd` (libimp capture + H.264 encode into
+  v4l2loopback) and `v4l2rtspserver` as OS processes via
+  `MuonTrap.Daemon`, restarting them if they exit. Everything needed
+  lives in the rootfs, /atom, and /tmp, so the camera comes up even while
+  a long /data filesystem check is still running.
 
   Auto-start is opt-out: `/data/atomcam2-native-camera/auto-start.conf`
-  with `enabled=false` disables it; a missing file means enabled, because
-  native is the only camera mode in this deployment.
+  with `enabled=false` disables it; a missing (or not yet mounted) file
+  means enabled, because native is the only camera mode in this
+  deployment.
   """
 
   use GenServer
@@ -19,7 +20,7 @@ defmodule Atomcam2NervesApp.CameraNative do
   require Logger
 
   @config_path "/data/atomcam2-native-camera/auto-start.conf"
-  @camd_path "/data/camd"
+  @camd_path "/usr/bin/atomcam2-camd"
   @loopback_device "/dev/video0"
   @libimp_path "/atom/system/lib/libimp.so"
   @driver_root "/atom/system/driver"
@@ -29,7 +30,7 @@ defmodule Atomcam2NervesApp.CameraNative do
   # daemon supervisor starts it again.
   @camd_frames "2000000000"
   @camd_args [@camd_frames, @loopback_device, "gc2053", "0x37"]
-  @camd_ctl_path "/data/camd.ctl"
+  @camd_ctl_path "/tmp/camd.ctl"
   @rtsp_args ["-Q", "2", "-P", "8554", @loopback_device]
 
   # The loopback writer has to set the H.264 format (S_FMT) before
@@ -184,16 +185,11 @@ defmodule Atomcam2NervesApp.CameraNative do
 
   defp missing do
     checks = [
-      {@camd_path, &camd_present?/0},
       {@loopback_device, &loopback_present?/0},
       {@libimp_path, fn -> File.exists?(@libimp_path) end}
     ]
 
     for {name, present?} <- checks, not present?.(), do: name
-  end
-
-  defp camd_present? do
-    match?({:ok, %File.Stat{type: :regular}}, File.stat(@camd_path))
   end
 
   defp loopback_present? do

@@ -45,6 +45,8 @@ public_keys =
     end
   end)
 
+# The host-key and time-file locations are set in config/runtime.exs
+# (kept off /data so they are available before the filesystem check).
 config :nerves_ssh,
   authorized_keys: public_keys,
   subsystems: [

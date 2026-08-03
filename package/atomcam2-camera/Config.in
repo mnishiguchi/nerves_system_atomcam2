@@ -1,0 +1,6 @@
+config BR2_PACKAGE_ATOMCAM2_CAMERA
+	bool "atomcam2-camera"
+	help
+	  Install the prebuilt native camera daemon (atomcam2-camd) that
+	  drives the sensor through the vendor libimp and writes H.264
+	  into the v4l2loopback device, replacing iCamera_app.
