@@ -4,9 +4,14 @@
 
 - Keep the /data filesystem check off the boot critical path. After an
   unclean power-off the full e2fsck of the ext2 data partition takes
-  about 165 s and used to block everything (announcement, LEDs,
+  minutes and used to block everything (announcement, LEDs,
   networking, SSH, camera) because it ran synchronously as the
-  nerves_runtime init module. The check now runs in the background:
+  nerves_runtime init module. Measured on a power-cut boot, the network
+  now answers at 29 s and RTSP publishes at 48 s while the check
+  finishes in the background. Known issue: the spoken announcement
+  still fails on cold boots — the audio driver comes up incomplete
+  (no /dev/dsp, IMP_AO_Enable -1) even with the correct module order;
+  soft reboots announce reliably. The check runs in the background:
   SSH host keys and the nerves_time file move to the FAT boot partition
   (`/media/mmc`) so sshd comes up with a stable host key and the clock
   restores early, and the boot announcement, status LEDs, and camera
