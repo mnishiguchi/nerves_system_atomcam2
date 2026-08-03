@@ -14,7 +14,9 @@ defmodule Atomcam2NervesApp.RtspServer do
 
   @command "/usr/bin/atomcam2-rtsp-server"
   @config_path "/data/atomcam2-rtsp/auto-start.conf"
-  @beat_path "/tmp/atomcam2-video-hook.beat"
+  # The hook writes its heartbeat to /tmp inside the vendor chroot, which is
+  # /atom/tmp as seen from the Nerves root where this GenServer runs.
+  @beat_path "/atom/tmp/atomcam2-video-hook.beat"
   @poll_interval_ms 10_000
   @status_timeout_ms 45_000
 

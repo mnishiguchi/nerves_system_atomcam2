@@ -37,8 +37,9 @@ extern long write(int fd, const void *buffer, unsigned long count);
 extern void *dlopen(const char *path, int flags);
 extern void *dlsym(void *handle, const char *symbol);
 
-#define O_CREAT 0100
-#define O_TRUNC 01000
+/* MIPS uses non-generic open() flag values: O_CREAT is 0x100, not 0x40. */
+#define O_CREAT 0x100
+#define O_TRUNC 0x200
 
 /*
  * Frame heartbeat. The supervisor cannot see whether encoded frames are still
