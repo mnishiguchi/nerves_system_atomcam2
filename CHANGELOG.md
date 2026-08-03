@@ -4,10 +4,13 @@
 
 - Signal state on the status LEDs. While booting, the yellow LED
   double-blinks once a second (100 ms on / 200 ms off / 100 ms on /
-  600 ms off); once RTSP is publishing, the yellow LED goes dark and the
-  blue LED double-blinks every five seconds (100 ms on / 200 ms off /
-  100 ms on / 4600 ms off). Timing runs in the new `StatusLed` GenServer
-  because busybox sleep cannot do sub-second delays.
+  600 ms off) with the blue LED dark; once RTSP is publishing, the
+  yellow LED goes dark and the blue LED stays lit, dipping dark twice
+  every five seconds (100 ms off / 200 ms on / 100 ms off / 4600 ms on).
+  Both LEDs are wired active-low; sysfs `active_low` normalizes the
+  polarity, and `atomcam2-pre-run` turns both LEDs off seconds after
+  power-on. Timing runs in the new `StatusLed` GenServer because busybox
+  sleep cannot do sub-second delays.
 - Hide the OSD logo at startup: `CameraNative` sends `logo off` to
   `/data/camd.ctl` every time it starts camd (camd shows the logo by
   default; the clock overlay stays).
