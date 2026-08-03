@@ -113,8 +113,20 @@ tx-isp モジュールとの整合性が保証される。動作しない場合�
 - **想定との差分**: エンコーダ API が T31 **1.1.1 の新 API** で、旧サンプル
   ヘッダとは ABI 非互換だった(`invalid resolution(0x0)`)。正しい 1.1.1
   ヘッダ(`cgrrty/Ingenic-SDK-T31-1.1.1-20200508`)+ `IMP_Encoder_SetDefaultParam`
-  + `IMPEncoderPack.offset` 読み出しで解決。**フェーズ 1 の残タスクは
-  「画質・CPU・メモリの実測」のみ**で、これはフェーズ 2 の常駐形態で行う。
+  + `IMPEncoderPack.offset` 読み出しで解決。
+
+### フェーズ 2 も完了 = GO(loopback → RTSP + メモリ実測)
+エンコード出力を `/dev/video0`(v4l2loopback)へ現行フックと同じ作法で書き出し、
+既存の `v4l2rtspserver` で配信。外部からの RTSP DESCRIBE が `200 OK` +
+`H264/90000` + native 生成の `sprop-parameter-sets`(SPS/PPS)を返し、**後段
+(loopback + v4l2rtspserver)は無改修で native ソースに載る**ことを実証した。
+- **メモリ実測**: native 常駐プロセスの VmRSS は **初期化直後 1.36MB → 定常
+  1.55MB**。本見積もり(下記「メモリ所要量の見積もり」)の 3–6MB を下回った。
+  ベンダー三点(約 25MB)を約 1.5MB に置換 → **平常時 RSS 約 23MB 削減**の
+  見込み(配信後段 v4l2rtspserver 約 13MB は両モード共通で据え置き)。
+- **注意**: ベンダー停止後も旧 `v4l2rtspserver` が 8554 を占有し続けると新規
+  サーバがバインドできない。切替時に既存サーバの停止を先行させること(フェーズ 3
+  の監督・排他切替で担保する)。
 
 ## 段階計画
 
@@ -133,10 +145,11 @@ tx-isp モジュールとの整合性が保証される。動作しない場合�
    フルバッファリングされるため使わない)
 4. 画質(チューニングデータ適用)・CPU・メモリを実測
 
-### フェーズ 2: loopback へ接続
+### フェーズ 2: loopback へ接続 — ✅ 完了(上記「実証結果」参照)
 
 - エンコード済みフレームを `/dev/video0` へ書き込む(現行フックと同じ流儀)。
-  後段(v4l2rtspserver)は無改修で RTSP 配信に載る
+  後段(v4l2rtspserver)は無改修で RTSP 配信に載る<br>
+  → 実機で RTSP DESCRIBE 200 OK + native SPS/PPS を確認、native 常駐 RSS 約 1.5MB。
 
 ### フェーズ 3: Buildroot パッケージ化と監督
 
