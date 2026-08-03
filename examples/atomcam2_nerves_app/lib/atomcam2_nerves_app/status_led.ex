@@ -17,8 +17,13 @@ defmodule Atomcam2NervesApp.StatusLed do
 
   require Logger
 
+  # The yellow LED is wired active-low (drive the pin low to light it),
+  # the blue one active-high. sysfs `active_low` normalizes that, so the
+  # patterns below can use 1 = lit for both.
   @yellow_gpio 38
+  @yellow_active_low "1"
   @blue_gpio 39
+  @blue_active_low "0"
 
   @boot_pattern [{1, 100}, {0, 200}, {1, 100}, {0, 600}]
   @publish_pattern [{1, 100}, {0, 200}, {1, 100}, {0, 4600}]
@@ -31,8 +36,8 @@ defmodule Atomcam2NervesApp.StatusLed do
 
   @impl GenServer
   def init(_options) do
-    setup_gpio(@yellow_gpio)
-    setup_gpio(@blue_gpio)
+    setup_gpio(@yellow_gpio, @yellow_active_low)
+    setup_gpio(@blue_gpio, @blue_active_low)
     send(self(), :cycle)
     {:ok, %{mode: nil, gpio: nil, steps: []}}
   end
@@ -86,7 +91,7 @@ defmodule Atomcam2NervesApp.StatusLed do
     _, _ -> :boot
   end
 
-  defp setup_gpio(number) do
+  defp setup_gpio(number, active_low) do
     root = "/sys/class/gpio/gpio#{number}"
 
     unless File.dir?(root) do
@@ -94,7 +99,7 @@ defmodule Atomcam2NervesApp.StatusLed do
     end
 
     File.write(Path.join(root, "direction"), "out")
-    File.write(Path.join(root, "active_low"), "0")
+    File.write(Path.join(root, "active_low"), active_low)
     File.write(Path.join(root, "value"), "0")
   end
 

@@ -257,6 +257,25 @@ else
   exit 1
 fi
 
+# Turn both status LEDs off as early in boot as possible so nothing shows
+# until the application's StatusLed starts the yellow boot blink. The
+# yellow LED (GPIO 38) is wired active-low, the blue one (GPIO 39)
+# active-high.
+led_off() {
+  led_gpio="$1"
+  led_off_value="$2"
+
+  if [ ! -d "/sys/class/gpio/gpio$led_gpio" ]; then
+    echo "$led_gpio" > /sys/class/gpio/export 2>/dev/null || return 0
+  fi
+
+  echo out > "/sys/class/gpio/gpio$led_gpio/direction" 2>/dev/null || return 0
+  echo "$led_off_value" > "/sys/class/gpio/gpio$led_gpio/value" 2>/dev/null || true
+}
+
+led_off 38 1
+led_off 39 0
+
 root_disk=""
 boot_partition=""
 application_partition=""
