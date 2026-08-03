@@ -17,13 +17,13 @@ defmodule Atomcam2NervesApp.StatusLed do
 
   require Logger
 
-  # The yellow LED is wired active-low (drive the pin low to light it),
-  # the blue one active-high. sysfs `active_low` normalizes that, so the
-  # patterns below can use 1 = lit for both.
+  # Both status LEDs are wired active-low (drive the pin low to light
+  # them). sysfs `active_low` normalizes that, so the patterns below can
+  # use 1 = lit.
   @yellow_gpio 38
   @yellow_active_low "1"
   @blue_gpio 39
-  @blue_active_low "0"
+  @blue_active_low "1"
 
   @boot_pattern [{1, 100}, {0, 200}, {1, 100}, {0, 600}]
   @publish_pattern [{1, 100}, {0, 200}, {1, 100}, {0, 4600}]

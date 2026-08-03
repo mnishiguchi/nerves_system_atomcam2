@@ -258,9 +258,9 @@ else
 fi
 
 # Turn both status LEDs off as early in boot as possible so nothing shows
-# until the application's StatusLed starts the yellow boot blink. The
-# yellow LED (GPIO 38) is wired active-low, the blue one (GPIO 39)
-# active-high.
+# until the application's StatusLed starts the yellow boot blink. Both
+# LEDs (yellow GPIO 38, blue GPIO 39) are wired active-low, so "off"
+# means driving the pins high.
 led_off() {
   led_gpio="$1"
   led_off_value="$2"
@@ -274,7 +274,7 @@ led_off() {
 }
 
 led_off 38 1
-led_off 39 0
+led_off 39 1
 
 root_disk=""
 boot_partition=""
