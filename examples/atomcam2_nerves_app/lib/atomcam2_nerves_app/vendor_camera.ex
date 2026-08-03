@@ -19,7 +19,9 @@ defmodule Atomcam2NervesApp.VendorCamera do
   @poll_interval_ms 10_000
   @max_start_attempts 1
   @status_timeout_ms 45_000
-  @connection_property ["interface", "wlan0", "connection"]
+  # The overall connection status across every interface, so a wired-only
+  # deployment (USB Ethernet, no wlan0 association) is considered connected.
+  @connection_property ["connection"]
 
   defstruct config_path: @config_path,
             poll_interval_ms: @poll_interval_ms,

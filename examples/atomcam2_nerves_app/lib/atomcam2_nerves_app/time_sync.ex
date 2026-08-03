@@ -3,7 +3,9 @@ defmodule Atomcam2NervesApp.TimeSync do
 
   use GenServer
 
-  @connection_property ["interface", "wlan0", "connection"]
+  # Overall connectivity across interfaces, so time sync also triggers on a
+  # wired-only (USB Ethernet) deployment, not just on wlan0.
+  @connection_property ["connection"]
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(options) do

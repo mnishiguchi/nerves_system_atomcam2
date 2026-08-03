@@ -28,12 +28,13 @@ MicroSD から起動
 - `/data` の永続データ領域
 - A/B スロットによるリモート更新とロールバック
 - 標準 Atom モバイルアプリとの任意の互換機能
+- カメラ映像の RTSP 配信(任意、再エンコードなし)
 - 1 分単位の連続録画
 - SFTP による NAS 転送、再試行、容量上限、保存期間の管理
 
-カメラ互換機能と NAS 転送は初期状態では無効です。Nerves が起動、ネットワーク、
-ハードウェア watchdog、更新、復旧を管理します。RTSP、Web UI、Samba、内蔵フラッシュ
-への書き込みには対応していません。
+カメラ互換機能、RTSP 配信、NAS 転送は初期状態では無効です。Nerves が起動、
+ネットワーク、ハードウェア watchdog、更新、復旧を管理します。Web UI、Samba、
+内蔵フラッシュへの書き込みには対応していません。
 
 > このプロジェクトは実験段階です。無人環境や重要な用途へ導入する前に、停電、
 > クラッシュの反復、長時間運転、温度、ファイルシステム復旧を利用環境で検証して
@@ -101,6 +102,24 @@ export ATOMCAM2_AUTHORIZED_KEYS="$HOME/.ssh/id_ed25519.pub"
 
 認証情報を変更する場合は、FAT パーティションの `nerves-provisioning.conf` と
 `authorized_keys` を編集できます。
+
+### 複数拠点の Wi-Fi
+
+複数の拠点で使う場合は、`nerves-provisioning.conf` に SSID を追加します。
+番号なしの組が拠点 1、`_2`、`_3` … を足して拠点を増やします。
+
+```text
+NERVES_WIFI_SSID=home
+NERVES_WIFI_PASSPHRASE=home-secret
+NERVES_WIFI_SSID_2=office
+NERVES_WIFI_PASSPHRASE_2=office-secret
+```
+
+電波が届く AP に自動で接続するため、同じ MicroSD をどの拠点でも使えます。
+再ビルドは不要で、FAT パーティションの `nerves-provisioning.conf` を
+編集して追加するだけです。パスフレーズを空にすると、その SSID は
+オープンネットワークとして扱います。有線 LAN が使える拠点では有線が
+優先されます。
 
 ## 関連文書
 

@@ -1,0 +1,39 @@
+For compressed formats v4l2loopback derives sizeimage from the raw geometry
+(width * height * 32 / 8), which is an upper bound on uncompressed pixels
+rather than on an encoded frame. At 1920x1080 that reserves 7.91 MiB per
+buffer for a stream whose frames are tens to hundreds of kilobytes.
+
+The cost lands twice: v4l2loopback allocates buffer_size * max_buffers, and
+v4l2rtspserver raises live555's OutPacketBuffer::maxSize to the device's
+buffer size, so every sink and filter allocates that much again. On an
+87 MiB board this exhausts memory as soon as an RTSP server attaches.
+
+Honour a caller-supplied sizeimage when it is smaller, so a writer that
+knows its own bitrate can bound the allocation. Behaviour is unchanged for
+callers that leave sizeimage at zero.
+
+--- a/v4l2loopback.c
++++ b/v4l2loopback.c
+@@ -993,7 +993,21 @@
+ 		if (NULL == format)
+ 			format = &formats[0];
+ 
+-		pix_format_set_size(&fmt->fmt.pix, format, w, h);
++		{
++			__u32 requested_sizeimage = fmt->fmt.pix.sizeimage;
++
++			pix_format_set_size(&fmt->fmt.pix, format, w, h);
++
++			/* For compressed formats the geometry-derived size is
++			 * an upper bound on raw pixels, not on the encoded
++			 * frame, so it reserves far more than the stream can
++			 * ever use. Honour a smaller caller-supplied bound.
++			 */
++			if ((format->flags & FORMAT_FLAGS_COMPRESSED) &&
++			    requested_sizeimage > 0 &&
++			    requested_sizeimage < fmt->fmt.pix.sizeimage)
++				fmt->fmt.pix.sizeimage = requested_sizeimage;
++		}
+ 
+ 		fmt->fmt.pix.pixelformat = format->fourcc;
+ 		fmt->fmt.pix.colorspace = V4L2_COLORSPACE_SRGB;

@@ -1,0 +1,177 @@
+#!/bin/sh
+set -eu
+
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+if [ -f /etc/atomcam2.env ]; then
+  . /etc/atomcam2.env
+fi
+
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
+server_command="${ATOMCAM2_RTSP_COMMAND:-/usr/bin/v4l2rtspserver}"
+state_root="${ATOMCAM2_RTSP_STATE_ROOT:-/data/atomcam2-rtsp}"
+pid_file="$state_root/rtsp.pid"
+log_file="$state_root/rtsp.log"
+port="${ATOMCAM2_RTSP_PORT:-8554}"
+# live555 keeps one buffer of OutPacketBuffer::maxSize per queued frame, so the
+# queue is deliberately short on this 87 MiB board.
+queue="${ATOMCAM2_RTSP_QUEUE:-2}"
+device="${ATOMCAM2_RTSP_DEVICE:-}"
+
+usage() {
+  cat <<'USAGE'
+Usage: atomcam2-rtsp-server {start|stop|status}
+
+Publishes the loopback video device over RTSP. The vendor camera runtime
+must be running: it is the only source of frames.
+
+Environment overrides:
+  ATOMCAM2_RTSP_DEVICE  loopback device (default: first present /dev/videoN)
+  ATOMCAM2_RTSP_PORT    RTSP port (default 8554)
+  ATOMCAM2_RTSP_QUEUE   frame queue length (default 2)
+USAGE
+}
+
+detect_device() {
+  [ -z "$device" ] || return 0
+
+  for candidate in /dev/video0 /dev/video1 /dev/video2; do
+    if [ -c "$candidate" ]; then
+      device="$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+# BusyBox here is built without pidof, so match on /proc as the vendor camera
+# script does.
+process_running() {
+  expected_name="$1"
+
+  for process_status in /proc/[0-9]*/status; do
+    candidate_process_name="$(
+      awk '$1 == "Name:" { print $2; exit }' "$process_status" 2>/dev/null
+    )"
+
+    if [ "$candidate_process_name" = "$expected_name" ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+running_pid() {
+  [ -f "$pid_file" ] || return 1
+
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+
+  case "$pid" in
+    ""|*[!0-9]*) return 1 ;;
+  esac
+
+  [ -d "/proc/$pid" ] || return 1
+
+  grep -q v4l2rtspserver "/proc/$pid/cmdline" 2>/dev/null || return 1
+
+  echo "$pid"
+}
+
+report() {
+  echo "result=$1"
+  [ -z "${2:-}" ] || echo "reason=$2"
+}
+
+do_status() {
+  if pid="$(running_pid)"; then
+    echo "pid=$pid"
+    echo "device=$(cat "$state_root/device" 2>/dev/null || echo unknown)"
+    echo "port=$port"
+    report running
+    return 0
+  fi
+
+  report stopped
+  return 0
+}
+
+do_start() {
+  if running_pid >/dev/null; then
+    do_status
+    return 0
+  fi
+
+  if [ ! -x "$server_command" ]; then
+    report failed "server is unavailable: $server_command"
+    return 1
+  fi
+
+  if ! detect_device; then
+    report failed "no loopback video device is present"
+    return 1
+  fi
+
+  mkdir -p "$state_root"
+
+  # The vendor runtime writes frames into the loopback device. Without it the
+  # server would start and then publish an empty stream.
+  if ! process_running iCamera_app; then
+    report failed "vendor camera runtime is not running"
+    return 1
+  fi
+
+  : >"$log_file"
+  chmod 600 "$log_file"
+
+  "$server_command" -Q "$queue" -P "$port" "$device" >>"$log_file" 2>&1 &
+  server_pid="$!"
+
+  printf '%s\n' "$server_pid" >"$pid_file"
+  printf '%s\n' "$device" >"$state_root/device"
+
+  sleep 3
+
+  if ! running_pid >/dev/null; then
+    rm -f "$pid_file"
+    report failed "server exited during startup"
+    return 1
+  fi
+
+  do_status
+}
+
+do_stop() {
+  if pid="$(running_pid)"; then
+    kill "$pid" 2>/dev/null || true
+
+    count=0
+    while [ -d "/proc/$pid" ]; do
+      count=$((count + 1))
+      if [ "$count" -ge 10 ]; then
+        kill -9 "$pid" 2>/dev/null || true
+        break
+      fi
+      sleep 1
+    done
+  fi
+
+  rm -f "$pid_file"
+  report stopped
+}
+
+case "${1:-}" in
+  start) do_start ;;
+  stop) do_stop ;;
+  status) do_status ;;
+  -h|--help) usage ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

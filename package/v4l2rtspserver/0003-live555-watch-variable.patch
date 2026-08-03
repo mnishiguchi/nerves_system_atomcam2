@@ -1,0 +1,36 @@
+live555 2025.10.13 makes EventLoopWatchVariable a std::atomic_char rather than
+a plain char, so doEventLoop() no longer accepts a char*. Use the typedef for
+the stop flags instead of a bare char; both live555 spellings accept the
+integer assignments these call sites already perform.
+
+--- a/inc/V4l2RTSPServer.h
++++ b/inc/V4l2RTSPServer.h
+@@ -59,7 +59,7 @@
+             return result;
+         }
+ 
+-        void eventLoop(char * stop) {
++        void eventLoop(EventLoopWatchVariable * stop) {
+             m_env->taskScheduler().doEventLoop(stop); 
+         }
+ 
+@@ -281,7 +281,7 @@
+         }
+ 
+     protected:
+-        char              m_stop;
++        EventLoopWatchVariable m_stop;
+         UsageEnvironment* m_env;	
+         RTSPServer*       m_rtspServer;
+         int               m_rtspPort;
+--- a/main.cpp
++++ b/main.cpp
+@@ -38,7 +38,7 @@
+ // -----------------------------------------
+ //    signal handler
+ // -----------------------------------------
+-char quit = 0;
++EventLoopWatchVariable quit(0);
+ void sighandler(int n)
+ { 
+ 	printf("SIGINT\n");

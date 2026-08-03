@@ -1,0 +1,57 @@
+Replace the CMake build with a small Makefile that cross-compiles cleanly and
+links only the video path. Audio support is intentionally left out: this
+system's control kernel provides OSS rather than ALSA, so the audio sources
+cannot be built yet.
+
+--- a/Makefile
++++ b/Makefile
+@@ -0,0 +1,44 @@
++ifneq ($(SRC),)
++VPATH=$(SRC)
++endif
++
++ALL_PROGS = v4l2rtspserver
++PREFIX?=/usr
++DESTDIR?=$(PREFIX)/bin
++CC?=$(CROSS)gcc
++CXX?=$(CROSS)g++
++CXXFLAGS += -I$(SRC) -W -Wall -std=c++11 -g -O2 -D_POSIX_C_SOURCE=2
++CXXFLAGS += -Iinc -I$(PREFIX)/include -I$(PREFIX)/include/BasicUsageEnvironment -I$(PREFIX)/include/UsageEnvironment -I$(PREFIX)/include/liveMedia -I$(PREFIX)/include/groupsock
++CXXFLAGS += -I$(PREFIX)/include/libv4l2cpp
++CXXFLAGS += $(EXTRA_CXXFLAGS)
++LDFLAGS += -pthread -L$(PREFIX)/lib -lBasicUsageEnvironment -lUsageEnvironment -lliveMedia -lgroupsock -lv4l2wrapper
++RM = rm -rf
++
++RTSPSERVER_OBJS = \
++	src/V4L2DeviceSource.o \
++	src/H264_V4l2DeviceSource.o \
++	src/H265_V4l2DeviceSource.o \
++	src/H26x_V4l2DeviceSource.o \
++	src/HTTPServer.o \
++	main.o \
++	src/MemoryBufferSink.o \
++	src/MJPEGVideoSource.o \
++	src/MulticastServerMediaSubsession.o \
++	src/ServerMediaSubsession.o \
++	src/TSServerMediaSubsession.o \
++	src/UnicastServerMediaSubsession.o \
++	src/V4l2RTSPServer.o
++
++.DEFAULT_GOAL := all
++
++all: $(ALL_PROGS)
++
++v4l2rtspserver: $(RTSPSERVER_OBJS)
++	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
++
++src/%.o: src/%.cpp
++	$(CXX) $(CXXFLAGS) -c $< -o $@
++
++main.o: main.cpp
++	$(CXX) $(CXXFLAGS) -c $< -o $@
++
++clean:
++	$(RM) src/*.o v4l2rtspserver
++
++install: v4l2rtspserver
++	install -D -m 0755 v4l2rtspserver $(DESTDIR)
