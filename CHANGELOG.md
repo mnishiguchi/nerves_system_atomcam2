@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Support multiple Wi-Fi locations. `nerves-provisioning.conf` now accepts
+  numbered SSID/passphrase pairs (`NERVES_WIFI_SSID_2`, ...) in addition to
+  the unnumbered pair, and VintageNet connects to whichever configured
+  network is in range. The same MicroSD works across locations without a
+  rebuild — edit the FAT partition to add one. An empty passphrase configures
+  an open network.
+
 - Support wired-only deployments in the vendor camera integration. Readiness,
   the precheck network check, and the IPv4 address the runtime reports now
   accept eth0, not just wlan0, so a camera reached over USB Ethernet with no

@@ -26,8 +26,9 @@ if config_target() != :host do
       %{}
     end
 
-  ssid = Map.get(provisioning, "NERVES_WIFI_SSID")
-  passphrase = Map.get(provisioning, "NERVES_WIFI_PASSPHRASE") || ""
+  # One or more Wi-Fi networks (multiple locations). VintageNet connects to
+  # whichever configured network is in range.
+  wifi_networks = Atomcam2NervesApp.WifiProvisioning.networks(provisioning)
 
   # Wired USB Ethernet is always configured. When the adapter is absent,
   # VintageNet keeps eth0 pending without affecting Wi-Fi. When both are
@@ -41,33 +42,20 @@ if config_target() != :host do
   ]
 
   wifi_config =
-    if is_binary(ssid) and ssid != "" do
-      key_mgmt =
-        if passphrase == "" do
-          :none
-        else
-          :wpa_psk
-        end
-
+    if wifi_networks == [] do
+      []
+    else
       [
         {"wlan0",
          %{
            type: VintageNetWiFi,
            vintage_net_wifi: %{
              wps: false,
-             networks: [
-               %{
-                 ssid: ssid,
-                 psk: passphrase,
-                 key_mgmt: key_mgmt
-               }
-             ]
+             networks: wifi_networks
            },
            ipv4: %{method: :dhcp}
          }}
       ]
-    else
-      []
     end
 
   config :vintage_net, config: ethernet_config ++ wifi_config

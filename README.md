@@ -103,6 +103,24 @@ export ATOMCAM2_AUTHORIZED_KEYS="$HOME/.ssh/id_ed25519.pub"
 認証情報を変更する場合は、FAT パーティションの `nerves-provisioning.conf` と
 `authorized_keys` を編集できます。
 
+### 複数拠点の Wi-Fi
+
+複数の拠点で使う場合は、`nerves-provisioning.conf` に SSID を追加します。
+番号なしの組が拠点 1、`_2`、`_3` … を足して拠点を増やします。
+
+```text
+NERVES_WIFI_SSID=home
+NERVES_WIFI_PASSPHRASE=home-secret
+NERVES_WIFI_SSID_2=office
+NERVES_WIFI_PASSPHRASE_2=office-secret
+```
+
+電波が届く AP に自動で接続するため、同じ MicroSD をどの拠点でも使えます。
+再ビルドは不要で、FAT パーティションの `nerves-provisioning.conf` を
+編集して追加するだけです。パスフレーズを空にすると、その SSID は
+オープンネットワークとして扱います。有線 LAN が使える拠点では有線が
+優先されます。
+
 ## 関連文書
 
 - [スタートガイド](docs/getting-started.md)
