@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Start the native camera stack automatically at boot. The new
+  `CameraNative` GenServer loads the camera kernel modules, then runs
+  `camd` (libimp capture + H.264 encode into v4l2loopback) and
+  `v4l2rtspserver` under MuonTrap supervision with restart on exit. The
+  stream is published at `rtsp://<ip>:8554/video0_unicast`. `camd` still
+  lives on `/data` until it is packaged into the system; startup waits
+  for it. Opt out with `enabled=false` in
+  `/data/atomcam2-native-camera/auto-start.conf` (a missing file means
+  enabled — native is the only camera mode in this deployment).
+
 - Announce readiness at boot. When the application starts, the camera says
   「起動しました。」 through the speaker and blinks the blue status LED
   three times, leaving it lit. This assumes native-only operation (no
