@@ -1,0 +1,171 @@
+#!/bin/sh
+set -eu
+
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+if [ -f /etc/atomcam2.env ]; then
+  . /etc/atomcam2.env
+fi
+
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
+report_file="${ATOMCAM2_ETH_DRIVER_REPORT:-/media/mmc/atomcam2-eth-driver.env}"
+module_root="${ATOMCAM2_ETH_MODULE_ROOT:-/lib/modules}"
+# cdc_ether first: the known RTL8152 adapter enumerates in its CDC ECM
+# configuration on this kernel, so the class driver binds without waiting
+# for the vendor driver attempts to time out.
+driver_candidates="${ATOMCAM2_ETH_DRIVER_CANDIDATES:-cdc_ether r8152 asix ax88179_178a}"
+
+stage="starting"
+usb_device=""
+loaded_module=""
+last_error=""
+
+eth0_present() {
+  [ -d /sys/class/net/eth0 ]
+}
+
+write_report() {
+  {
+    echo "stage=$stage"
+    echo "usb_device=$usb_device"
+    echo "loaded_module=$loaded_module"
+    echo "eth0_present=$(eth0_present && echo 1 || echo 0)"
+    echo "last_error=$last_error"
+  } > "$report_file" 2>/dev/null || true
+}
+
+record_error() {
+  last_error="$1"
+}
+
+detect_usb_device() {
+  for device_dir in /sys/bus/usb/devices/*; do
+    [ -f "$device_dir/idVendor" ] || continue
+    [ -f "$device_dir/idProduct" ] || continue
+
+    device_class="$(cat "$device_dir/bDeviceClass" 2>/dev/null || echo "")"
+
+    # Skip root hubs; keep the first attached device.
+    if [ "$device_class" != "09" ]; then
+      usb_device="$(cat "$device_dir/idVendor"):$(cat "$device_dir/idProduct")"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+find_module() {
+  module_name="$1"
+
+  find "$module_root" -name "$module_name.ko" 2>/dev/null | sed -n '1p'
+}
+
+load_module() {
+  module_path="$1"
+
+  [ -n "$module_path" ] || return 1
+  [ -f "$module_path" ] || return 1
+
+  stage="about_to_insmod"
+  loaded_module="$module_path"
+  write_report
+
+  set +e
+
+  insmod "$module_path" >/dev/null 2>&1
+  insmod_status=$?
+
+  set -e
+
+  if [ "$insmod_status" -eq 0 ]; then
+    stage="insmod_returned"
+    write_report
+    return 0
+  fi
+
+  stage="insmod_failed"
+  record_error "failed to load $module_path with status $insmod_status"
+  write_report
+  return 1
+}
+
+unload_module() {
+  module_name="$1"
+
+  rmmod "$module_name" >/dev/null 2>&1 || true
+}
+
+wait_for_eth0() {
+  attempts="${1:-10}"
+  count=0
+
+  while ! eth0_present; do
+    count=$((count + 1))
+    if [ "$count" -ge "$attempts" ]; then
+      return 1
+    fi
+    sleep 1
+  done
+}
+
+if eth0_present; then
+  stage="eth0_already_present"
+  write_report
+  exit 0
+fi
+
+stage="detecting_usb_device"
+write_report
+
+if ! detect_usb_device; then
+  stage="no_usb_device"
+  record_error "no USB device found on /sys/bus/usb/devices"
+  write_report
+  exit 0
+fi
+
+stage="loading_usbnet"
+write_report
+
+# Shared framework for asix, ax88179_178a, and cdc_ether. r8152 does not
+# need it, so a load failure only matters if a later driver needs it.
+usbnet_module="$(find_module usbnet)"
+if [ -n "$usbnet_module" ]; then
+  load_module "$usbnet_module" || true
+fi
+
+for driver_name in $driver_candidates; do
+  stage="trying_$driver_name"
+  write_report
+
+  module_path="$(find_module "$driver_name")"
+
+  if [ -z "$module_path" ]; then
+    record_error "module $driver_name.ko not found under $module_root"
+    continue
+  fi
+
+  if ! load_module "$module_path"; then
+    continue
+  fi
+
+  if wait_for_eth0 10; then
+    ifconfig eth0 up 2>/dev/null || true
+    stage="eth0_present"
+    last_error=""
+    write_report
+    exit 0
+  fi
+
+  record_error "$driver_name loaded but eth0 did not appear"
+  unload_module "$driver_name"
+done
+
+stage="eth0_unavailable"
+write_report
+exit 0

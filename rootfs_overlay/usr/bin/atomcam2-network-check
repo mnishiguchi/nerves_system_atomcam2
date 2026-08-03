@@ -14,7 +14,9 @@ report_file="${ATOMCAM2_NETWORK_REPORT:-/media/mmc/atomcam2-network.env}"
 {
   echo "hostname=$(hostname 2>/dev/null || true)"
   echo "wlan0_present=$(ifconfig wlan0 >/dev/null 2>&1 && echo 1 || echo 0)"
+  echo "eth0_present=$(ifconfig eth0 >/dev/null 2>&1 && echo 1 || echo 0)"
   echo "ip_addr=$(ip addr show wlan0 2>/dev/null | sed -n 's/^[[:space:]]*inet \([^[:space:]]*\).*/\1/p' | sed -n '1p')"
+  echo "eth0_ip_addr=$(ip addr show eth0 2>/dev/null | sed -n 's/^[[:space:]]*inet \([^[:space:]]*\).*/\1/p' | sed -n '1p')"
   echo "route_default=$(ip route 2>/dev/null | sed -n '/^default /{p;q;}')"
 } > "$report_file" 2>/dev/null || true
 

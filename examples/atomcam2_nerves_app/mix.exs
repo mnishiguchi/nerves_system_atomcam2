@@ -49,6 +49,7 @@ defmodule Atomcam2NervesApp.MixProject do
       {:mdns_lite, "~> 0.9", targets: @all_targets},
       {:vintage_net, "~> 0.13", targets: @all_targets},
       {:vintage_net_wifi, "~> 0.12", targets: @all_targets},
+      {:vintage_net_ethernet, "~> 0.11", targets: @all_targets},
 
       # Dependencies for specific targets
       atomcam2_system()

@@ -29,16 +29,27 @@ if config_target() != :host do
   ssid = Map.get(provisioning, "NERVES_WIFI_SSID")
   passphrase = Map.get(provisioning, "NERVES_WIFI_PASSPHRASE") || ""
 
-  if is_binary(ssid) and ssid != "" do
-    key_mgmt =
-      if passphrase == "" do
-        :none
-      else
-        :wpa_psk
-      end
+  # Wired USB Ethernet is always configured. When the adapter is absent,
+  # VintageNet keeps eth0 pending without affecting Wi-Fi. When both are
+  # connected, VintageNet routes through the wired interface first.
+  ethernet_config = [
+    {"eth0",
+     %{
+       type: VintageNetEthernet,
+       ipv4: %{method: :dhcp}
+     }}
+  ]
 
-    config :vintage_net,
-      config: [
+  wifi_config =
+    if is_binary(ssid) and ssid != "" do
+      key_mgmt =
+        if passphrase == "" do
+          :none
+        else
+          :wpa_psk
+        end
+
+      [
         {"wlan0",
          %{
            type: VintageNetWiFi,
@@ -55,7 +66,11 @@ if config_target() != :host do
            ipv4: %{method: :dhcp}
          }}
       ]
-  end
+    else
+      []
+    end
+
+  config :vintage_net, config: ethernet_config ++ wifi_config
 
   sd_keys_path = "/media/mmc/authorized_keys"
 
