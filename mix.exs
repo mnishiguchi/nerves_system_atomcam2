@@ -1,7 +1,7 @@
 defmodule NervesSystemAtomcam2.MixProject do
   use Mix.Project
 
-  @github_repository "mnishiguchi/nerves_system_atomcam2"
+  @github_repository "piyopiyoex/nerves_system_atomcam2"
   @app :nerves_system_atomcam2
   @source_url "https://github.com/#{@github_repository}"
   @version Path.join(__DIR__, "VERSION")

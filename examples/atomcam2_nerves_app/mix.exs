@@ -2,9 +2,9 @@ defmodule Atomcam2NervesApp.MixProject do
   use Mix.Project
 
   @app :atomcam2_nerves_app
-  @version "0.3.0"
-  @system_version "0.3.0"
-  @system_repository "mnishiguchi/nerves_system_atomcam2"
+  @version "0.4.0"
+  @system_version "0.4.0"
+  @system_repository "piyopiyoex/nerves_system_atomcam2"
   @all_targets [:atomcam2]
 
   def project do
