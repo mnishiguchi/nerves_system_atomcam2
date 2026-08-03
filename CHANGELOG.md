@@ -19,6 +19,14 @@
   soon as a server attached. Verified on hardware: 1920x1080 H.264 at
   ~18 fps and ~950 kbps alongside the vendor runtime.
 - Report loopback device availability from `atomcam2-vendor-camera precheck`.
+- Make an RTSP frame stall observable. The frame hook rewrites a heartbeat
+  file each forwarded frame, and `RtspServer` warns through the log and its
+  `status` when the heartbeat stops advancing while everything still reports
+  "running" — the stall that self-recovers on HD contention and the one that
+  needs a reboot are otherwise indistinguishable from the process list. This
+  observes rather than recovers: restarting the server reconnects to a
+  frameless loopback, the vendor runtime cannot restart without a reboot, and
+  a reboot on frame-absence would evict a mobile app legitimately viewing HD.
 
 - Add wired LAN support through USB Ethernet adapters. The control kernel now
   builds the `r8152`, `usbnet`, `asix`, `ax88179_178a`, `cdc_ether`, and
