@@ -21,6 +21,7 @@ defmodule Atomcam2NervesApp.Application do
         :ok = Atomcam2NervesApp.Discovery.advertise()
 
         [
+          Atomcam2NervesApp.BootAnnounce,
           Atomcam2NervesApp.TimeSync,
           Atomcam2NervesApp.FirmwareHealth,
           Atomcam2NervesApp.VendorCamera,

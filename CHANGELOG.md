@@ -2,13 +2,14 @@
 
 ## Unreleased
 
-- Announce readiness at boot. When the vendor camera runtime starts, the
-  camera now says 「起動しました。」 through the speaker and blinks the blue
-  status LED three times, leaving it lit. The announcement runs in the only
-  safe window — after the camera kernel modules load and before
-  `iCamera_app` claims the audio device. Playback uses a new
-  `atomcam2-aoplay` tool (libimp `IMP_AO`, prebuilt with the vendor uClibc
-  toolchain; source under `package/atomcam2-boot-announce/`). Disable with
+- Announce readiness at boot. When the application starts, the camera says
+  「起動しました。」 through the speaker and blinks the blue status LED
+  three times, leaving it lit. This assumes native-only operation (no
+  `iCamera_app`, which would hold the IMPAudio lock): the
+  `atomcam2-boot-announce` script loads the audio kernel modules itself
+  when nothing loaded them yet. Playback uses a new `atomcam2-aoplay`
+  tool (libimp `IMP_AO`, prebuilt with the vendor uClibc toolchain;
+  source under `package/atomcam2-boot-announce/`). Disable with
   `ATOMCAM2_BOOT_ANNOUNCE=disabled` or swap the PCM via
   `ATOMCAM2_BOOT_ANNOUNCE_SOUND` in `atomcam2.env` on the MicroSD.
 

@@ -2,9 +2,10 @@
 
 起動アナウンス用のスピーカー再生ツール `atomcam2-aoplay`(ビルド済み
 バイナリ + ソース)と音声データを rootfs に載せる Buildroot パッケージ。
-再生の起動フックは `rootfs_overlay/usr/bin/atomcam2-boot-announce` で、
-`atomcam2-vendor-camera` の start がモジュールロード後〜ベンダープロセス
-起動前に呼び出す。
+再生スクリプトは `rootfs_overlay/usr/bin/atomcam2-boot-announce` で、
+Elixir アプリの `Atomcam2NervesApp.BootAnnounce`(Task)が起動時に一度
+呼び出す。iCamera_app を使用しない(native 専業)前提で、audio 系
+カーネルモジュールが未ロードならスクリプト自身が insmod する。
 
 ## 収録物
 
@@ -43,8 +44,10 @@ mips-linux-uclibc-gnu-gcc -O2 -march=mips32r2 \
 ## 実行条件
 
 - `audio.ko` と `speaker_ctl.ko` がロード済みであること
+  (`atomcam2-boot-announce` 経由なら未ロード時に自動 insmod される)
 - 音声デバイスが未使用であること(`iCamera_app` 稼働中は IMPAudio の
-  ロックを握るため再生できない。atomcam_tools issue #23 参照)
+  ロックを握るため再生できない。atomcam_tools issue #23 参照。
+  iCamera_app 不使用の native 運用では常に満たされる)
 - 使い方: `atomcam2-aoplay <file.raw> [gain 0-4] [rate] [volume]`
   (既定: gain 1 / 8000 Hz / volume 60、100 = 0dB)
 - 短い音声が冒頭で切れる場合は teardown 前の `IMP_AO_FlushChnBuf`
