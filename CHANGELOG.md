@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+- Signal state on the status LEDs. While booting, the yellow LED
+  double-blinks once a second (100 ms on / 200 ms off / 100 ms on /
+  600 ms off) with the blue LED dark; once RTSP is publishing, the
+  yellow LED goes dark and the blue LED stays lit, dipping dark twice
+  every five seconds (100 ms off / 200 ms on / 100 ms off / 4600 ms on).
+  Both LEDs are wired active-low; sysfs `active_low` normalizes the
+  polarity, and `atomcam2-pre-run` turns both LEDs off seconds after
+  power-on. Timing runs in the new `StatusLed` GenServer because busybox
+  sleep cannot do sub-second delays.
+- Hide the OSD logo at startup: `CameraNative` sends `logo off` to
+  `/data/camd.ctl` every time it starts camd (camd shows the logo by
+  default; the clock overlay stays).
+
+- Start the native camera stack automatically at boot. The new
+  `CameraNative` GenServer loads the camera kernel modules, then runs
+  `camd` (libimp capture + H.264 encode into v4l2loopback) and
+  `v4l2rtspserver` under MuonTrap supervision with restart on exit. The
+  stream is published at `rtsp://<ip>:8554/video0_unicast`. `camd` still
+  lives on `/data` until it is packaged into the system; startup waits
+  for it. Opt out with `enabled=false` in
+  `/data/atomcam2-native-camera/auto-start.conf` (a missing file means
+  enabled — native is the only camera mode in this deployment).
+
+- Announce readiness at boot. When the application starts, the camera says
+  「起動しました。」 through the speaker and blinks the blue status LED
+  three times, leaving it lit. This assumes native-only operation (no
+  `iCamera_app`, which would hold the IMPAudio lock): the
+  `atomcam2-boot-announce` script loads the audio kernel modules itself
+  when nothing loaded them yet. Playback uses a new `atomcam2-aoplay`
+  tool (libimp `IMP_AO`, prebuilt with the vendor uClibc toolchain;
+  source under `package/atomcam2-boot-announce/`). Disable with
+  `ATOMCAM2_BOOT_ANNOUNCE=disabled` or swap the PCM via
+  `ATOMCAM2_BOOT_ANNOUNCE_SOUND` in `atomcam2.env` on the MicroSD.
+
 ## 0.4.0 - 2026-08-03
 
 - Support multiple Wi-Fi locations. `nerves-provisioning.conf` now accepts

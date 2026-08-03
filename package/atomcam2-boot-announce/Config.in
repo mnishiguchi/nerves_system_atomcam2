@@ -1,0 +1,7 @@
+config BR2_PACKAGE_ATOMCAM2_BOOT_ANNOUNCE
+	bool "atomcam2-boot-announce"
+	help
+	  Install the prebuilt speaker playback tool (atomcam2-aoplay)
+	  and the boot announcement sound used by the
+	  atomcam2-boot-announce script when the vendor camera runtime
+	  starts.

@@ -1,0 +1,73 @@
+#!/bin/sh
+# Play the boot announcement through the speaker. Assumes native-only
+# operation (no iCamera_app, which would otherwise hold the IMPAudio
+# lock): the audio device is always free, and the audio kernel modules
+# are loaded here if nothing loaded them yet. Requires /atom/system
+# mounted (done by atomcam2-wifi-driver in pre-run). The status LEDs are
+# driven by the application (Atomcam2NervesApp.StatusLed), not here —
+# busybox sleep cannot do the sub-second blink timing.
+set -u
+
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+if [ -f /etc/atomcam2.env ]; then
+  . /etc/atomcam2.env
+fi
+
+if [ -f /media/mmc/atomcam2.env ]; then
+  . /media/mmc/atomcam2.env
+fi
+
+enabled="${ATOMCAM2_BOOT_ANNOUNCE:-enabled}"
+sound_file="${ATOMCAM2_BOOT_ANNOUNCE_SOUND:-/usr/share/atomcam2/boot-announce.raw}"
+player="${ATOMCAM2_BOOT_ANNOUNCE_PLAYER:-/usr/bin/atomcam2-aoplay}"
+gain="${ATOMCAM2_BOOT_ANNOUNCE_GAIN:-1}"
+rate="${ATOMCAM2_BOOT_ANNOUNCE_RATE:-8000}"
+volume="${ATOMCAM2_BOOT_ANNOUNCE_VOLUME:-60}"
+vendor_root="${ATOMCAM2_VENDOR_ROOT:-/atom}"
+vendor_system="${ATOMCAM2_VENDOR_SYSTEM:-/atom/system}"
+
+[ "$enabled" = "enabled" ] || exit 0
+
+# devtmpfs creates /dev/dsp and /dev/speakerctl as soon as the modules load.
+ensure_audio_modules() {
+  if [ ! -c /dev/dsp ]; then
+    /sbin/insmod "$vendor_system/driver/audio.ko" spk_gpio=-1 2>/dev/null || true
+  fi
+
+  if [ ! -c /dev/speakerctl ]; then
+    /sbin/insmod "$vendor_system/driver/speaker_ctl.ko" 2>/dev/null || true
+  fi
+}
+
+announce_ready() {
+  if [ ! -x "$player" ]; then
+    echo "atomcam2-boot-announce: player is missing: $player" >&2
+    return 1
+  fi
+
+  if [ ! -f "$sound_file" ]; then
+    echo "atomcam2-boot-announce: sound file is missing: $sound_file" >&2
+    return 1
+  fi
+
+  ensure_audio_modules
+
+  if [ ! -c /dev/dsp ] || [ ! -c /dev/speakerctl ]; then
+    echo "atomcam2-boot-announce: audio devices are not ready" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+announce_ready || exit 1
+
+if ! LD_LIBRARY_PATH="$vendor_system/lib:$vendor_root/lib" \
+    "$player" "$sound_file" "$gain" "$rate" "$volume" >/dev/null 2>&1; then
+  echo "atomcam2-boot-announce: playback failed" >&2
+  exit 1
+fi
+
+exit 0
