@@ -12,9 +12,15 @@ iCamera_app を置き換えるネイティブカメラデーモン `atomcam2-cam
   (例: `atomcam2-camd 2000000000 /dev/video0 gc2053 0x37`)。
   第 1 引数はフレーム数上限。終了したら監督側が再起動する
 - 実行時制御: **`/tmp/camd.ctl`** に 1 コマンドずつ書く
-  (`clock on|off` / `logo on|off` / `bitrate <kbps>` / `qp <min> <max>` /
-  `clockpos <x> <y>` / `logopos <x> <y>` / `quit`)。
+  (`clock on|off` / `logo on|off` / `info <text>` / `info off` /
+  `bitrate <kbps>` / `qp <min> <max>` / `clockpos <x> <y>` /
+  `logopos <x> <y>` / `infopos <x> <y>` / `quit`)。
   /data 非依存にするため `/data/camd.ctl` から移した
+- **OSD**: 時計(右下、既定 ON)/ ロゴ(左下、**既定 OFF**)/
+  **システム情報行(左上、`info <text>` で表示)**。info は printable
+  ASCII 最大 40 文字、8x16 コンソールフォント(`osd_font8x16.h`、
+  Linux kbd の default8x16 由来・パブリックドメイン)を 2 倍拡大で描画。
+  内容は `CameraNative` がホスト名・IP・FW バージョンを 60 秒毎に送る
 - 依存: `/atom/system/lib` の libimp ほか(実行時
   `LD_LIBRARY_PATH=/atom/system/lib:/atom/lib`)、カメラ系カーネル
   モジュール(tx_isp_t31 / sensor_gc2053_t31 / avpu / sinfo)

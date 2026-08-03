@@ -37,6 +37,8 @@ defmodule Atomcam2NervesApp.CameraNative do
   # v4l2rtspserver opens the device, so give camd a head start.
   @rtsp_delay_ms 8_000
   @poll_interval_ms 5_000
+  # The top-left OSD line on the video: hostname, IP, firmware version.
+  @info_refresh_ms 60_000
 
   # The vendor start sequence loads tx_isp first and audio right after;
   # loading audio.ko before tx_isp leaves the codec half-initialized
@@ -73,6 +75,9 @@ defmodule Atomcam2NervesApp.CameraNative do
     # The daemons are linked; trap exits so a crashing camd or RTSP server
     # is restarted here with backoff instead of taking this server down.
     Process.flag(:trap_exit, true)
+    # Single self-rescheduling timer (started once here so camd restarts
+    # cannot stack additional timers).
+    Process.send_after(self(), :update_info, 15_000)
     {:ok, %__MODULE__{}, {:continue, :check}}
   end
 
@@ -88,6 +93,15 @@ defmodule Atomcam2NervesApp.CameraNative do
 
   def handle_info(:start_rtsp, state) do
     {:noreply, start_rtsp(state)}
+  end
+
+  def handle_info(:update_info, state) do
+    if alive?(state.camd_pid) do
+      write_ctl("info " <> system_info_line())
+    end
+
+    Process.send_after(self(), :update_info, @info_refresh_ms)
+    {:noreply, state}
   end
 
   def handle_info({:EXIT, pid, reason}, %{camd_pid: pid} = state) do
@@ -135,9 +149,6 @@ defmodule Atomcam2NervesApp.CameraNative do
     with :ok <- load_camera_modules(),
          :ok <- ensure_dsp_node(),
          {:ok, camd_pid} <- start_camd() do
-      # The boot logo stays hidden: camd shows its OSD logo by default and
-      # consumes the control file on its first poll, one command per write.
-      File.write(@camd_ctl_path, "logo off\n")
       Process.send_after(self(), :start_rtsp, @rtsp_delay_ms)
       Logger.info("Native camera started (camd)")
       %{state | phase: :starting, camd_pid: camd_pid, last_error: nil}
@@ -261,6 +272,63 @@ defmodule Atomcam2NervesApp.CameraNative do
   end
 
   defp alive?(pid), do: is_pid(pid) and Process.alive?(pid)
+
+  # camd consumes one command per write; the info line simply overwrites
+  # whatever was pending, which is fine for a periodic status refresh.
+  defp write_ctl(command) do
+    File.write(@camd_ctl_path, command <> "\n")
+  end
+
+  # "hostname 192.168.1.77 v0.4.0" — ASCII only, 40 columns max (the OSD
+  # font covers printable ASCII).
+  defp system_info_line do
+    [hostname(), first_ipv4(), firmware_version()]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" ")
+    |> String.replace(~r/[^ -~]/, "?")
+    |> String.slice(0, 40)
+  end
+
+  defp hostname do
+    case :inet.gethostname() do
+      {:ok, name} -> List.to_string(name)
+      _other -> nil
+    end
+  end
+
+  defp first_ipv4 do
+    with {:ok, interfaces} <- :inet.getifaddrs() do
+      # Wired first, then Wi-Fi, so the address people can reach wins.
+      Enum.find_value(["eth0", "wlan0"], fn ifname ->
+        interfaces
+        |> List.keyfind(String.to_charlist(ifname), 0)
+        |> case do
+          {_name, options} ->
+            options
+            |> Keyword.get_values(:addr)
+            |> Enum.find(&match?({_, _, _, _}, &1))
+            |> case do
+              {a, b, c, d} -> "#{a}.#{b}.#{c}.#{d}"
+              _other -> nil
+            end
+
+          nil ->
+            nil
+        end
+      end)
+    else
+      _error -> nil
+    end
+  end
+
+  defp firmware_version do
+    case Nerves.Runtime.KV.get_active("nerves_fw_version") do
+      version when is_binary(version) and version != "" -> "v" <> version
+      _other -> nil
+    end
+  rescue
+    _exception -> nil
+  end
 
   # Waiting is polled every few seconds; only log when the phase changes.
   defp log_once(%{phase: phase}, phase, _message), do: :ok

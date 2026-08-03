@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Show system information on the video. camd gains an `info <text>`
+  overlay (top-left, printable ASCII up to 40 columns, rendered with the
+  public-domain Linux console 8x16 font scaled 2x) and `CameraNative`
+  feeds it hostname, IP address, and firmware version, refreshing every
+  minute. This doubles as a lighter alternative to a status dashboard:
+  no HTTP server, roughly 0.1 MB in camd versus several hundred KB in
+  the BEAM.
+- Hide the OSD logo by default in camd itself instead of sending
+  `logo off` after start, so the logo never flashes at startup.
+  `logo on` via `/tmp/camd.ctl` still shows it.
+
 - Keep the /data filesystem check off the boot critical path. After an
   unclean power-off the full e2fsck of the ext2 data partition takes
   minutes and used to block everything (announcement, LEDs,

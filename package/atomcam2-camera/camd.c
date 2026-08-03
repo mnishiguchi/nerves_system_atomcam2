@@ -40,6 +40,7 @@
 
 #include "bgramapinfo.h"            /* gBgramap[13] font, gBgramapHight */
 #include "logodata_100x100_bgra.h" /* logodata_100x100_bgra[] */
+#include "osd_font8x16.h"          /* osd_font8x16[95][16], ASCII 32..126 */
 
 #ifndef V4L2_PIX_FMT_H264
 #define V4L2_PIX_FMT_H264 v4l2_fourcc('H', '2', '6', '4')
@@ -59,14 +60,22 @@
 #define CLOCK_CHARS 20
 #define CLOCK_W (CLOCK_CHARS * OSD_CELL_W)   /* 320 */
 
+/* Free-text system-info line (top-left). 8x16 ASCII glyphs scaled 2x. */
+#define INFO_CHARS 40
+#define INFO_CELL_W 16
+#define INFO_ROW_H 32
+#define INFO_W (INFO_CHARS * INFO_CELL_W)    /* 640 */
+
 static unsigned char asm_buf[ASM_MAX];
 static uint32_t clock_buf[CLOCK_CHARS * OSD_ROW_H * OSD_CELL_W]; /* bgra */
+static uint32_t info_buf[INFO_CHARS * INFO_CELL_W * INFO_ROW_H]; /* bgra */
+static char info_text[INFO_CHARS + 1];
 
-static IMPRgnHandle rgnClock, rgnLogo;
+static IMPRgnHandle rgnClock, rgnLogo, rgnInfo;
 
 /* Overlay positions (top-left origin of each region). Defaults: clock at the
  * right edge, logo at the left edge; both runtime-movable. */
-static int clock_x, clock_y, logo_x, logo_y;
+static int clock_x, clock_y, logo_x, logo_y, info_x, info_y;
 
 static void move_clock(int x, int y)
 {
@@ -79,6 +88,54 @@ static void move_clock(int x, int y)
 	a.fmt = PIX_FMT_BGRA;
 	a.data.picData.pData = NULL;
 	IMP_OSD_SetRgnAttr(rgnClock, &a);
+}
+
+static void move_info(int x, int y)
+{
+	info_x = x; info_y = y;
+	IMPOSDRgnAttr a;
+	memset(&a, 0, sizeof(a));
+	a.type = OSD_REG_PIC;
+	a.rect.p0.x = x; a.rect.p0.y = y;
+	a.rect.p1.x = x + INFO_W - 1; a.rect.p1.y = y + INFO_ROW_H - 1;
+	a.fmt = PIX_FMT_BGRA;
+	a.data.picData.pData = NULL;
+	IMP_OSD_SetRgnAttr(rgnInfo, &a);
+}
+
+/* Render info_text into info_buf (white, 2x-scaled 8x16 glyphs) and push it. */
+static void render_info(void)
+{
+	memset(info_buf, 0, sizeof(info_buf));
+	unsigned i, row, col;
+	for (i = 0; i < INFO_CHARS && info_text[i]; i++) {
+		unsigned char c = (unsigned char)info_text[i];
+		if (c < 32 || c > 126) c = ' ';
+		const unsigned char *glyph = osd_font8x16[c - 32];
+		for (row = 0; row < 16; row++) {
+			unsigned char bits = glyph[row];
+			for (col = 0; col < 8; col++) {
+				if (!(bits & (0x80 >> col))) continue;
+				uint32_t *px = info_buf
+					+ (row * 2) * INFO_W
+					+ i * INFO_CELL_W + col * 2;
+				px[0] = px[1] = 0xffffffff;
+				px[INFO_W] = px[INFO_W + 1] = 0xffffffff;
+			}
+		}
+	}
+	IMPOSDRgnAttrData d;
+	memset(&d, 0, sizeof(d));
+	d.picData.pData = info_buf;
+	IMP_OSD_UpdateRgnAttrData(rgnInfo, &d);
+}
+
+static void set_info(const char *text)
+{
+	strncpy(info_text, text, INFO_CHARS);
+	info_text[INFO_CHARS] = 0;
+	render_info();
+	IMP_OSD_ShowRgn(rgnInfo, GRP, info_text[0] != 0);
 }
 
 static void move_logo(int x, int y)
@@ -202,8 +259,11 @@ static int poll_ctl(void)
 	else if (!strcmp(buf, "logo off"))  IMP_OSD_ShowRgn(rgnLogo, GRP, 0);
 	else if (sscanf(buf, "bitrate %d", &a) == 1) set_bitrate(a);
 	else if (sscanf(buf, "qp %d %d", &a, &b) == 2) set_qp(a, b);
+	else if (!strcmp(buf, "info off"))   set_info("");
+	else if (!strncmp(buf, "info ", 5)) set_info(buf + 5);
 	else if (sscanf(buf, "clockpos %d %d", &a, &b) == 2) move_clock(a, b);
 	else if (sscanf(buf, "logopos %d %d", &a, &b) == 2) move_logo(a, b);
+	else if (sscanf(buf, "infopos %d %d", &a, &b) == 2) move_info(a, b);
 	else if (!strcmp(buf, "quit"))      quit = 1;
 	else fprintf(stderr, "camd: ctl unknown '%s'\n", buf);
 	if (!quit) fprintf(stderr, "camd: ctl '%s'\n", buf);
@@ -220,9 +280,11 @@ static int osd_init(void)
 
 	rgnClock = IMP_OSD_CreateRgn(NULL);
 	rgnLogo  = IMP_OSD_CreateRgn(NULL);
-	if (rgnClock == INVHANDLE || rgnLogo == INVHANDLE) { fprintf(stderr, "camd: CreateRgn failed\n"); return -1; }
+	rgnInfo  = IMP_OSD_CreateRgn(NULL);
+	if (rgnClock == INVHANDLE || rgnLogo == INVHANDLE || rgnInfo == INVHANDLE) { fprintf(stderr, "camd: CreateRgn failed\n"); return -1; }
 	IMP_OSD_RegisterRgn(rgnClock, GRP, NULL);
 	IMP_OSD_RegisterRgn(rgnLogo, GRP, NULL);
+	IMP_OSD_RegisterRgn(rgnInfo, GRP, NULL);
 
 	/* clock region: PIC, bottom-left */
 	IMPOSDRgnAttr a;
@@ -255,8 +317,26 @@ static int osd_init(void)
 
 	IMPOSDGrpRgnAttr gl;
 	memset(&gl, 0, sizeof(gl));
-	gl.show = 1; gl.gAlphaEn = 1; gl.fgAlhpa = 0xff; gl.layer = 2;
+	/* Logo stays hidden by default; "logo on" via the control file shows it. */
+	gl.show = 0; gl.gAlphaEn = 1; gl.fgAlhpa = 0xff; gl.layer = 2;
 	IMP_OSD_SetGrpRgnAttr(rgnLogo, GRP, &gl);
+
+	/* info region: PIC, top-left free-text line, hidden until text is set */
+	IMPOSDRgnAttr n;
+	memset(&n, 0, sizeof(n));
+	n.type = OSD_REG_PIC;
+	n.rect.p0.x = info_x;
+	n.rect.p0.y = info_y;
+	n.rect.p1.x = info_x + INFO_W - 1;
+	n.rect.p1.y = info_y + INFO_ROW_H - 1;
+	n.fmt = PIX_FMT_BGRA;
+	n.data.picData.pData = NULL;
+	if (step("SetRgnAttr info", IMP_OSD_SetRgnAttr(rgnInfo, &n)) < 0) return -1;
+
+	IMPOSDGrpRgnAttr gn;
+	memset(&gn, 0, sizeof(gn));
+	gn.show = 0; gn.gAlphaEn = 1; gn.fgAlhpa = 0xff; gn.layer = 4;
+	IMP_OSD_SetGrpRgnAttr(rgnInfo, GRP, &gn);
 	return 0;
 }
 
@@ -302,9 +382,11 @@ int main(int argc, char **argv)
 
 	if (step("Encoder_CreateGroup", IMP_Encoder_CreateGroup(CHN)) < 0) return 1;
 
-	/* defaults: clock at right edge, logo at left edge (bottom) */
+	/* defaults: clock at right edge, logo at left edge (bottom),
+	 * system-info line at the top-left */
 	clock_x = W - CLOCK_W - 16; clock_y = H - OSD_ROW_H - 16;
 	logo_x = 16;                logo_y = H - 100 - 16;
+	info_x = 16;                info_y = 16;
 
 	if (osd_init() < 0) return 1;
 
@@ -329,7 +411,7 @@ int main(int argc, char **argv)
 
 	render_clock();
 	fprintf(stderr, "camd: running at %d kbps. control via %s\n", bitrate, CTL_PATH);
-	fprintf(stderr, "camd:   clock on|off / logo on|off / bitrate <kbps> / qp <min> <max> / quit\n");
+	fprintf(stderr, "camd:   clock on|off / logo on|off / info <text>|off / bitrate <kbps> / qp <min> <max> / quit\n");
 	fflush(stderr);
 
 	for (i = 0; i < frames; i++) {
