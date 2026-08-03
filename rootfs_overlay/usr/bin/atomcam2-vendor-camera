@@ -282,11 +282,17 @@ precheck() {
     done
   fi
 
+  # Nerves must own the active network interface. Wi-Fi is the usual case, but
+  # a wired-only deployment (USB Ethernet) has no healthy wlan0, so accept an
+  # up eth0 as well.
   if grep -q '^atbm603x_wifi_sdio ' /proc/modules &&
       [ -d /sys/class/net/wlan0 ]; then
     pass "Nerves owns the active wlan0 interface"
+  elif [ -d /sys/class/net/eth0 ] &&
+      [ "$(cat /sys/class/net/eth0/operstate 2>/dev/null)" = up ]; then
+    pass "Nerves owns the active eth0 interface"
   else
-    block "the Nerves Wi-Fi interface is not healthy"
+    block "no Nerves-owned network interface is healthy"
   fi
 
   if [ -x /usr/sbin/chroot ] ||
@@ -837,19 +843,28 @@ setup_compatibility_mounts() {
   cp /etc/resolv.conf \
     "$vendor_root/tmp/atomcam2-vendor-camera/nerves-resolv.conf"
   chmod 400 "$vendor_root/tmp/atomcam2-vendor-camera/nerves-resolv.conf"
-  nerves_wlan0_ipv4="$(
-    /sbin/ip -4 -o addr show dev wlan0 |
-      awk '{ sub(/\/.*/, "", $4); print $4; exit }'
-  )"
+  # The vendor runtime reads this file for its own network-status reporting.
+  # It was originally wlan0-only, but wired deployments have no wlan0 address,
+  # so fall back to the interface that actually carries the connection.
+  nerves_ipv4=""
+  for nerves_iface in wlan0 eth0; do
+    nerves_ipv4="$(
+      /sbin/ip -4 -o addr show dev "$nerves_iface" 2>/dev/null |
+        awk '{ sub(/\/.*/, "", $4); print $4; exit }'
+    )"
 
-  case "$nerves_wlan0_ipv4" in
-    ""|*[!0-9.]*)
-      echo "atomcam2-vendor-camera: wlan0 has no usable IPv4 address" >&2
-      return 1
-      ;;
-  esac
+    case "$nerves_ipv4" in
+      ""|*[!0-9.]*) nerves_ipv4="" ;;
+      *) break ;;
+    esac
+  done
 
-  printf '%s\n' "$nerves_wlan0_ipv4" \
+  if [ -z "$nerves_ipv4" ]; then
+    echo "atomcam2-vendor-camera: no usable IPv4 address on wlan0 or eth0" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$nerves_ipv4" \
     >"$vendor_root/tmp/atomcam2-vendor-camera/wlan0-ipv4"
   chmod 400 "$vendor_root/tmp/atomcam2-vendor-camera/wlan0-ipv4"
   cp /etc/resolv.conf "$vendor_root/tmp/resolv.conf"

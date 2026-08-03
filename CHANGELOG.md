@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Support wired-only deployments in the vendor camera integration. Readiness,
+  the precheck network check, and the IPv4 address the runtime reports now
+  accept eth0, not just wlan0, so a camera reached over USB Ethernet with no
+  Wi-Fi association still starts. Time sync likewise triggers on the overall
+  connection rather than wlan0 specifically.
+
 - Add optional RTSP publishing of the vendor camera's already-encoded video.
   A preloaded frame hook mirrors the encoder output into a v4l2loopback
   device, which `v4l2rtspserver` publishes without re-encoding. Enable it by
