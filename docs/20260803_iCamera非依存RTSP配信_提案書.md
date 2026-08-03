@@ -96,9 +96,29 @@ atomcam2-camera（uClibc / hard-float、実機の libimp.so を動的リンク�
 tx-isp モジュールとの整合性が保証される。動作しない場合でも「SDK の違い」を
 原因候補から外せる。
 
+## 実証結果(2026-08-03 追記): フェーズ 1 完了 = GO
+
+本提案のフェーズ 1(実機 libimp で 1 ストリーム取得)を実機 192.168.1.77 で
+完了した。詳細は [作業記録 §9](20260803_作業記録.md) と
+[方式B推進判断](20260803_方式B推進判断_技術相談.md)。
+
+- **ビルド**: `mips-linux-uclibc-gnu-gcc`(Dafang mips-gcc472)で、実機の
+  `libimp.so`/`libalog.so`/`libsysutils.so` を動的リンク。interpreter を
+  `-Wl,--dynamic-linker=/atom/lib/ld-uClibc.so.0` で実機 uClibc 0.9.33.2 に
+  向けて解決(提案時に懸念した SONAME/リンカパスの食い違いはこの指定で解消)。
+- **ISP + センサ**: `IMP_ISP_Open/AddSensor/EnableSensor/System_Init/EnableTuning`
+  全て 0。GC2053 が通電。
+- **エンコード**: FrameSource(1920x1080 NV12)→ H.264 で 60 フレーム取得。
+  先頭 SPS→PPS→IDR の正しい H.264。
+- **想定との差分**: エンコーダ API が T31 **1.1.1 の新 API** で、旧サンプル
+  ヘッダとは ABI 非互換だった(`invalid resolution(0x0)`)。正しい 1.1.1
+  ヘッダ(`cgrrty/Ingenic-SDK-T31-1.1.1-20200508`)+ `IMP_Encoder_SetDefaultParam`
+  + `IMPEncoderPack.offset` 読み出しで解決。**フェーズ 1 の残タスクは
+  「画質・CPU・メモリの実測」のみ**で、これはフェーズ 2 の常駐形態で行う。
+
 ## 段階計画
 
-### フェーズ 1: PoC(実機の libimp.so で 1 ストリーム取得)
+### フェーズ 1: PoC(実機の libimp.so で 1 ストリーム取得)— ✅ 完了(上記)
 
 1. **uClibc ツールチェーンを用意**(Bootlin の mips32el uclibc、hard-float)。
    ただし実機は uClibc **0.9.33.2** の古い版で、Bootlin は uClibc-ng。
