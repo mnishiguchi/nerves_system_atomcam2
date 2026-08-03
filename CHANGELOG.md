@@ -5,8 +5,11 @@
 - Show system information on the video. camd gains an `info <text>`
   overlay (top-left, printable ASCII up to 40 columns, rendered with the
   public-domain Linux console 8x16 font scaled 2x) and `CameraNative`
-  feeds it hostname, IP address, and firmware version, refreshing every
-  minute. This doubles as a lighter alternative to a status dashboard:
+  feeds it IP address, firmware version, available memory, and CPU
+  usage — e.g. `192.168.222.66 v0.4.0 M:43M C:5%` — refreshing every
+  three seconds. Memory is MemFree + Buffers + Cached because kernel
+  3.10 has no MemAvailable; CPU is the busy delta between /proc/stat
+  samples. This doubles as a lighter alternative to a status dashboard:
   no HTTP server, roughly 0.1 MB in camd versus several hundred KB in
   the BEAM.
 - Hide the OSD logo by default in camd itself instead of sending

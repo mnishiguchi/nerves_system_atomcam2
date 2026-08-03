@@ -37,8 +37,9 @@ defmodule Atomcam2NervesApp.CameraNative do
   # v4l2rtspserver opens the device, so give camd a head start.
   @rtsp_delay_ms 8_000
   @poll_interval_ms 5_000
-  # The top-left OSD line on the video: hostname, IP, firmware version.
-  @info_refresh_ms 60_000
+  # The top-left OSD line on the video: IP, firmware version, available
+  # memory, CPU usage. Refreshed every few seconds ("realtime").
+  @info_refresh_ms 3_000
 
   # The vendor start sequence loads tx_isp first and audio right after;
   # loading audio.ko before tx_isp leaves the codec half-initialized
@@ -57,7 +58,8 @@ defmodule Atomcam2NervesApp.CameraNative do
   defstruct phase: :not_checked,
             camd_pid: nil,
             rtsp_pid: nil,
-            last_error: nil
+            last_error: nil,
+            cpu_sample: nil
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(options \\ []) do
@@ -96,12 +98,14 @@ defmodule Atomcam2NervesApp.CameraNative do
   end
 
   def handle_info(:update_info, state) do
+    {cpu_percent, cpu_sample} = cpu_usage(state.cpu_sample)
+
     if alive?(state.camd_pid) do
-      write_ctl("info " <> system_info_line())
+      write_ctl("info " <> system_info_line(cpu_percent))
     end
 
     Process.send_after(self(), :update_info, @info_refresh_ms)
-    {:noreply, state}
+    {:noreply, %{state | cpu_sample: cpu_sample}}
   end
 
   def handle_info({:EXIT, pid, reason}, %{camd_pid: pid} = state) do
@@ -279,20 +283,56 @@ defmodule Atomcam2NervesApp.CameraNative do
     File.write(@camd_ctl_path, command <> "\n")
   end
 
-  # "hostname 192.168.1.77 v0.4.0" — ASCII only, 40 columns max (the OSD
-  # font covers printable ASCII).
-  defp system_info_line do
-    [hostname(), first_ipv4(), firmware_version()]
+  # "192.168.1.77 v0.4.0 M:21M C:37%" — ASCII only, 40 columns max (the
+  # OSD font covers printable ASCII).
+  defp system_info_line(cpu_percent) do
+    [first_ipv4(), firmware_version(), mem_available(), cpu_text(cpu_percent)]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" ")
     |> String.replace(~r/[^ -~]/, "?")
     |> String.slice(0, 40)
   end
 
-  defp hostname do
-    case :inet.gethostname() do
-      {:ok, name} -> List.to_string(name)
+  # Kernel 3.10 has no MemAvailable; approximate it as
+  # MemFree + Buffers + Cached (page cache is reclaimable).
+  defp mem_available do
+    with {:ok, contents} <- File.read("/proc/meminfo") do
+      kb =
+        ~r/^(?:MemFree|Buffers|Cached):\s+(\d+)/m
+        |> Regex.scan(contents, capture: :all_but_first)
+        |> List.flatten()
+        |> Enum.map(&String.to_integer/1)
+        |> Enum.sum()
+
+      if kb > 0, do: "M:#{div(kb, 1024)}M"
+    else
       _other -> nil
+    end
+  end
+
+  defp cpu_text(nil), do: nil
+  defp cpu_text(percent), do: "C:#{percent}%"
+
+  # Overall CPU usage from consecutive /proc/stat samples: busy delta over
+  # total delta. The first call only primes the sample.
+  defp cpu_usage(previous_sample) do
+    with {:ok, contents} <- File.read("/proc/stat"),
+         ["cpu" | fields] <- contents |> String.split("\n", parts: 2) |> hd() |> String.split() do
+      counters = Enum.map(fields, &String.to_integer/1)
+      total = Enum.sum(counters)
+      idle = Enum.at(counters, 3, 0) + Enum.at(counters, 4, 0)
+      busy = total - idle
+
+      case previous_sample do
+        {previous_busy, previous_total} when total > previous_total ->
+          percent = round((busy - previous_busy) * 100 / (total - previous_total))
+          {min(percent, 100), {busy, total}}
+
+        _other ->
+          {nil, {busy, total}}
+      end
+    else
+      _other -> {nil, previous_sample}
     end
   end
 
