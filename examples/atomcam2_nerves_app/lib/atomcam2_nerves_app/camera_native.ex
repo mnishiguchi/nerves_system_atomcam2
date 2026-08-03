@@ -38,11 +38,18 @@ defmodule Atomcam2NervesApp.CameraNative do
   @rtsp_delay_ms 8_000
   @poll_interval_ms 5_000
 
+  # The vendor start sequence loads tx_isp first and audio right after;
+  # loading audio.ko before tx_isp leaves the codec half-initialized
+  # (IMP_AO_Enable returns -1 and /dev/dsp never appears), so all camera
+  # and audio modules are loaded here, in this exact order. The boot
+  # announcement waits for the audio devices instead of loading modules.
   @camera_modules [
     {"tx_isp_t31", "tx-isp-t31.ko", ["isp_clk=100000000"]},
-    {"sensor_gc2053_t31", "sensor_gc2053_t31.ko", ["data_interface=1"]},
+    {"audio", "audio.ko", ["spk_gpio=-1"]},
     {"avpu", "avpu.ko", []},
-    {"sinfo", "sinfo.ko", []}
+    {"sinfo", "sinfo.ko", []},
+    {"sensor_gc2053_t31", "sensor_gc2053_t31.ko", ["data_interface=1"]},
+    {"speaker_ctl", "speaker_ctl.ko", []}
   ]
 
   defstruct phase: :not_checked,
@@ -126,6 +133,7 @@ defmodule Atomcam2NervesApp.CameraNative do
 
   defp start_stack(state) do
     with :ok <- load_camera_modules(),
+         :ok <- ensure_dsp_node(),
          {:ok, camd_pid} <- start_camd() do
       # The boot logo stays hidden: camd shows its OSD logo by default and
       # consumes the control file on its first poll, one command per write.
@@ -215,6 +223,25 @@ defmodule Atomcam2NervesApp.CameraNative do
         end
       end
     end)
+  end
+
+  # devtmpfs has been seen skipping the OSS node even after a successful
+  # codec probe; the driver registers char major 14 ("sound"), so create
+  # the classic /dev/dsp (14, 3) ourselves when it is missing.
+  defp ensure_dsp_node do
+    if File.exists?("/dev/dsp") do
+      :ok
+    else
+      case System.cmd("/bin/mknod", ["/dev/dsp", "c", "14", "3"], stderr_to_stdout: true) do
+        {_output, 0} ->
+          Logger.info("Created /dev/dsp device node")
+          :ok
+
+        {output, status} ->
+          Logger.warning("mknod /dev/dsp failed (#{status}): #{String.trim(output)}")
+          :ok
+      end
+    end
   end
 
   defp module_loaded?(name) do
