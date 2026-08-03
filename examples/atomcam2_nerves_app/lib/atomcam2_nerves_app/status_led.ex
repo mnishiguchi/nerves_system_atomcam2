@@ -5,9 +5,9 @@ defmodule Atomcam2NervesApp.StatusLed do
   While booting (RTSP not yet publishing) the yellow LED double-blinks
   once a second: 100 ms on, 200 ms off, 100 ms on, 600 ms off. Once the
   native camera reports `:running` (RTSP publishing), the yellow LED goes
-  dark and the blue LED double-blinks every five seconds: 100 ms on,
-  200 ms off, 100 ms on, 4600 ms off. If publishing stops, the boot
-  pattern comes back.
+  dark and the blue LED stays lit, dipping dark twice every five seconds:
+  100 ms off, 200 ms on, 100 ms off, 4600 ms on. If publishing stops,
+  the boot pattern comes back.
 
   busybox `sleep` only does whole seconds, so the sub-second timing lives
   here (`Process.send_after`) instead of in a shell script.
@@ -26,7 +26,7 @@ defmodule Atomcam2NervesApp.StatusLed do
   @blue_active_low "1"
 
   @boot_pattern [{1, 100}, {0, 200}, {1, 100}, {0, 600}]
-  @publish_pattern [{1, 100}, {0, 200}, {1, 100}, {0, 4600}]
+  @publish_pattern [{0, 100}, {1, 200}, {0, 100}, {1, 4600}]
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(options \\ []) do
