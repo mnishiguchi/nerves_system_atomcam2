@@ -1,39 +1,31 @@
-# 20260726 ADR 0008 mobile and storage compatibility
+# 20260726 ADR 0008 携帯アプリと記憶領域の互換性
 
-## Result
+## 結果
 
-The device-side vendor camera runtime now reaches a healthy steady state on
-physical Atom Cam 2 hardware:
+物理 Atom Cam 2 上の製造元カメラ実行環境は、健全な定常状態へ到達した。
 
-- `assis`, `hl_client`, and `iCamera_app` remain running;
-- vendor network and cloud initialization complete;
-- Nerves retains Wi-Fi, DNS, SSH, and hardware-watchdog ownership;
-- the vendor SD health and mount checks succeed against a `/data`-backed
-  compatibility view;
-- the real MicroSD block device is not visible inside the vendor runtime; and
-- `stop` terminates vendor descendants and removes private mounts and IPC.
+- `assis`、`hl_client`、`iCamera_app` が稼働し続ける。
+- 製造元のネットワークとクラウド初期化が完了する。
+- Nerves が Wi-Fi、DNS、SSH、実機監視タイマーを保持する。
+- 製造元の SD 健全性・マウント検査が、`/data` を裏付けとする互換環境で成功する。
+- 製造元実行環境から実物 MicroSD ブロックデバイスは見えない。
+- `stop` が製造元の子孫処理を終了し、私有マウントと IPC を削除する。
 
-On July 27, 2026, the operator confirmed the standard mobile application,
-live view, recorded playback, and healthy storage screen. Phase 2 is complete.
+2026-07-27、操作担当者が標準携帯アプリ、生映像、録画再生、健全な記憶領域画面を確認した。第 2 段階は完了した。
 
-## Why the first manual runtime was incomplete
+## 最初の手動実行環境が不十分だった理由
 
-The earlier bounded console trial established the module, chroot, and
-capability boundary, but it omitted `assis`. A later mobile test showed the
-camera offline, and the application reported:
+以前の上限付き端末試験では、モジュール、chroot、機能権限の境界を確認したが、`assis` を省略していた。後の携帯アプリ試験ではカメラがオフラインとなり、アプリは次を表示した。
 
 ```text
 SDカードに異常が発生しました。再挿入または交換してください。
 ```
 
-Further physical testing established that `assis` is required for the vendor
-mobile/cloud path. Starting the stock process unchanged was not acceptable:
-it attempted to own the hardware watchdog and the vendor camera stack attempted
-to restart Wi-Fi and prepare the raw SD device.
+追加の実機試験で、製造元の携帯・クラウド経路には `assis` が必要と判明した。ただし標準処理をそのまま起動すると、実機監視タイマーの所有を試み、製造元カメラ群が Wi-Fi 再起動と生 SD デバイス準備を行うため、許容できない。
 
-## Narrow compatibility behavior
+## 限定した互換挙動
 
-The runtime now starts the stock process order:
+製造元標準の処理順で起動する。
 
 ```text
 assis
@@ -41,45 +33,29 @@ hl_client
 iCamera_app
 ```
 
-A small freestanding preload library returns success for the four vendor
-assistant watchdog calls. `/dev/watchdog*` remains absent from the chroot and
-Nerves `heart` remains the sole owner of `/dev/watchdog0`.
+小さな独立事前読み込みライブラリが、製造元補助処理の監視タイマー用四関数に成功を返す。chroot から `/dev/watchdog*` は見えず、Nerves `heart` が `/dev/watchdog0` の唯一の所有者であり続ける。
 
-The same library handles only the exact vendor storage mount pair:
+同じライブラリは、製造元が期待する次の記憶領域対応だけを扱う。
 
 ```text
 /dev/mmcblk0p1 -> /media/mmc
 ```
 
-The source path is a bounded regular-file placeholder on the private device
-tmpfs. The process has no `CAP_MKNOD`, and the placeholder is verified not to
-be a block device. `/media/mmc` is already bind-mounted to the private spool
-under `/data`. The shim therefore confirms an existing Nerves-owned mapping; it
-does not mount or expose a block device.
+元パスは私有デバイス tmpfs 上の大きさを制限した通常ファイルである。処理は `CAP_MKNOD` を持たず、そのファイルがブロックデバイスでないことを確認する。`/media/mmc` はすでに `/data` 配下の私有一時保管へ結合済みである。この補助処理は Nerves が所有する既存対応を確認するだけで、ブロックデバイスのマウントや公開はしない。
 
-Vendor commands that would manage Nerves-owned networking are successful
-no-ops. The compatibility helper reports the current Nerves IPv4 address and
-connected WPA state, restores the Nerves DNS file, and does not receive
-`CAP_NET_ADMIN`.
+Nerves 所有のネットワークを管理しようとする製造元命令は、成功を返す無操作にする。互換補助処理は現在の Nerves IPv4 アドレスと接続済み WPA 状態を報告し、Nerves の DNS ファイルを戻すが、`CAP_NET_ADMIN` は持たない。
 
-The vendor `tf_prepare` and `blkid` probes are also emulated. They report a
-healthy FAT camera card without giving the vendor access to the actual ext2
-MicroSD partition. Direct mount operations remain unavailable because the
-vendor processes do not receive `CAP_SYS_ADMIN`.
+製造元の `tf_prepare` と `blkid` 調査も模倣し、実物 ext2 MicroSD パーティションを見せずに健全な FAT カメラカードとして報告する。製造元処理に `CAP_SYS_ADMIN` を渡さないため、直接マウントはできない。
 
-## Crash diagnosis
+## 異常終了の診断
 
-Before WPA status emulation, the vendor `net-serv` thread crashed with status
-139. The kernel reported an invalid read at address `0x48`.
+WPA 状態の模倣前には、製造元の `net-serv` 処理が状態 139 で異常終了し、カーネルはアドレス `0x48` の不正読み取りを報告した。
 
-Disassembly showed that the vendor binary calls `fclose(NULL)` when
-`/tmp/wpa.log` is absent and the WPA status does not contain `COMPLETED`.
-Providing a private empty log and a read-only view of the Nerves connection
-state avoids that vendor error path without starting a second supplicant.
+逆アセンブルにより、`/tmp/wpa.log` がなく、WPA 状態に `COMPLETED` が含まれない場合、製造元実行形式が `fclose(NULL)` を呼ぶことが分かった。私有の空記録と、Nerves 接続状態の読み取り専用表示を用意することで、二つ目の supplicant を起動せず、その誤り経路を避けた。
 
-## Physical validation
+## 実機検証
 
-The final tested firmware was:
+最終試験ファームウェアは次である。
 
 ```text
 Firmware UUID: ec4508c6-a345-5eae-1aa5-87d735363bcd
@@ -87,8 +63,7 @@ Nerves MOTD name: visa-despair
 candidate slot: A
 ```
 
-After mobile acceptance, the final runtime and system sources were rebuilt and
-installed as:
+携帯アプリ受入後、最終の実行環境とシステム原本を再構築し、次として導入した。
 
 ```text
 Firmware UUID: a78bfbe5-83af-59fb-b692-a41f2b6ca203
@@ -96,18 +71,13 @@ Nerves MOTD name: purse-lottery
 validated slot: A
 ```
 
-It reported both `storage_isolation=shim_active` and
-`watchdog_isolation=shim_active`. All network, cloud, health, and mount markers
-remained successful. Precheck reported zero failures, zero gates, the expected
-Phase 4 NFS warning, and `result=ready_for_manual_camera_start`. After its final
-OTA reboot, one MP4 finalized within the three-minute observation window while
-one active MP4 remained under private `/tmp`.
+`storage_isolation=shim_active` と `watchdog_isolation=shim_active` の双方を報告し、ネットワーク、クラウド、健全性、マウントの印はすべて成功した。事前検査は失敗 0、条件 0、予期した第 4 段階の NFS 警告だけを報告し、`result=ready_for_manual_camera_start` となった。
 
-After startup, status reported all three primary vendor processes running,
-the assistant shim active, Nerves `heart` as the sole watchdog owner, and the
-private watchdog view absent.
+最終 OTA 再起動後、三分の観測中に MP4 一件が確定し、一件の稼働中 MP4 が私有 `/tmp` に残った。
 
-The fixed log counters reported:
+開始後は三つの主要製造元処理が稼働し、補助処理が有効で、Nerves `heart` が唯一の監視タイマー所有者、私有表示には監視タイマーがないことを報告した。
+
+修正済み記録の回数は次である。
 
 ```text
 init_all() END ret:0=1
@@ -123,34 +93,24 @@ SD card failed=0
 sdevice_open_do fail=0
 ```
 
-Thirty consecutive pings succeeded while the final runtime initialized. SSH
-remained available. The primary processes used about 23 MiB RSS combined and
-the system retained about 32 MiB reclaimable memory during the observed
-interval.
+最終実行環境の初期化中に 30 回連続で ping が成功し、SSH も利用可能であった。主要三処理の RSS 合計は約 23 MiB、観測中の回収可能メモリは約 32 MiB であった。
 
-The vendor application also started one `rtsp`, one `live555MediaServer`, one
-monitor shell, and one sleep process as internal descendants. ADR 0008 does not
-expose or support RTSP as a product feature. Stop identifies processes by their
-private `/atom` root, terminates those descendants, then removes only the
-recorded compatibility mounts and new System V IPC.
+製造元アプリケーションは内部子孫として `rtsp`、`live555MediaServer`、監視用シェル、`sleep` を各一つ起動した。ADR 0008 は RTSP を製品機能として公開・対応しない。停止時は私有 `/atom` ルートに基づいて処理を特定し、子孫を終了してから、記録した互換マウントと新規 System V IPC だけを削除する。
 
-## Mobile acceptance
+## 携帯アプリ受入
 
-The July 27 screenshots recorded:
+2026-07-27 の画像で次を記録した。
 
-- `Screenshot_20260727-082040.png`: AtomCam2 is online;
-- `Screenshot_20260727-082058.png`: HD live view is active;
-- `Screenshot_20260727-082120.png`: recorded playback and its timeline work;
-  and
-- `Screenshot_20260727-082405.png`: the storage screen reports
-  `13.44 GB/13.59 GB`, local recording enabled, and continuous-recording mode.
+- `Screenshot_20260727-082040.png`: AtomCam2 がオンライン
+- `Screenshot_20260727-082058.png`: HD 生映像を表示
+- `Screenshot_20260727-082120.png`: 録画再生と時間軸が動作
+- `Screenshot_20260727-082405.png`: 記憶領域画面が `13.44 GB/13.59 GB`、局所録画有効、連続録画方式を表示
 
-The earlier SD-card error is absent.
+以前の SD カード異常は表示されなかった。
 
-## Local continuous-recording acceptance
+## 局所連続録画の受入
 
-The same running device provided 36 completed MP4 files under the private
-`/data` spool:
+同じ稼働機器の私有 `/data` 一時保管には、完了済み MP4 が 36 件あった。
 
 ```text
 completed_mp4=36
@@ -161,12 +121,8 @@ completion_span_seconds=2100
 unexpected_or_partial_files=0
 ```
 
-Thirty-five intervals over 2,100 seconds establish a one-minute completion
-cadence. The current `08/27` segment existed only as `/tmp/27.mp4`, while
-`08/26.mp4` was the newest completed spool file. Incomplete and completed files
-therefore already have a clear boundary: the vendor runtime writes the current
-segment in private tmpfs and moves it into the `/data`-backed media path after
-finalization.
+2,100 秒中 35 区間で、一分ごとの完了間隔を確認した。現在の `08/27` 区切りは `/tmp/27.mp4` にだけ存在し、`08/26.mp4` が一時保管内の最新完了ファイルであった。
 
-No additional recording-path or completion hook is needed for Phase 3.
-NAS export, retry, spool limits, and retention remain Phase 4.
+未完了と完了済みの境界はすでに明確である。製造元実行環境は現在の区切りを私有 tmpfs へ書き、確定後に `/data` を裏付けとする媒体経路へ移動する。
+
+第 3 段階のために追加の録画経路処理や完了検出処理は不要である。NAS 搬出、再試行、一時保管上限、保持期間は第 4 段階として残る。

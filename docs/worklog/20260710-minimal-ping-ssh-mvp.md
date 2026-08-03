@@ -1,42 +1,45 @@
-# 20260710 minimal ping and SSH MVP plan
+# 20260710 最小限の ping・SSH MVP 計画
 
-## Status
+## 状態
 
-This document records the initial plan for the first Atom Cam 2 Nerves milestone.
+この文書は、Atom Cam 2 向け Nerves の最初の到達点について、当初の計画を記録したものです。
 
-The milestone was completed on July 15, 2026. See [`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md) for the verified result and confirmed blockers.
+この到達点は 2026 年 7 月 15 日に完了しました。検証済みの結果と確認した阻害要因については、
+[`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md)
+を参照してください。
 
-## Goal
+## 目標
 
-Prove that an Atom Cam 2 can boot a minimal Nerves system from a MicroSD card and become reachable over Wi-Fi:
+Atom Cam 2 が MicroSD card から最小限の Nerves system を起動し、Wi-Fi 経由で
+到達可能になることを証明します。
 
 ```sh
 ping nerves.local
 ssh nerves@nerves.local
 ```
 
-Everything unrelated to basic boot and network access was intentionally deferred.
+基本的な起動とネットワーク接続に関係しない機能は、意図的に後回しとしました。
 
-## Scope
+## 対象範囲
 
-The first milestone required:
+最初の到達点には次が必要でした。
 
-- An SD-card boot payload
-- Kernel and initramfs handoff
-- Read-only root filesystem mounting
-- `erlinit` and the Erlang release
-- Vendor Wi-Fi hardware preparation
-- `wlan0` configuration through VintageNet
+- SD card 用の起動内容
+- kernel と initramfs の引き渡し
+- 読み取り専用 root filesystem のマウント
+- `erlinit` と Erlang release
+- ベンダー Wi-Fi hardware の準備
+- VintageNet による `wlan0` の設定
 - DHCP
-- `mdns_lite` advertisement as `nerves.local`
-- `nerves_ssh` public-key access
-- Small FAT-partition diagnostics for early bring-up
+- `nerves.local` としての `mdns_lite` 通知
+- `nerves_ssh` の公開鍵接続
+- 初期立ち上げ用の FAT パーティション上の小さな診断情報
 
-Camera capture, RTSP, WebUI, Samba, and vendor application compatibility were excluded.
+カメラ撮影、RTSP、WebUI、Samba、ベンダーアプリケーションとの互換性は対象外としました。
 
-## Expected SD-card payload
+## 想定する SD card の内容
 
-The FAT partition contains:
+FAT パーティションには次を配置します。
 
 ```text
 factory_t31_ZMC6tiIDQN
@@ -46,17 +49,18 @@ authorized_keys
 nerves-provisioning.conf
 ```
 
-`hostname` contains:
+`hostname` の内容は次です。
 
 ```text
 nerves
 ```
 
-The root filesystem must be the application-merged SquashFS containing `/srv/erlang`, not only the base Nerves system image.
+root filesystem は、基礎となる Nerves system image だけではなく、`/srv/erlang` を含む
+アプリケーション統合済みの SquashFS でなければなりません。
 
-## Build and package workflow
+## ビルドと梱包の手順
 
-Run repository checks and the firmware wrapper from the repository:
+リポジトリから検査とファームウェア用の呼び出し処理を実行します。
 
 ```sh
 ./scripts/check-prereqs.sh
@@ -64,15 +68,16 @@ Run repository checks and the firmware wrapper from the repository:
 ./scripts/build-firmware-log.sh
 ```
 
-The build wrapper applies the required system checks and produces the flat SD payload under the example application's Nerves images directory.
+ビルド用の呼び出し処理は必要な system 検査を適用し、サンプルアプリケーションの
+Nerves images directory 配下へ平坦な SD 用の書き込み内容を生成します。
 
-Before installing the payload, verify it:
+インストール前に内容を検証します。
 
 ```sh
 ./scripts/atomcam2-check-sd-payload.sh /path/to/atomcam2-sd
 ```
 
-Install it to the mounted FAT partition:
+マウント済み FAT パーティションへインストールします。
 
 ```sh
 ./scripts/install-sd-files.sh \
@@ -81,9 +86,9 @@ Install it to the mounted FAT partition:
   --force
 ```
 
-## Hardware checkpoints
+## 実機の確認点
 
-The intended checkpoint order was:
+想定した確認順序は次のとおりです。
 
 ```text
 U-Boot loads factory_t31_ZMC6tiIDQN
@@ -102,7 +107,7 @@ mdns_lite advertises nerves.local
 nerves_ssh accepts the public key
 ```
 
-Host-side verification:
+host 側の確認:
 
 ```sh
 getent ahostsv4 nerves.local
@@ -110,19 +115,21 @@ ping -c 4 nerves.local
 ssh nerves@nerves.local
 ```
 
-Direct IP connectivity should be checked before treating an mDNS failure as a general network failure.
+mDNS の失敗をネットワーク全体の失敗と判断する前に、IP address を直接指定した接続を
+確認します。
 
-## Diagnostic boundary
+## 診断の境界
 
-When a boot failed, the useful rule was to record the earliest failing checkpoint rather than infer the cause from the absence of `nerves.local`.
+起動失敗時は、`nerves.local` が見つからないことから原因を推測するのではなく、
+最初に失敗した確認点を記録することが有効でした。
 
-Collect FAT-partition diagnostics with:
+FAT パーティションの診断情報を次で収集します。
 
 ```sh
 ./scripts/collect-boot-report.sh --mount /path/to/mounted/sd
 ```
 
-A minimal record should include:
+最低限、次を記録します。
 
 ```text
 Date:

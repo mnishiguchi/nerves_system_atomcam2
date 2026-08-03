@@ -1,40 +1,47 @@
-# 20260712 nerves-config internal toolchain investigation
+# 20260712 nerves-config 内部ツールチェーン調査
 
-## Status
+## 状態
 
-This records an early build-system mismatch. The temporary internal-toolchain workaround was superseded by the dedicated external non-DSP Nerves toolchain required for the Ingenic T31 runtime.
+この文書は初期のビルドシステム不整合を記録したものです。一時的な内部ツールチェーン用の
+回避策は、Ingenic T31 の実行環境に必要な、DSP を使用しない専用の外部 Nerves
+ツールチェーンによって置き換えられました。
 
-See [`20260713-atomcam2-toolchain-dsp-ase-investigation.md`](20260713-atomcam2-toolchain-dsp-ase-investigation.md).
+[`20260713-atomcam2-toolchain-dsp-ase-investigation.md`](20260713-atomcam2-toolchain-dsp-ase-investigation.md)
+を参照してください。
 
-## Symptom
+## 症状
 
-The build reached `nerves-config` after building the toolchain, Linux, Erlang, `erlinit`, and `nerves_heart`, then failed while copying `echo-gcc-args`:
+ビルドは toolchain、Linux、Erlang、`erlinit`、`nerves_heart` の構築後に
+`nerves-config` へ到達しましたが、`echo-gcc-args` のコピー中に失敗しました。
 
 ```text
 cp: cannot create regular file '.../host/opt/ext-toolchain/bin/echo-gcc-args': No such file or directory
 ```
 
-## Finding
+## 判明事項
 
-The bring-up configuration was using Buildroot's internal toolchain, while `nerves-config` expected the directory structure used by an external Nerves toolchain:
+初期立ち上げ用設定では Buildroot の内部 toolchain を使用していましたが、
+`nerves-config` は外部 Nerves toolchain で使用される次のディレクトリ構成を
+想定していました。
 
 ```text
 host/opt/ext-toolchain/bin
 ```
 
-Deleting `.nerves` reproduced the failure, so stale build state was not the cause.
+`.nerves` を削除しても失敗を再現したため、古いビルド状態は原因ではありませんでした。
 
-## Temporary workaround
+## 一時的な回避策
 
-The expected host directory was created before `nerves-config` installed its helper.
+`nerves-config` が補助処理を配置する前に、想定する host directory を作成しました。
 
-This allowed the build investigation to continue, but it was not the final toolchain design.
+これによりビルド調査を継続できましたが、最終的な toolchain 設計ではありませんでした。
 
-## Final resolution
+## 最終的な解決
 
-Runtime testing later proved that the stock MIPSEL Nerves toolchain enabled DSP ASE instructions unsupported by the Atom Cam 2's Ingenic T31 processor.
+後の実行時試験により、標準の MIPSEL Nerves toolchain が Atom Cam 2 の Ingenic T31
+processor では利用できない DSP ASE instruction を有効にしていることが判明しました。
 
-The final platform therefore requires a consistent external toolchain with:
+そのため、最終的な基盤には次の条件を一貫して満たす外部 toolchain が必要です。
 
 ```text
 MIPS32 Release 2

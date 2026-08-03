@@ -1,27 +1,33 @@
-# 20260713 AtomCam2 toolchain DSP ASE investigation
+# 20260713 AtomCam2 ツールチェーン DSP ASE 調査
 
-## Result
+## 結果
 
-The first Nerves userspace could not run reliably on the Atom Cam 2 because the stock MIPSEL Nerves toolchain targeted the `24kec` processor profile and enabled the MIPS DSP Application-Specific Extension.
+標準の MIPSEL Nerves toolchain が `24kec` processor profile を対象とし、MIPS DSP
+Application-Specific Extension を有効にしていたため、最初の Nerves 利用者空間は
+Atom Cam 2 上で安定して動作できませんでした。
 
-The generated musl runtime contained DSP instructions such as:
+生成された musl runtime には、次のような DSP instruction が含まれていました。
 
 ```asm
 lwx
 lhx
 ```
 
-The Ingenic T31 processor raised `SIGILL` when dynamically linked programs reached those instructions.
+動的に連結された program がこれらの instruction に到達すると、Ingenic T31 processor は
+`SIGILL` を発生させました。
 
-A dedicated Nerves toolchain targeting plain MIPS32 Release 2, soft-float, and no DSP ASE resolved the dynamic userspace failure.
+通常の MIPS32 Release 2、soft-float、DSP ASE 無効を対象とする専用 Nerves toolchain により、
+動的な利用者空間の障害を解決しました。
 
-This was a confirmed prerequisite for the later ping and SSH milestone. It was not itself a Wi-Fi configuration problem.
+これは、その後の ping と SSH の到達点に必要であることを確認した前提条件です。
+Wi-Fi 設定の問題ではありませんでした。
 
-## Initial symptom
+## 最初の症状
 
-The firmware built successfully, but the device did not publish `nerves.local` or accept SSH.
+ファームウェアのビルドには成功しましたが、機器は `nerves.local` を通知せず、SSH 接続も
+受け付けませんでした。
 
-At that point, the failure could have been anywhere in this chain:
+この時点では、次の経路のどこでも失敗する可能性がありました。
 
 ```text
 U-Boot
@@ -39,61 +45,68 @@ U-Boot
 -> SSH
 ```
 
-The investigation therefore tested one boundary at a time instead of treating the missing hostname as proof of a network failure.
+そのため、hostname が見つからないことをネットワーク障害の証拠とせず、境界を 1 つずつ
+試験しました。
 
-## Known-good control
+## 正常動作する比較対象
 
-The same camera and MicroSD card successfully booted `atomcam_tools` and became reachable through its normal network services.
+同じカメラと MicroSD カードで `atomcam_tools` を正常に起動し、通常のネットワーク
+サービスから到達できました。
 
-This proved the basic hardware path:
+これにより、次の基本的なハードウェア経路を証明しました。
 
-- Camera hardware
-- MicroSD card and FAT partition
-- U-Boot loading `factory_t31_ZMC6tiIDQN`
-- Vendor kernel and initramfs
-- Wi-Fi hardware in the vendor environment
+- カメラハードウェア
+- MicroSD カードと FAT パーティション
+- U-Boot による `factory_t31_ZMC6tiIDQN` の読み込み
+- ベンダーカーネルと initramfs
+- ベンダー環境内の Wi-Fi ハードウェア
 
-The remaining problem was specific to the Nerves kernel or userspace.
+残る問題は Nerves カーネルまたはユーザー空間に固有のものでした。
 
-## Fault isolation
+## 障害の切り分け
 
-### Static userspace worked
+### 静的な利用者空間は動作した
 
-Small statically linked MIPS programs reached `main()` and wrote diagnostic breadcrumbs.
+小さな静的連結済み MIPS program は `main()` へ到達し、診断用の通過記録を書き込みました。
 
-This proved that the processor could execute the selected MIPS32R2 instruction set and that the kernel could enter userspace.
+これにより、processor が選択した MIPS32R2 instruction set を実行でき、kernel が利用者空間へ
+制御を渡せることを証明しました。
 
-### Dynamic userspace failed
+### 動的な利用者空間は失敗した
 
-Dynamically linked probes failed before reaching their first application breadcrumb.
+動的連結済みの調査 program は、最初のアプリケーション通過記録へ到達する前に失敗しました。
 
-Both PIE and non-PIE variants failed, so PIE was not the differentiating factor.
+PIE と非 PIE の両方が失敗したため、PIE は差分要因ではありませんでした。
 
-### `rdhwr` was not the blocker
+### `rdhwr` は阻害要因ではなかった
 
-A direct probe of the MIPS thread-pointer instruction completed successfully.
+MIPS の thread pointer instruction を直接確認する program は正常に完了しました。
 
-This ruled out the early suspicion that the vendor Linux 3.10 kernel could not support the instruction used by musl TLS setup.
+これにより、ベンダーの Linux 3.10 kernel が musl の TLS 初期化で使用する instruction に
+対応できないという初期の疑いを除外しました。
 
-### The actual signal was `SIGILL`
+### 実際の signal は `SIGILL`
 
-A small parent process captured the child termination signal. Dynamic probes consistently died with an illegal instruction rather than a missing loader, segmentation fault, or ordinary process exit.
+小さな親 process で子 process の終了 signal を取得しました。動的な調査 program は、
+loader の欠落、segmentation fault、通常終了ではなく、常に不正 instruction で終了しました。
 
-### ELF attributes exposed DSP ASE
+### ELF 属性から DSP ASE が判明した
 
-Inspection of the stock runtime showed the `24kec` target and DSP ASE attributes.
+標準 runtime の確認により、`24kec` target と DSP ASE attribute が判明しました。
 
-Disassembly of musl identified DSP instructions in code reached during dynamic process startup.
+musl の逆アセンブルにより、動的 process 起動中に到達するコード内の DSP instruction を
+特定しました。
 
-This connected the `SIGILL` evidence to a concrete toolchain property.
+これにより、`SIGILL` の根拠を具体的な toolchain の性質へ結び付けました。
 
-## Root cause
+## 根本原因
 
-The Buildroot target configuration and the external Nerves toolchain configuration were not equivalent.
+Buildroot の target 設定と外部 Nerves toolchain の設定が同等ではありませんでした。
 
-Changing the system architecture to MIPS32R2 did not rebuild or replace the stock external toolchain's DSP-enabled musl runtime.
+system architecture を MIPS32R2 に変更しても、標準の外部 toolchain が含む DSP 有効の
+musl runtime は再構築または置換されませんでした。
 
-The effective relationship was:
+実際の関係は次のとおりでした。
 
 ```text
 Buildroot target settings
@@ -101,11 +114,12 @@ Buildroot target settings
 architecture of the external toolchain runtime
 ```
 
-As long as the root filesystem used the stock `24kec` runtime, dynamically linked Nerves userspace remained incompatible with the Ingenic T31.
+root filesystem が標準の `24kec` runtime を使用する限り、動的連結された Nerves 利用者空間は
+Ingenic T31 と互換性がありませんでした。
 
-## Fix
+## 修正
 
-A dedicated external Nerves toolchain was built with these target properties:
+次の性質を持つ専用の外部 Nerves toolchain を構築しました。
 
 ```text
 Architecture: MIPS32 Release 2
@@ -116,48 +130,51 @@ C library: musl
 DSP ASE: disabled
 ```
 
-The rebuilt dynamic test matrix then completed successfully:
+再構築後、動的試験一覧は正常に完了しました。
 
 ```text
 dynamic_pie_exit_status=0
 dynamic_no_pie_exit_status=0
 ```
 
-Both programs reached `main()`.
+両方の program が `main()` へ到達しました。
 
-The final Nerves system, Buildroot packages, native ports, and runtime libraries must all use this same toolchain. Copying only `libc.so` is not a valid permanent solution.
+最終的な Nerves system、Buildroot package、native port、runtime library はすべて、
+同じ toolchain を使用しなければなりません。`libc.so` だけをコピーする方法は、恒久的な
+解決策として認められません。
 
-## Ruled-out hypotheses
+## 除外した仮説
 
-The following were investigated but were not the dynamic runtime root cause:
+次を調査しましたが、動的 runtime の根本原因ではありませんでした。
 
-- MicroSD hardware or partition layout
-- U-Boot loading the kernel
-- Root filesystem compression by itself
+- MicroSD hardware または partition layout
+- U-Boot による kernel 読み込み
+- root filesystem の圧縮そのもの
 - `switch_root`
-- PIE versus non-PIE
-- The MIPS `rdhwr` instruction
-- Stale `.nerves` state
-- Merely changing Buildroot's MIPS CPU selection
+- PIE と非 PIE の違い
+- MIPS の `rdhwr` instruction
+- 古い `.nerves` 状態
+- Buildroot の MIPS CPU 選択だけを変更すること
 
-Some of these still required independent cleanup, but none explained the observed `SIGILL`.
+一部には独立した整理が必要でしたが、観測した `SIGILL` を説明するものではありませんでした。
 
-## Reusable investigation methods
+## 再利用可能な調査方法
 
-The most useful techniques were:
+特に有効だった方法は次のとおりです。
 
-- Start with a known-good hardware control.
-- Separate kernel and userspace by using the known-good vendor kernel with the Nerves root filesystem.
-- Prefer tiny static probes for early userspace.
-- Use a writable diagnostic root filesystem when normal logging is unavailable.
-- Capture fatal child signals explicitly.
-- Compare PIE and non-PIE rather than assuming one is responsible.
-- Inspect ELF attributes and disassembly, not only compiler command-line flags.
-- Keep Buildroot configuration and external toolchain configuration conceptually separate.
+- 正常動作する既知の hardware 比較対象から始める
+- 正常動作するベンダー kernel と Nerves root filesystem を組み合わせ、kernel と利用者空間を
+  分離する
+- 初期利用者空間では小さな静的 program を優先する
+- 通常のログを利用できない場合は、書き込み可能な診断用 root filesystem を使用する
+- 子 process の致命的 signal を明示的に取得する
+- 片方が原因と推測せず、PIE と非 PIE を比較する
+- compiler の command line flag だけでなく ELF attribute と逆アセンブルを確認する
+- Buildroot 設定と外部 toolchain 設定を概念上分離する
 
-## Follow-up boundary
+## 次の調査境界
 
-After the custom non-DSP toolchain was integrated, the next investigations could move to:
+DSP を使用しない専用 toolchain の統合後、次の調査へ進めました。
 
 ```text
 application-merged rootfs
@@ -168,4 +185,4 @@ application-merged rootfs
 -> DHCP, mDNS, and SSH
 ```
 
-Those stages are documented in the July 14 and July 15 worklogs.
+これらの段階は、7 月 14 日および 7 月 15 日の作業記録に記載しています。

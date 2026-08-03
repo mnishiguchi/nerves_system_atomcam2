@@ -1,23 +1,26 @@
-# 20260712 first firmware build
+# 20260712 最初のファームウェアビルド
 
-## Status
+## 状態
 
-The first minimal `atomcam2` Nerves firmware built successfully. This was a build milestone only; hardware ping and SSH were verified later on July 15, 2026.
+最小限の `atomcam2` Nerves firmware の最初のビルドに成功しました。この時点では
+ビルドだけの到達点であり、実機での ping と SSH は 2026 年 7 月 15 日に検証しました。
 
-See [`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md) for the completed network milestone.
+ネットワーク到達点の完了については、
+[`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md)
+を参照してください。
 
-## Goal
+## 目標
 
-- Build the custom Nerves system
-- Build the example Nerves application
-- Produce an AtomCam2 MIPSEL firmware artifact
-- Prepare the flat MicroSD payload for hardware testing
+- 独自 Nerves system を構築する
+- サンプル Nerves application を構築する
+- AtomCam2 MIPSEL firmware 成果物を生成する
+- 実機試験用に平坦な MicroSD 書き込み内容を準備する
 
-Camera runtime and vendor application compatibility were outside this stage.
+カメラ実行環境とベンダーアプリケーションとの互換性は、この段階の対象外でした。
 
-## Result
+## 結果
 
-The firmware build succeeded with metadata identifying:
+ファームウェアビルドに成功し、メタデータでは次を識別できました。
 
 ```text
 meta-product=atomcam2_nerves_app
@@ -25,9 +28,9 @@ meta-platform=atomcam2
 meta-architecture=mipsel
 ```
 
-The initial artifact was approximately 19 MB.
+最初の成果物は約 19 MB でした。
 
-## Build command used at this stage
+## この段階で使用したビルドコマンド
 
 ```sh
 cd examples/atomcam2_nerves_app
@@ -37,33 +40,37 @@ mix deps.get
 mix firmware
 ```
 
-The later repository workflow standardized this through:
+その後、リポジトリの標準手順を次へ統一しました。
 
 ```sh
 ./scripts/build-firmware-log.sh
 ```
 
-## Build fixes established
+## ビルド成功に必要だった修正
 
-The first successful build required:
+最初のビルド成功には次が必要でした。
 
-- Direct dependencies on `nerves_runtime`, `nerves_ssh`, `mdns_lite`, `vintage_net`, and `vintage_net_wifi`
-- Removal of unrelated Wi-Fi access-point dependencies from the MVP
-- Conservative MIPS32 native build flags
+- `nerves_runtime`、`nerves_ssh`、`mdns_lite`、`vintage_net`、
+  `vintage_net_wifi` への直接依存
+- MVP に無関係な Wi-Fi access point 用依存関係の削除
+- 保守的な MIPS32 native build flag
 - `BR2_PACKAGE_LIBNL=y`
-- A GNU89 compatibility patch for the Linux 3.10 kernel source
-- An initial Linux 3.10 compatibility patch for VintageNet
+- Linux 3.10 kernel source に対する GNU89 互換 patch
+- VintageNet に対する最初の Linux 3.10 互換 patch
 
-The initial VintageNet patch was later corrected because defining `IFA_FLAGS` without updating `IFA_MAX` caused a native runtime crash. The final correction is documented in the July 15 bring-up report.
+最初の VintageNet patch は後に修正しました。`IFA_MAX` を更新せずに `IFA_FLAGS` を
+定義すると、native runtime が停止するためです。最終的な修正は 7 月 15 日の
+立ち上げ記録に記載しています。
 
-## Outcome
+## 到達結果
 
-This build proved that the repository could produce a complete Nerves firmware artifact. It did not yet prove:
+このビルドにより、リポジトリから完全な Nerves firmware 成果物を生成できることを
+証明しました。ただし、次はまだ証明していませんでした。
 
-- Dynamic userspace compatibility on the Ingenic T31
-- Correct boot payload selection
-- Vendor Wi-Fi driver startup
-- Wi-Fi association
-- DHCP, mDNS, or SSH
+- Ingenic T31 上の動的な利用者空間との互換性
+- 正しい起動内容の選択
+- ベンダー Wi-Fi driver の起動
+- Wi-Fi 接続
+- DHCP、mDNS、SSH
 
-Those boundaries were investigated in later worklogs.
+これらの境界は、その後の作業記録で調査しました。

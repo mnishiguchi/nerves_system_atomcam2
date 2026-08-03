@@ -1,14 +1,17 @@
-# 20260714 AtomCam2 boot and rootfs investigation
+# 20260714 AtomCam2 の起動と rootfs の調査
 
-## Status
+## 状態
 
-This worklog records the confirmed boot and root-filesystem findings that narrowed the remaining problem to Wi-Fi and application networking.
+この作業記録は、残る問題を Wi-Fi とアプリケーションネットワークへ絞り込んだ、
+確認済みの起動および root filesystem に関する判明事項を記録します。
 
-It intentionally omits most provisional hypotheses from the original investigation. The final network result is documented in [`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md).
+当初の調査に含まれた暫定的な仮説の多くは意図的に省略しています。最終的なネットワーク
+結果は、[`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md)
+に記載しています。
 
-## Goal
+## 目標
 
-Prove each layer before diagnosing `nerves.local`:
+`nerves.local` を診断する前に、各層を証明します。
 
 ```text
 MicroSD payload
@@ -21,13 +24,15 @@ MicroSD payload
 -> Wi-Fi and network services
 ```
 
-## Confirmed boot path
+## 確認済みの起動経路
 
-The first reliable userspace test kept the already proven `atomcam_tools` kernel and replaced the userspace with the Nerves root filesystem.
+最初の信頼できる利用者空間試験では、すでに検証済みの `atomcam_tools` kernel を維持し、
+利用者空間を Nerves root filesystem に置き換えました。
 
-This hybrid approach isolated the Nerves userspace from the separate custom-kernel size and boot work.
+この組み合わせにより、Nerves 利用者空間を、独立した独自 kernel の容量および起動作業から
+分離しました。
 
-The active boot path was:
+稼働中の起動経路は次のとおりでした。
 
 ```text
 factory_t31_ZMC6tiIDQN
@@ -40,98 +45,105 @@ factory_t31_ZMC6tiIDQN
 -> Erlang release
 ```
 
-## Application-merged root filesystem
+## アプリケーション統合済み root filesystem
 
-A base Nerves system image was insufficient because it did not contain the application release under:
+基礎となる Nerves system image だけでは、次の場所にアプリケーション release がないため
+不十分でした。
 
 ```text
 /srv/erlang
 ```
 
-The firmware post-processing step preserved the final application-merged image as:
+ファームウェアの後処理で、最終的なアプリケーション統合済み image を次として維持しました。
 
 ```text
 examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/rootfs_hack.final.squashfs
 ```
 
-The flat SD payload copied this image as:
+平坦な SD 用の書き込み内容では、この image を次の名称でコピーしました。
 
 ```text
 rootfs_hack.squashfs
 ```
 
-Before hardware testing, extracting the image and confirming `/srv/erlang` became a required verification step.
+実機試験前に image を展開し、`/srv/erlang` を確認することを必須の検査としました。
 
-## Stale rootfs precedence
+## 古い rootfs の優先
 
-An older diagnostic file named:
+次の名称の古い診断用ファイルが、新しい SquashFS より優先される場合がありました。
 
 ```text
 rootfs_hack.ext2
 ```
 
-could take precedence over the newer SquashFS payload.
+その結果、正しいビルドをインストールしていても、camera が古い診断用利用者空間を起動し、
+誤解を招く試験になりました。
 
-This produced misleading tests in which a correct build was installed but the camera booted an older diagnostic userspace.
+整理規則を次のようにしました。
 
-The cleanup rule became:
+- 古い `rootfs_hack.ext2` を削除する
+- card へのコピー後に `rootfs_hack.squashfs` の検査値を確認する
+- card へインストールした正確な image 内のアプリケーション release を確認する
 
-- Remove stale `rootfs_hack.ext2` files.
-- Verify the checksum of `rootfs_hack.squashfs` after copying it to the card.
-- Confirm the application release inside the exact image installed on the card.
+## initramfs の境界
 
-## Initramfs boundary
+正常動作する既知のベンダー kernel には、稼働中の initramfs が組み込まれていました。
 
-The known-good vendor kernel included its own active initramfs.
+そのため、独自 kernel も試験していない限り、リポジトリ内の独自 initramfs への変更は、
+稼働中の組み合わせ起動経路に関する根拠になりません。
 
-Changes to the repository's custom initramfs were therefore not evidence about the active hybrid boot path unless the custom kernel was also being tested.
+この区別により、使用されていない initramfs の変更を実行時修正と誤認することを
+防ぎました。
 
-This distinction prevented inactive initramfs changes from being mistaken for runtime fixes.
+## 確認済みの利用者空間の進行
 
-## Confirmed userspace progress
+FAT partition 上の通過記録と rootfs の確認により、次を確認しました。
 
-FAT-partition breadcrumbs and rootfs inspection confirmed:
+- MicroSD card をマウントした
+- SquashFS root filesystem を loop device 経由でマウントした
+- `switch_root` が完了した
+- Nerves の `/sbin/init` が起動した
+- `/srv/erlang` 配下にアプリケーション release が存在した
+- Erlang VM が、アプリケーションのネットワーク処理を動かす段階まで起動した
 
-- The MicroSD card mounted.
-- The SquashFS root filesystem mounted through a loop device.
-- `switch_root` completed.
-- Nerves `/sbin/init` started.
-- The application release existed under `/srv/erlang`.
-- The Erlang VM started far enough to run the application network worker.
+この時点で、ping と SSH がないことは、起動全体の失敗を意味しなくなりました。
 
-At this point, missing ping and SSH no longer indicated a general boot failure.
+## Wi-Fi ハードウェアの境界
 
-## Wi-Fi hardware boundary
-
-The SDIO device reported vendor ID:
+SDIO device は次の vendor ID を報告しました。
 
 ```text
 0x007a
 ```
 
-This identifies the ATBM603x family used by the camera. The correct driver is:
+これは camera が使用する ATBM603x family を識別します。正しい driver は次です。
 
 ```text
 atbm603x_wifi_sdio.ko
 ```
 
-A Realtek fallback was invalid after the vendor had been identified.
+vendor を識別した後は、Realtek への切り替えは不正でした。
 
-The detailed SDIO initialization, module selection, and `wlan0` result are documented in [`20260714-sdio-wifi-driver-bring-up.md`](20260714-sdio-wifi-driver-bring-up.md).
+SDIO 初期化、module 選択、`wlan0` の詳細は、
+[`20260714-sdio-wifi-driver-bring-up.md`](20260714-sdio-wifi-driver-bring-up.md)
+に記載しています。
 
-## Findings that were not final blockers
+## 最終的な阻害要因ではなかった判明事項
 
-Several observations were useful during diagnosis but were not the final reasons ping and SSH failed:
+次の観測は診断に役立ちましたが、ping と SSH が失敗した最終原因ではありませんでした。
 
-- Optional ATBM text configuration files were not sufficient by themselves to explain the failure.
-- Missing `/data/.mac.info` was not proof that the Wi-Fi device could not start; the factory MAC could be restored through the bootstrap logic.
-- A missing `nerves.local` name could not distinguish boot, Wi-Fi, DHCP, or mDNS failures.
-- BusyBox `ifconfig` on this image could not display interface status and produced a false negative.
-- Repository initramfs changes were inactive while the known-good vendor kernel remained in use.
+- 任意の ATBM text configuration file だけでは障害を説明できなかった
+- `/data/.mac.info` の欠落は、Wi-Fi device を起動できない証拠ではなかった。工場設定の
+  MAC address は初期準備処理で復元できた
+- `nerves.local` の欠落だけでは、起動、Wi-Fi、DHCP、mDNS の失敗を区別できなかった
+- この image の BusyBox `ifconfig` は interface 状態を表示できず、誤った陰性結果を
+  生じさせた
+- 正常動作する既知のベンダー kernel を使用している間、リポジトリ内の initramfs 変更は
+  稼働していなかった
 
-## Outcome
+## 到達結果
 
-By the end of this investigation, the confirmed boundary was:
+この調査の終了時点で、確認済みの境界は次のとおりでした。
 
 ```text
 boot and Nerves userspace: working
@@ -139,4 +151,4 @@ application release: working
 remaining work: SDIO driver, VintageNet, Wi-Fi association, DHCP, mDNS, SSH
 ```
 
-The next worklogs narrowed those layers further until ping and SSH succeeded.
+その後の作業記録でこれらの層をさらに絞り込み、ping と SSH が成功しました。

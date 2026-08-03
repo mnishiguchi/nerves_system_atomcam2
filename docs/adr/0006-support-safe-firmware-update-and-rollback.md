@@ -1,52 +1,51 @@
-# ADR 0006: Support safe firmware update and rollback
+# ADR 0006: 安全なファームウェア更新とロールバックに対応する
 
-## Status
+## 状態
 
-Proposed
+提案中
 
-## Context
+## 背景
 
-Remote firmware upload is currently rejected because the Atom Cam 2 media layout
-has one active SquashFS root filesystem and no verified rollback mechanism.
+Atom Cam 2 の記録媒体構成には稼働中の SquashFS root filesystem が 1 つしかなく、
+検証済みのロールバック機構もないため、現在はリモートでのファームウェア書き込みを
+拒否しています。
 
-Writing the running firmware location in place creates unacceptable failure
-modes:
+稼働中のファームウェア領域をその場で書き換えると、許容できない次の障害が発生します。
 
-- Power loss can leave no bootable root filesystem.
-- A validly written but defective firmware can enter a reboot loop.
-- There is no previous firmware slot to select.
-- There is no standard status, validation, or revert operation.
-- The protected kernel has no verified atomic device-side replacement path.
+- 停電により起動可能な root filesystem がなくなる可能性がある
+- 正常に書き込まれていても不具合のあるファームウェアが再起動を繰り返す可能性がある
+- 選択可能な以前のファームウェアスロットがない
+- 標準的な状態確認、検証、復帰操作がない
+- 保護対象カーネルについて、機器上で原子的に置き換える検証済みの経路がない
 
-Standard Nerves systems commonly use inactive-slot updates and provide fwup
-operations for status, validation, revert, and prevent-revert.
+標準的な Nerves system では一般に、非稼働中スロットへの更新を使用し、状態確認、
+検証、復帰、復帰禁止の fwup 操作を提供します。
 
-ADR 0005 separately defines the persistent application-data partition and the
-factory-reset semantics that clear application data while preserving firmware,
-provisioning, and the protected kernel. This decision must integrate that
-operation with the future A/B layout without redefining its data lifecycle.
+ADR 0005 は、永続的なアプリケーションデータパーティションと、ファームウェア、
+プロビジョニング、保護対象カーネルを維持しながらアプリケーションデータを消去する
+工場出荷状態への初期化の意味を別途定義します。この決定は、そのデータの生存期間を
+再定義せず、将来の A/B 構成へ同じ操作を統合しなければなりません。
 
-The supported Atom Cam 2 boot chain is constrained by an externally supplied,
-protected control kernel. That kernel includes the active vendor initramfs. The
-vendor initramfs mounts the FAT partition and switches into the fixed file
-`rootfs_hack.squashfs`.
+対応する Atom Cam 2 の起動経路は、外部から提供される保護対象の制御カーネルによる
+制約を受けます。このカーネルには、現在使用しているベンダーの initramfs が含まれます。
+ベンダーの initramfs は FAT パーティションをマウントし、固定ファイル
+`rootfs_hack.squashfs` へ切り替えます。
 
-The initramfs source under `board/atomcam2/initramfs/` documents and reproduces
-the required handoff for possible future custom-kernel work. It is not the
-initramfs embedded in the protected kernel used by the supported system.
-Therefore, this repository cannot make the vendor initramfs select firmware
-slots without replacing the protected kernel.
+`board/atomcam2/initramfs/` 配下の initramfs ソースは、将来独自カーネルを検討する
+場合に必要な引き渡し処理を文書化し、再現するためのものです。対応するシステムで使用する
+保護対象カーネルに組み込まれた initramfs ではありません。そのため、このリポジトリから
+ベンダーの initramfs にファームウェアスロットを選択させるには、保護対象カーネルを
+置き換える必要があります。
 
-The protected kernel must remain unchanged. Its fixed
-`rootfs_hack.squashfs` handoff can still support A/B firmware indirectly if that
-file becomes a small boot manager that performs a second root-filesystem
-handoff.
+保護対象カーネルは変更しません。ただし、固定された `rootfs_hack.squashfs` を、
+2 回目の root filesystem 引き渡しを行う小さな起動管理機構へ変更すれば、間接的に
+A/B ファームウェアへ対応できます。
 
-## Decision
+## 決定
 
-Implement an A/B application-firmware model behind an immutable boot manager.
+変更不能な起動管理機構の後段に、A/B アプリケーションファームウェア方式を実装します。
 
-Keep the supported first-stage boot contract unchanged:
+対応する第 1 段階の起動契約は変更しません。
 
 ```text
 U-Boot
@@ -56,25 +55,24 @@ U-Boot
   -> rootfs_hack.squashfs
 ```
 
-Change the role of `rootfs_hack.squashfs` from the application firmware to a
-small boot-manager root filesystem. The boot manager must:
+`rootfs_hack.squashfs` の役割を、アプリケーションファームウェアから、小さな
+起動管理用 root filesystem へ変更します。起動管理機構は次を行う必要があります。
 
-- Read rollback metadata from a dedicated raw region.
-- Select application slot `a` or slot `b`.
-- Mount the selected raw SquashFS application partition.
-- Perform a second root-filesystem handoff into the selected application.
-- Fall back to the last confirmed slot when the pending slot cannot be used.
-- Provide an operator-visible recovery state when neither slot is bootable.
+- 専用の生領域からロールバックメタデータを読み取る
+- application slot `a` または slot `b` を選択する
+- 選択した生の SquashFS アプリケーションパーティションをマウントする
+- 選択したアプリケーションへ 2 回目の root filesystem 引き渡しを行う
+- 保留中スロットを使用できない場合は、最後に確認済みのスロットへ戻る
+- どちらのスロットも起動できない場合、運用担当者が確認可能な復旧状態を提供する
 
-This architecture is conditional on a physical prototype proving that the
-protected kernel and boot manager can perform the second handoff reliably. Do
-not implement the full A/B update path until that prototype passes. If the
-prototype fails, stop and revise this ADR rather than changing the protected
-kernel or silently selecting another architecture.
+この構成は、保護対象カーネルと起動管理機構が 2 回目の引き渡しを安定して行えることを
+実機試作で証明できた場合に限り採用します。試作が成功するまで、完全な A/B 更新経路を
+実装してはなりません。試作に失敗した場合は、保護対象カーネルを変更したり別構成を
+暗黙に選択したりせず、実装を停止してこの ADR を改訂します。
 
-### Intended media layout
+### 想定する記録媒体構成
 
-Use the following conceptual layout after the prototype is proven:
+試作で確認した後、概念上は次の構成を使用します。
 
 ```text
 MicroSD
@@ -94,140 +92,130 @@ MicroSD
     └── mounted at /data
 ```
 
-The exact offsets, slot sizes, metadata-region size, and minimum supported
-MicroSD capacity must be selected after measuring the prototype and defining
-reasonable firmware-growth space.
+正確な位置、スロット容量、メタデータ領域容量、および対応する MicroSD の最小容量は、
+試作の測定後、ファームウェアの適切な拡張余地を定義した上で決定します。
 
-The rollback-metadata region must be outside mounted filesystems and ordinary
-provisioning files. It must not use `/data`, because slot selection occurs
-before `/data` is mounted and application data must remain independent of
-firmware activation.
+ロールバックメタデータ領域は、マウント対象のファイルシステムおよび通常の
+プロビジョニングファイルの外側に置きます。スロット選択は `/data` のマウント前に
+行われ、アプリケーションデータをファームウェア有効化から独立させる必要があるため、
+`/data` を使用してはなりません。
 
-The transition from the current two-partition layout requires a host-side
-`complete` installation. In-place repartitioning is not required and must not be
-attempted by the first implementation.
+現在の 2 パーティション構成からの移行には、ホスト側の `complete` インストールが
+必要です。初期実装で、その場での再パーティションを行う必要はなく、試みてもなりません。
 
-### Protected first-stage firmware
+### 保護対象の第 1 段階ファームウェア
 
-The protected control kernel and boot manager are shared first-stage firmware.
-They must not be changed by device-side application updates.
+保護対象の制御カーネルと起動管理機構は、共有される第 1 段階ファームウェアです。
+機器上のアプリケーション更新で変更してはなりません。
 
-The first safe device-side update implementation may write only:
+最初の安全な機器上更新で書き込めるのは次だけです。
 
-- The inactive application slot.
-- The dedicated rollback-metadata region after the candidate is verified.
+- 非稼働中のアプリケーションスロット
+- 更新候補を検証した後の専用ロールバックメタデータ領域
 
-It must not write:
+次の領域へ書き込んではなりません。
 
-- The protected control kernel.
-- The boot-manager image.
-- The FAT filesystem.
-- Provisioning files.
-- The active application slot.
-- `/data`.
+- 保護対象の制御カーネル
+- 起動管理用イメージ
+- FAT ファイルシステム
+- プロビジョニングファイル
+- 稼働中のアプリケーションスロット
+- `/data`
 
-Updating the protected kernel, boot manager, or partition layout requires a
-host-side `complete` installation until a separate safe activation mechanism is
-proven.
+独立した安全な有効化機構を証明するまでは、保護対象カーネル、起動管理機構、または
+パーティション構成の更新にホスト側の `complete` インストールを使用します。
 
-### Firmware-slot metadata
+### ファームウェアスロットのメタデータ
 
-Store only the state required for deterministic selection and rollback. At
-minimum, the state must identify:
+決定的な選択とロールバックに必要な状態だけを保存します。最低限、次を識別できる
+必要があります。
 
-- The confirmed slot.
-- An optional pending slot.
-- Remaining boot attempts for the pending slot.
-- A monotonically increasing generation.
-- Firmware identifiers and checksums needed to reject stale or mismatched state.
-- A checksum covering the metadata record.
+- 確認済みスロット
+- 任意の保留中スロット
+- 保留中スロットの残り起動試行回数
+- 単調に増加する世代番号
+- 古い状態または対応しない状態を拒否するために必要なファームウェア識別情報と検査値
+- メタデータレコード全体を対象とする検査値
 
-Maintain two fixed-size metadata records. A state change must write the next
-generation to the older or invalid record while leaving the current valid record
-untouched. On boot, select the valid record with the highest generation.
+固定長のメタデータレコードを 2 つ維持します。状態変更時は、現在の有効なレコードを
+変更せず、古い側または無効な側へ次の世代を書き込みます。起動時には、有効なレコードの
+うち世代番号が最大のものを選択します。
 
-An interrupted metadata write must therefore leave at least one usable previous
-record. If neither record is valid, the boot manager must enter an explicit
-recovery path rather than guessing which application slot to boot.
+このため、メタデータ書き込みが中断されても、以前の利用可能なレコードを少なくとも
+1 つ残せます。どちらのレコードも無効な場合、どのアプリケーションスロットを起動するか
+推測せず、明示的な復旧経路へ入らなければなりません。
 
-Prefer a small, purpose-built native utility for metadata parsing and updates.
-Do not implement a generalized state framework without a concrete need.
+メタデータの解析と更新には、目的を限定した小さな native 処理を優先します。
+具体的な必要性がない限り、汎用的な状態管理基盤を実装しません。
 
-Expose the selected slot through the standard `nerves_fw_active` key. Expose
-each populated slot's firmware identifier and validation state through
-`<slot>.nerves_fw_uuid` and `<slot>.nerves_fw_validated`. The identifier stored
-for a remotely uploaded candidate must be the incoming fwup bundle's
-`meta-uuid`.
+選択したスロットを標準キー `nerves_fw_active` で公開します。内容が存在する各スロットの
+ファームウェア識別情報と検証状態は、`<slot>.nerves_fw_uuid` および
+`<slot>.nerves_fw_validated` で公開します。リモートから書き込まれた更新候補に保存する
+識別情報は、受信した fwup 書庫の `meta-uuid` とします。
 
-Runtime consumers must load current redundant metadata rather than relying only
-on the boot-manager report. The report identifies the physically running slot,
-but its confirmed and pending fields are a boot-time snapshot and become stale
-after `Nerves.Runtime.validate_firmware/0`.
+実行時の利用側は、起動管理機構の報告だけに依存せず、現在の冗長メタデータを読み込みます。
+報告は物理的に稼働中のスロットを識別しますが、確認済みおよび保留中の項目は起動時点の
+写しであり、`Nerves.Runtime.validate_firmware/0` の実行後には古くなります。
 
-### Slot selection and boot attempts
+### スロット選択と起動試行回数
 
-The boot manager must select slots as follows:
+起動管理機構は次の規則でスロットを選択します。
 
-- When no slot is pending, boot the confirmed slot.
-- When a slot is pending, persistently decrement its remaining-attempt count
-  before handing control to it.
-- If the pending slot cannot be mounted or fails structural validation, clear or
-  reject the pending state and boot the confirmed slot.
-- If no attempts remain, clear the pending state and boot the confirmed slot.
-- Never overwrite or discard the confirmed slot merely because another slot is
-  pending.
+- 保留中スロットがない場合は確認済みスロットを起動する
+- 保留中スロットがある場合は、そのスロットへ制御を渡す前に残り試行回数を永続的に
+  1 減らす
+- 保留中スロットをマウントできない、または構造検証に失敗する場合は、保留状態を
+  消去または拒否し、確認済みスロットを起動する
+- 残り試行回数がない場合は保留状態を消去し、確認済みスロットを起動する
+- 別スロットが保留中であることだけを理由に、確認済みスロットを上書きまたは破棄しない
 
-The initial implementation should use a small fixed attempt limit, such as three
-boots. The exact value may be adjusted from physical-test evidence.
+初期実装では、3 回など小さな固定試行回数を使用します。正確な値は実機試験の根拠に
+基づいて調整できます。
 
-Boot-attempt accounting handles failures that cause a reboot. Recovery from a
-firmware image that hangs indefinitely requires an independent reboot mechanism.
-A usable hardware watchdog or equivalent mechanism must be verified before
-unattended remote update can be considered safe.
+起動試行回数の管理は、再起動を引き起こす障害に対応します。無期限に停止する
+ファームウェアイメージから復旧するには、独立した再起動機構が必要です。無人での
+リモート更新を安全と判断する前に、利用可能な hardware watchdog または同等の機構を
+検証しなければなりません。
 
-### Candidate writing and activation
+### 更新候補の書き込みと有効化
 
-The currently running application slot must never be overwritten by an
-`upgrade` task.
+現在稼働中のアプリケーションスロットを `upgrade` タスクで上書きしてはなりません。
 
-An upgrade must:
+更新では次を行います。
 
-1. Determine the active and inactive application slots.
-2. Stream the candidate root filesystem to the inactive raw slot.
-3. Verify the complete destination image, checksum, size, and firmware metadata.
-4. Leave the confirmed slot and rollback metadata unchanged if verification
-   fails.
-5. Record the verified inactive slot as pending using the redundant metadata
-   protocol.
-6. Reboot only after the pending state is durably recorded.
+1. 稼働中および非稼働中のアプリケーションスロットを判定する
+2. 更新候補の root filesystem を非稼働中の生スロットへ順次書き込む
+3. 書き込み先イメージ全体、検査値、容量、ファームウェアメタデータを検証する
+4. 検証に失敗した場合、確認済みスロットとロールバックメタデータを変更しない
+5. 検証済みの非稼働中スロットを、冗長メタデータ手順によって保留中として記録する
+6. 保留状態を確実に永続化した後に限り再起動する
 
-Separate internal slot-specific fwup tasks may be used if a checked wrapper must
-choose the inactive destination. The public update path must not allow callers
-to overwrite the active slot directly.
+検査済みの呼び出し処理が非稼働中の書き込み先を選択する必要がある場合は、内部で
+スロット固有の fwup タスクを分けても構いません。公開更新経路から、呼び出し側が
+稼働中スロットを直接上書きできてはなりません。
 
-### Firmware health and validation
+### ファームウェアの健全性と検証
 
-The application must validate newly booted firmware only after essential health
-checks pass. At minimum:
+新しく起動したファームウェアは、必要な健全性検査に合格した後に限り、アプリケーションが
+検証済みとします。最低限、次を確認します。
 
-- The OTP application starts.
-- `/data` is mounted read-write.
-- The expected firmware and slot metadata are available and consistent.
-- The required network subsystem starts and configures the intended interface
-  without an internal failure.
-- The application remains healthy for a defined stabilization period.
+- OTP アプリケーションが起動している
+- `/data` が読み書き可能でマウントされている
+- 想定するファームウェアおよびスロットメタデータが存在し、整合している
+- 必要なネットワークサブシステムが内部エラーなく起動し、想定するインターフェースを
+  設定している
+- 定義した安定確認期間、アプリケーションが正常に動作している
 
-External network reachability must not be required unless the product contract
-explicitly requires it. A missing access point, DHCP server, or upstream network
-must not by itself cause firmware rollback.
+製品契約で明示的に要求しない限り、外部ネットワークへの到達性を必須にしません。
+アクセスポイント、DHCP サーバー、または上流ネットワークが存在しないことだけを理由に、
+ファームウェアをロールバックしてはなりません。
 
-Validation promotes the running pending slot to the confirmed slot and clears
-its pending state. The previous slot remains available until
-`prevent-revert` is requested.
+検証が成功すると、稼働中の保留スロットを確認済みスロットへ昇格し、保留状態を消去します。
+以前のスロットは `prevent-revert` が要求されるまで利用可能なまま維持します。
 
-### Standard Nerves operations
+### 標準的な Nerves 操作
 
-Provide `/usr/share/fwup/ops.fw` tasks compatible with Nerves Runtime:
+Nerves Runtime と互換性のある `/usr/share/fwup/ops.fw` のタスクを提供します。
 
 - `status`
 - `validate`
@@ -235,319 +223,290 @@ Provide `/usr/share/fwup/ops.fw` tasks compatible with Nerves Runtime:
 - `prevent-revert`
 - `factory-reset`
 
-Use `Nerves.Runtime.FwupOps` and `Nerves.Runtime.validate_firmware/0` rather than
-project-specific application APIs when the standard interfaces are available.
-The Atom Cam 2 implementation may use custom fwup operations internally to
-manage its dedicated raw metadata.
+標準の接続口を利用できる場合、プロジェクト固有のアプリケーション API ではなく、
+`Nerves.Runtime.FwupOps` および `Nerves.Runtime.validate_firmware/0` を使用します。
+Atom Cam 2 の実装内部では、専用の生メタデータを管理するために独自の fwup 操作を
+使用しても構いません。
 
-Use the standard NervesMOTD target runtime. Its firmware designation and
-validation display must be backed by the slot-scoped UUID and validation keys,
-including the normal fwup nickname derived from the active firmware UUID.
+標準の NervesMOTD target runtime を使用します。ファームウェア名と検証状態の表示は、
+稼働中ファームウェアの UUID から得られる通常の fwup nickname を含め、スロット単位の
+UUID および検証キーを情報源としなければなりません。
 
-Retain the ADR 0005 `factory-reset` behavior. It must clear only `/data` and
-must not change slot selection, validation state, application-slot contents,
-provisioning, the boot manager, or the protected kernel.
+ADR 0005 の `factory-reset` の動作を維持します。この操作は `/data` だけを消去し、
+スロット選択、検証状態、アプリケーションスロットの内容、プロビジョニング、
+起動管理機構、保護対象カーネルを変更してはなりません。
 
-### Persistent-data compatibility
+### 永続データの互換性
 
-Firmware rollback does not roll back `/data`.
+ファームウェアのロールバックでは `/data` は巻き戻りません。
 
-The initial update policy therefore requires each candidate firmware to remain
-backward-compatible with the existing `/data` format. Destructive or
-irreversible application-data migrations are not supported by this decision.
+そのため、初期の更新方針では、各更新候補ファームウェアに既存の `/data` 形式との
+後方互換性を要求します。破壊的または不可逆なアプリケーションデータ移行には、この
+決定では対応しません。
 
-A firmware image must not validate after beginning an irreversible migration
-that would prevent the previous confirmed firmware from using `/data`. A future
-need for irreversible migrations requires a separate design that explicitly
-coordinates migration and rollback eligibility.
+以前の確認済みファームウェアが `/data` を利用できなくなる不可逆移行を開始した後に、
+ファームウェアイメージを検証済みとしてはなりません。将来、不可逆移行が必要になった
+場合は、移行とロールバック可能性を明示的に調整する別設計が必要です。
 
-Do not build a generic migration framework until a concrete requirement exists.
+具体的な要件がない限り、汎用的な移行基盤を構築しません。
 
-### Remote update boundary
+### リモート更新の境界
 
-Enable standard remote firmware upload after the boot-manager prototype, A/B
-inactive-slot write, destination verification, confirmation, and manual revert
-paths pass physical happy-path validation.
+起動管理機構の試作、A/B の非稼働中スロットへの書き込み、書き込み先検証、確認、
+手動復帰の正常経路を実機で検証した後、標準的なリモートファームウェア書き込みを
+有効にします。
 
-Treat remote upload as experimental until watchdog behavior, the complete
-physical failure matrix, and recovery behavior are verified. ADR 0007 considered
-mandatory firmware signing and rejected it in favor of the ordinary Nerves
-baseline. Production release documentation must preserve the distinction
-between the implemented update path and the remaining physical hardening work.
+watchdog の動作、実機での完全な障害試験表、復旧動作を確認するまでは、リモート書き込みを
+実験的機能として扱います。ADR 0007 ではファームウェア署名の必須化を検討しましたが、
+通常の Nerves 基準を採用し、追加要件を退けました。本番リリース文書では、実装済みの
+更新経路と、未完了の実機堅牢化作業を明確に区別しなければなりません。
 
-NervesHub is outside the scope of this decision.
+NervesHub はこの決定の対象外です。
 
-## Consequences
+## 影響
 
-### Positive
+### 利点
 
-- The protected kernel and vendor initramfs remain unchanged.
-- The vendor's fixed `rootfs_hack.squashfs` contract remains satisfied.
-- Power loss while writing an inactive application slot does not destroy the
-  confirmed firmware.
-- Device-side updates do not modify the mounted FAT boot filesystem.
-- Defective firmware can revert automatically after reboot or watchdog reset.
-- Standard Nerves firmware status and rollback APIs become available.
-- Persistent application data remains independent of firmware-slot activation.
-- Factory-reset behavior remains consistent across the flat and A/B layouts.
-- The boot manager can provide a recovery environment even when application
-  slots are unusable.
+- 保護対象カーネルとベンダー initramfs を変更しない
+- ベンダーの固定された `rootfs_hack.squashfs` 契約を維持する
+- 非稼働中アプリケーションスロットへの書き込み中に停電しても、確認済み
+  ファームウェアを破壊しない
+- 機器上更新でマウント済みの FAT 起動用ファイルシステムを変更しない
+- 不具合のあるファームウェアを、再起動または watchdog reset 後に自動で戻せる
+- 標準的な Nerves のファームウェア状態およびロールバック API を利用できる
+- 永続アプリケーションデータをファームウェアスロットの有効化から独立させる
+- 平坦な構成と A/B 構成の間で工場出荷状態への初期化の動作を統一できる
+- アプリケーションスロットを利用できない場合でも、起動管理機構が復旧環境を提供できる
 
-### Negative
+### 欠点
 
-- The boot flow gains a second root-filesystem handoff that must be proven on
-  physical hardware.
-- The media layout changes and requires a complete reinstall.
-- Two application slots and a boot manager require additional MicroSD capacity.
-- The boot manager and slot-state utility become safety-critical components.
-- `/data` moves from partition 2 to partition 4 and all related metadata and
-  tests must be updated.
-- Automatic recovery from a hung candidate depends on a verified watchdog or
-  equivalent independent reboot mechanism.
-- The protected kernel and boot manager remain outside remote updates initially.
-- Validation policy must balance fast rollout against false success.
-- Failure testing is extensive and requires repeated destructive hardware
-  experiments.
+- 起動経路に 2 回目の root filesystem 引き渡しが加わり、実機での証明が必要になる
+- 記録媒体構成が変更され、完全な再インストールが必要になる
+- 2 つのアプリケーションスロットと起動管理機構のために、追加の MicroSD 容量が必要になる
+- 起動管理機構とスロット状態処理が安全上重要な要素になる
+- `/data` が partition 2 から partition 4 へ移動し、関連するすべてのメタデータと試験を
+  更新する必要がある
+- 停止した更新候補からの自動復旧が、検証済みの watchdog または同等の独立再起動機構に
+  依存する
+- 当初、保護対象カーネルと起動管理機構はリモート更新の対象外となる
+- 検証方針で、迅速な展開と誤った成功判定の均衡を取る必要がある
+- 障害試験が広範囲であり、破壊的な実機試験を繰り返す必要がある
 
-## Scope boundary with ADR 0005
+## ADR 0005 との範囲境界
 
-ADR 0006 owns:
+ADR 0006 は次を扱います。
 
-- The immutable boot-manager handoff.
-- A/B application-root-filesystem layout and activation.
-- Active, pending, and confirmed slot state.
-- Boot-attempt accounting and automatic rollback.
-- `status`, `validate`, `revert`, and `prevent-revert`.
-- The decision to enable remote firmware upload.
-- Verification that `/data` survives update and rollback.
+- 変更不能な起動管理機構への引き渡し
+- A/B アプリケーション root filesystem の構成と有効化
+- 稼働中、保留中、確認済みスロットの状態
+- 起動試行回数の管理と自動ロールバック
+- `status`、`validate`、`revert`、`prevent-revert`
+- リモートファームウェア書き込みを有効にする決定
+- 更新およびロールバック後に `/data` が維持されることの検証
 
-ADR 0006 does not own:
+ADR 0006 は次を扱いません。
 
-- Filesystem selection for `/data`.
-- First-boot initialization or repair of `/data`.
-- Which application and service state belongs under `/data`.
-- Factory-reset preservation semantics.
+- `/data` のファイルシステム選択
+- `/data` の初回起動時の初期化または修復
+- `/data` に保存するアプリケーションおよびサービス状態の範囲
+- 工場出荷状態への初期化で維持する内容
 
-Those application-data decisions remain in ADR 0005. Moving the data partition
-to partition 4 is a layout integration detail and must preserve the ADR 0005
-filesystem lifecycle and safety policy.
+これらのアプリケーションデータに関する決定は ADR 0005 に残します。データパーティションを
+partition 4 へ移動することは構成統合上の詳細であり、ADR 0005 のファイルシステムの
+生存期間と安全方針を維持しなければなりません。
 
-## Scope boundary with ADR 0007
+## ADR 0007 との範囲境界
 
-ADR 0006 owns crash-safe inactive-slot writing, destination verification,
-activation, validation, and rollback.
+ADR 0006 は、障害に強い非稼働中スロットへの書き込み、書き込み先検証、有効化、検証、
+ロールバックを扱います。
 
-ADR 0007 considered authenticating firmware publishers with trusted signing
-keys and rejected that additional policy for the current scope. Update access
-is authorized through SSH public-key authentication. Fwup archive and resource
-integrity checks plus the Atom Cam 2 metadata and rootfs checks validate the
-candidate before pending metadata is committed.
+ADR 0007 では、信頼する署名鍵によってファームウェア公開者を認証することを検討しましたが、
+現在の範囲ではその追加方針を退けました。更新への接続は SSH 公開鍵認証によって許可します。
+fwup 書庫と資源の完全性検査に加え、Atom Cam 2 のメタデータおよび rootfs 検査によって、
+保留メタデータの確定前に更新候補を検証します。
 
-A future requirement to authenticate releases independently of SSH access
-requires a new decision and does not belong in the ADR 0006 A/B safety
-mechanism.
+将来、SSH 接続とは独立してリリースを認証する要件が生じた場合は、新しい決定が必要です。
+その要件は ADR 0006 の A/B 安全機構には含めません。
 
-## Boot and update lifecycle
+## 起動と更新の生存期間
 
-### Confirmed boot
+### 確認済みスロットの起動
 
-1. The vendor initramfs switches into the immutable boot manager.
-2. The boot manager reads both metadata records.
-3. The boot manager selects the newest valid state.
-4. With no pending slot, it mounts and hands off to the confirmed slot.
-5. The application mounts `/data` under the ADR 0005 policy.
+1. ベンダー initramfs が変更不能な起動管理機構へ切り替える
+2. 起動管理機構が両方のメタデータレコードを読み取る
+3. 起動管理機構が最新の有効な状態を選択する
+4. 保留中スロットがなければ、確認済みスロットをマウントして制御を渡す
+5. アプリケーションが ADR 0005 の方針に従って `/data` をマウントする
 
-### Pending boot
+### 保留中スロットの起動
 
-1. The boot manager reads a valid pending slot and remaining-attempt count.
-2. It durably decrements the count before the application handoff.
-3. It verifies and mounts the pending slot.
-4. It hands off to the pending application.
-5. The application performs health checks.
-6. Successful validation promotes the pending slot to confirmed through the boot
-   metadata protocol.
-7. A reboot before validation consumes another attempt.
-8. Exhausted attempts cause the boot manager to return to the previous confirmed
-   slot.
+1. 起動管理機構が有効な保留中スロットと残り試行回数を読み取る
+2. アプリケーションへ制御を渡す前に試行回数を確実に 1 減らす
+3. 保留中スロットを検証してマウントする
+4. 保留中アプリケーションへ制御を渡す
+5. アプリケーションが健全性検査を行う
+6. 検証に成功すると、起動メタデータ手順を通じて保留中スロットを確認済みに昇格する
+7. 検証前の再起動で試行回数を 1 回消費する
+8. 試行回数を使い切ると、起動管理機構が以前の確認済みスロットへ戻る
 
-### Manual revert
+### 手動復帰
 
-A manual revert must select the previous usable slot through the same redundant
-metadata protocol. It must not copy firmware images or mutate `/data`.
+手動復帰では、同じ冗長メタデータ手順を通じて、以前の利用可能なスロットを選択します。
+ファームウェアイメージをコピーしたり、`/data` を変更したりしてはなりません。
 
-### Prevent revert
+### 復帰禁止
 
-`prevent-revert` may mark the previous slot reusable as the next inactive update
-destination. It must not erase the running confirmed firmware before another
-verified candidate exists.
+`prevent-revert` は、以前のスロットを次回更新時の非稼働中書き込み先として再利用可能に
+できます。別の検証済み更新候補が存在する前に、稼働中の確認済みファームウェアを
+消去してはなりません。
 
-## Power-interruption safety
+## 停電時の安全性
 
-The implementation must define and verify these outcomes:
+実装では、次の結果を定義して検証する必要があります。
 
-- Power loss before candidate writing leaves the confirmed slot selected.
-- Power loss during candidate writing leaves the confirmed slot and current
-  metadata untouched.
-- Power loss after candidate writing but before activation leaves the confirmed
-  slot selected.
-- Power loss while writing new metadata leaves the previous valid metadata
-  record usable.
-- Candidate checksum or structural validation failure never creates pending
-  state.
-- Power loss during validation may conservatively leave the candidate pending;
-  it must not destroy the previous confirmed state.
-- Power loss during `prevent-revert` must leave at least one bootable confirmed
-  slot and one valid metadata record.
+- 更新候補の書き込み前に停電しても、確認済みスロットが選択されたままになる
+- 更新候補の書き込み中に停電しても、確認済みスロットと現在のメタデータを変更しない
+- 更新候補の書き込み後、有効化前に停電しても、確認済みスロットが選択されたままになる
+- 新しいメタデータの書き込み中に停電しても、以前の有効なメタデータレコードを利用できる
+- 更新候補の検査値または構造検証に失敗しても、保留状態を作成しない
+- 検証中に停電した場合、保守的に更新候補を保留中のまま残してもよいが、以前の
+  確認済み状態を破壊しない
+- `prevent-revert` 中に停電しても、少なくとも 1 つの起動可能な確認済みスロットと
+  1 つの有効なメタデータレコードを残す
 
-## Prototype gates
+## 試作の合格条件
 
-Before implementing the complete A/B update path, prove on physical Atom Cam 2
-hardware that:
+完全な A/B 更新経路を実装する前に、Atom Cam 2 実機で次を証明します。
 
-- The protected-kernel SHA-256 remains unchanged.
-- The vendor initramfs enters the boot-manager `rootfs_hack.squashfs`.
-- The boot manager can discover the MicroSD application partition reliably.
-- The protected kernel can mount a raw SquashFS application partition.
-- The boot manager can perform the second root-filesystem handoff.
-- Required `/dev`, `/proc`, `/sys`, and FAT mounts remain usable after the
-  handoff.
-- The Nerves release starts normally from the application slot.
-- `/data` initializes, repairs, and mounts under the ADR 0005 policy.
-- Graceful reboot and poweroff remain reliable.
-- A hardware watchdog or equivalent reboot mechanism is available and behaves
-  predictably.
+- 保護対象カーネルの SHA-256 が変化していない
+- ベンダー initramfs が起動管理用の `rootfs_hack.squashfs` へ入る
+- 起動管理機構が MicroSD のアプリケーションパーティションを安定して検出できる
+- 保護対象カーネルが生の SquashFS アプリケーションパーティションをマウントできる
+- 起動管理機構が 2 回目の root filesystem 引き渡しを実行できる
+- 引き渡し後も、必要な `/dev`、`/proc`、`/sys`、FAT のマウントを利用できる
+- Nerves release がアプリケーションスロットから正常に起動する
+- `/data` が ADR 0005 の方針に従って初期化、修復、マウントされる
+- 正常な再起動と電源断が安定して動作する
+- hardware watchdog または同等の再起動機構が利用でき、予測可能に動作する
 
-Failure of any foundational prototype gate must stop the A/B implementation and
-trigger an ADR revision.
+基礎となる試作条件のいずれかに失敗した場合は、A/B 実装を停止し、この ADR を改訂します。
 
-## Implementation status
+## 実装状況
 
-The experimental standard Nerves update and rollback path described in this ADR
-is implemented. Production acceptance remains gated by the complete physical
-failure matrix.
+この ADR で説明する実験的な標準 Nerves 更新およびロールバック経路は実装済みです。
+本番利用の受け入れは、実機での完全な障害試験表の完了を条件とします。
 
-Implemented:
+実装済み:
 
-- Immutable `rootfs_hack.squashfs` boot manager handoff.
-- A/B application root filesystem layout.
-- Redundant boot metadata records with generation-based selection.
-- Confirmed slot and pending slot management.
-- Pending boot attempt tracking and automatic fallback after attempt
-  exhaustion.
-- Same-boot rejection of a pending slot that cannot be mounted or fails
-  structural validation, followed by selection of the confirmed slot.
-- Metadata corruption fallback to a valid record.
-- Inactive-slot firmware installation with fwup metadata checks, checksum
-  verification, read-only SquashFS mounting, and root structure validation
-  before pending metadata is committed.
-- Standard `mix upload`, `Nerves.Runtime.validate_firmware/0`,
-  `Nerves.Runtime.revert/0`, `Nerves.Runtime.FwupOps.prevent_revert/0`, and
-  `Nerves.Runtime.FwupOps.factory_reset/0` integration.
-- Runtime firmware UUID and validation metadata for standard NervesMOTD output.
-- Application health confirmation covering required applications, writable
-  `/data`, selected-slot metadata and UUID consistency, configured `wlan0`, and
-  an active Nerves hardware watchdog.
+- 変更不能な `rootfs_hack.squashfs` 起動管理機構への引き渡し
+- A/B アプリケーション root filesystem 構成
+- 世代番号によって選択する冗長な起動メタデータレコード
+- 確認済みスロットと保留中スロットの管理
+- 保留中の起動試行回数の追跡と、試行回数を使い切った後の自動復帰
+- マウント不能または構造検証に失敗する保留中スロットを同一起動中に拒否し、
+  確認済みスロットを選択する処理
+- メタデータ破損時に有効なレコードへ戻る処理
+- 保留メタデータ確定前に fwup メタデータ確認、検査値検証、読み取り専用 SquashFS
+  マウント、root 構造検証を行う、非稼働中スロットへのファームウェアインストール
+- 標準の `mix upload`、`Nerves.Runtime.validate_firmware/0`、
+  `Nerves.Runtime.revert/0`、`Nerves.Runtime.FwupOps.prevent_revert/0`、
+  `Nerves.Runtime.FwupOps.factory_reset/0` との統合
+- 標準の NervesMOTD 出力に必要な、実行時ファームウェア UUID と検証メタデータ
+- 必須アプリケーション、書き込み可能な `/data`、選択スロットのメタデータと UUID の
+  整合性、設定済み `wlan0`、稼働中の Nerves hardware watchdog を確認する
+  アプリケーション健全性判定
 
-Validated:
+検証済み:
 
-- The vendor boot contract remains unchanged.
-- The protected kernel boots the immutable boot manager.
-- The boot manager selects and hands off to the Nerves application root
-  filesystem.
-- Failed pending boot attempts recover to the previous confirmed slot.
-- Standard `mix upload` succeeds in both slot directions and confirms the
-  uploaded fwup UUID.
-- `Nerves.Runtime.revert/0` succeeds in both slot directions.
-- A blocked Erlang heart callback causes a full JZ watchdog reset and the
-  confirmed firmware returns.
-- NervesMOTD reports the active firmware UUID, fwup nickname, validation state,
-  slot, and platform in the standard Nerves format.
+- ベンダーの起動契約が変更されていない
+- 保護対象カーネルが変更不能な起動管理機構を起動する
+- 起動管理機構が Nerves アプリケーション root filesystem を選択し、制御を渡す
+- 保留中スロットの起動失敗後、以前の確認済みスロットへ復旧する
+- 標準の `mix upload` が両方向のスロット更新で成功し、書き込んだ fwup UUID を確認する
+- `Nerves.Runtime.revert/0` が両方向のスロット復帰で成功する
+- Erlang heart の callback を停止させると JZ watchdog による完全な reset が発生し、
+  確認済みファームウェアへ戻る
+- NervesMOTD が稼働中ファームウェアの UUID、fwup nickname、検証状態、スロット、
+  基盤を標準的な Nerves 形式で報告する
 
-Remaining production acceptance work:
+本番受け入れに残る作業:
 
-- Install the final immutable boot-manager image with a host-side complete
-  install and physically verify same-boot malformed-candidate rejection.
-- Complete the documented power-interruption, crash-loop, `prevent-revert`,
-  factory-reset, `/data`, provisioning, and protected-kernel verification
-  matrix.
+- 最終的な変更不能の起動管理用イメージをホスト側の完全インストールで配置し、
+  不正な更新候補を同一起動中に拒否することを実機で検証する
+- 文書化した停電、再起動反復、`prevent-revert`、工場出荷状態への初期化、`/data`、
+  プロビジョニング、保護対象カーネル検証の試験表を完了する
 
-## Verification strategy
+## 検証方針
 
-After the prototype passes, the physical failure matrix must include:
+試作の合格後、実機障害試験表には次を含めます。
 
-- Normal update to the inactive slot.
-- Successful candidate validation.
-- Preservation of the previous firmware until confirmation.
-- Power loss before any inactive-slot write.
-- Power loss during inactive-slot write.
-- Power loss after write but before activation-state changes.
-- Power loss while activation state is changing.
-- Corrupt firmware resource.
-- Incorrect firmware metadata.
-- Root-filesystem mount failure.
-- OTP release startup failure.
-- Application health-check failure.
-- Repeated reboot before validation.
-- Candidate hang followed by watchdog recovery.
-- Failure to write validation state.
-- Corrupt or missing rollback slot.
-- Corrupt rollback metadata copies.
-- Manual revert.
-- Prevent-revert after successful validation.
-- Factory reset with both slots present.
-- Upgrade with nearly full `/data`.
-- Preservation of `/data` across successful update and rollback.
-- Preservation of provisioning and FAT-side configuration.
-- Upload interruption over SSH.
-- Repeated reboot behavior without an infinite loop.
-- Protected-kernel SHA-256 verification after every relevant workflow.
+- 非稼働中スロットへの通常更新
+- 更新候補の検証成功
+- 確認完了まで以前のファームウェアを維持
+- 非稼働中スロットへの書き込み前の停電
+- 非稼働中スロットへの書き込み中の停電
+- 書き込み後、有効化状態変更前の停電
+- 有効化状態変更中の停電
+- 破損したファームウェア資源
+- 不正なファームウェアメタデータ
+- root filesystem のマウント失敗
+- OTP release の起動失敗
+- アプリケーション健全性検査の失敗
+- 検証前の再起動反復
+- 更新候補の停止と watchdog による復旧
+- 検証状態の書き込み失敗
+- 破損または欠落したロールバックスロット
+- 破損したロールバックメタデータの複製
+- 手動復帰
+- 検証成功後の復帰禁止
+- 両スロットが存在する状態での工場出荷状態への初期化
+- `/data` の空き容量が少ない状態での更新
+- 更新成功後およびロールバック後の `/data` 維持
+- プロビジョニングと FAT 側設定の維持
+- SSH 経由書き込みの中断
+- 無限反復にならない再起動動作
+- 関連するすべての手順後の保護対象カーネル SHA-256 検証
 
-Every test must end in one of these explicit states:
+各試験は、次のいずれかの明示的な状態で終了しなければなりません。
 
-- The previous confirmed firmware is bootable.
-- The new firmware is bootable and can be validated.
-- The immutable boot manager presents a documented recovery state because no
-  application slot is usable.
+- 以前の確認済みファームウェアが起動可能
+- 新しいファームウェアが起動可能で、検証済みにできる
+- どのアプリケーションスロットも利用できないため、変更不能な起動管理機構が
+  文書化された復旧状態を提示する
 
-No test may leave the media without a bootable boot manager.
+起動可能な起動管理機構がない状態を残す試験は認めません。
 
-Detailed investigation and physical-test evidence belong in dated files under
-`docs/worklog/`.
+詳細な調査および実機試験の根拠は、`docs/worklog/` 配下の日付付きファイルへ記録します。
 
-## Acceptance criteria
+## 受け入れ条件
 
-- The protected control kernel remains unchanged and strictly verified.
-- The immutable boot manager boots through the vendor's fixed FAT handoff.
-- The boot manager reliably hands off to raw application slot `a` or `b`.
-- The device reports confirmed, active, and pending firmware-slot state.
-- `upgrade` writes only the inactive application slot.
-- Device-side updates do not write partition 1, the boot manager, or the
-  protected kernel.
-- Interrupted slot writes leave the confirmed slot bootable.
-- Interrupted metadata writes leave a previous valid record usable.
-- New firmware is pending rather than immediately permanent.
-- Failed validation automatically returns to the previous confirmed slot.
-- Candidate hangs recover through a verified watchdog or equivalent mechanism.
-- `status`, `validate`, `revert`, and `prevent-revert` work through standard
-  Nerves Runtime APIs.
-- The ADR 0005 `factory-reset` operation continues to clear only `/data` with
-  both application slots present.
-- `/data` survives successful update, rollback, manual revert, and
-  `prevent-revert`.
-- The previous firmware can still use `/data` after candidate rollback.
-- The transition from the current layout is documented as a complete
-  installation.
-- `mix upload` uses the checked inactive-slot update path and is physically
-  verified in both slot directions.
-- `mix upload` remains experimental until the complete physical failure matrix
-  passes.
+- 保護対象の制御カーネルが変更されず、厳格に検証される
+- 変更不能な起動管理機構が、ベンダーの固定 FAT 引き渡し経路から起動する
+- 起動管理機構が生の application slot `a` または `b` へ安定して制御を渡す
+- 機器が確認済み、稼働中、保留中のファームウェアスロット状態を報告する
+- `upgrade` が非稼働中のアプリケーションスロットだけを書き込む
+- 機器上更新が partition 1、起動管理機構、保護対象カーネルへ書き込まない
+- スロット書き込みの中断後も確認済みスロットが起動可能である
+- メタデータ書き込みの中断後も以前の有効なレコードを利用できる
+- 新しいファームウェアが直ちに恒久化されず、保留中になる
+- 検証失敗後、自動的に以前の確認済みスロットへ戻る
+- 更新候補の停止後、検証済み watchdog または同等の機構で復旧する
+- `status`、`validate`、`revert`、`prevent-revert` が標準の Nerves Runtime API で動作する
+- 両アプリケーションスロットが存在する状態でも、ADR 0005 の `factory-reset` が
+  `/data` だけを消去する
+- 更新成功、ロールバック、手動復帰、`prevent-revert` の後も `/data` が維持される
+- 更新候補のロールバック後、以前のファームウェアが引き続き `/data` を利用できる
+- 現在の構成からの移行が完全インストールとして文書化されている
+- `mix upload` が検査済みの非稼働中スロット更新経路を使用し、両方向のスロット更新で
+  実機検証されている
+- 実機での完全な障害試験表に合格するまで、`mix upload` を実験的機能として扱う
 
-Do not mark this ADR `Accepted` until all acceptance criteria have been verified
-on physical Atom Cam 2 hardware.
+すべての受け入れ条件を Atom Cam 2 実機で検証するまで、この ADR を `Accepted` に
+変更してはなりません。
 
-## References
+## 参考資料
 
-- [Nerves Runtime fwup integration](https://hexdocs.pm/nerves_runtime/)
+- [Nerves Runtime の fwup 統合](https://hexdocs.pm/nerves_runtime/)
 - [`Nerves.Runtime.FwupOps`](https://hexdocs.pm/nerves_runtime/Nerves.Runtime.FwupOps.html)
 - [`ssh_subsystem_fwup`](https://hexdocs.pm/ssh_subsystem_fwup/readme.html)
 - [`board/atomcam2/README.md`](../../board/atomcam2/README.md)

@@ -1,10 +1,10 @@
-# 20260714 SDIO and Wi-Fi driver bring-up
+# 20260714 SDIO と Wi-Fi driver の立ち上げ
 
-## Result
+## 結果
 
-The Atom Cam 2 SDIO preparation and vendor Wi-Fi driver path were brought up successfully.
+Atom Cam 2 の SDIO 準備とベンダー Wi-Fi driver の経路を正常に立ち上げました。
 
-The confirmed hardware path became:
+確認済みの hardware 経路は次のようになりました。
 
 ```text
 T31 SDIO register preparation
@@ -14,86 +14,94 @@ T31 SDIO register preparation
 -> wlan0
 ```
 
-This proved the Wi-Fi hardware and kernel-driver boundary. It did not yet prove Wi-Fi association, DHCP, mDNS, or SSH.
+これにより Wi-Fi hardware と kernel driver の境界を証明しました。Wi-Fi 接続、DHCP、
+mDNS、SSH はまだ証明していませんでした。
 
-## Starting boundary
+## 開始時の境界
 
-The complete Nerves application root filesystem booted, but no network address appeared.
+完全な Nerves アプリケーション root filesystem は起動しましたが、ネットワーク address が
+現れませんでした。
 
-The early Wi-Fi helper had two problems:
+初期の Wi-Fi 補助処理には 2 つの問題がありました。
 
-- The required `devmem` command existed at `/sbin/devmem` but was not reliably resolvable from the early `erlinit` pre-run environment.
-- Driver fallback logic could select an unrelated Realtek module even after detecting the ATBM vendor ID.
+- 必要な `devmem` command は `/sbin/devmem` に存在したが、初期の `erlinit` 実行前環境から
+  安定して解決できなかった
+- ATBM vendor ID を検出した後でも、driver の切り替え処理が無関係な Realtek module を
+  選択する可能性があった
 
-## SDIO register preparation
+## SDIO レジスタの準備
 
-The vendor boot sequence performs T31 register writes before loading the Wi-Fi module.
+ベンダーの起動順序は、Wi-Fi module を読み込む前に T31 register へ書き込みます。
 
-BusyBox provided `devmem`, but the early environment did not reliably include `/sbin` in `PATH`.
+BusyBox は `devmem` を提供しますが、初期環境の `PATH` に `/sbin` が常に含まれるとは
+限りませんでした。
 
-The helper was changed to use an explicit system path and resolve `/sbin/devmem` directly.
+補助処理を変更し、明示的な system path を使用して `/sbin/devmem` を直接解決しました。
 
-After that change, the SDIO preparation commands completed successfully.
+変更後、SDIO 準備 command は正常に完了しました。
 
-## Vendor identification
+## ベンダーの識別
 
-The SDIO device reported:
+SDIO device は次を報告しました。
 
 ```text
 vendor_id=0x007a
 ```
 
-This vendor requires the ATBM603x driver family.
+この vendor には ATBM603x driver family が必要です。
 
-Once the vendor is known, fallback must remain within that hardware family. Loading `rtl8189ftv.ko` was removed as an invalid fallback.
+vendor の判明後、切り替え先を同じ hardware family 内に限定します。`rtl8189ftv.ko` の
+読み込みは不正な切り替えとして削除しました。
 
-## Driver module
+## ドライバーモジュール
 
-A kernel-compatible vendor module was obtained from the known-good Atom Cam software and packaged into the Nerves root filesystem:
+正常動作する既知の Atom Cam software から kernel と互換性のあるベンダー module を取得し、
+Nerves root filesystem へ梱包しました。
 
 ```text
 /lib/modules/atbm603x_wifi_sdio.ko
 ```
 
-The module had to match the active vendor kernel:
+module は稼働中のベンダー kernel と一致する必要がありました。
 
 ```text
 3.10.14__isvp_swan_1.0__
 ```
 
-The related ATBM firmware and optional configuration files were made available before module loading.
+関連する ATBM firmware と任意の configuration file を module 読み込み前に利用可能にしました。
 
-## Confirmed driver result
+## 確認済みの driver 結果
 
-Boot diagnostics confirmed:
+起動診断で次を確認しました。
 
-- SDIO preparation completed.
-- The ATBM module loaded.
-- ATBM firmware initialized.
-- The device registered its network interface.
-- `wlan0` appeared with the factory MAC address.
+- SDIO 準備が完了した
+- ATBM module が読み込まれた
+- ATBM firmware が初期化された
+- device が network interface を登録した
+- `wlan0` が工場設定の MAC address で現れた
 
-The authoritative interface checks on this platform are:
+この基盤で正式な interface 確認は次です。
 
 ```sh
 test -e /sys/class/net/wlan0
 ip addr show dev wlan0
 ```
 
-The included BusyBox `ifconfig` cannot display interface status and should not be used as the sole presence check.
+同梱の BusyBox `ifconfig` は interface 状態を表示できないため、存在確認の唯一の方法として
+使用してはなりません。
 
-## Rootfs and deployment checks
+## ルートファイルシステムと配置の検査
 
-Two deployment checks were important during this stage:
+この段階では、2 つの配置検査が重要でした。
 
-- Remove stale `rootfs_hack.ext2`, which could override the intended SquashFS.
-- Compare the rootfs checksum between the generated payload and the mounted MicroSD card.
+- 想定する SquashFS より優先される可能性がある古い `rootfs_hack.ext2` を削除する
+- 生成した書き込み内容とマウント済み MicroSD card の rootfs 検査値を比較する
 
-These checks prevented stale userspace from being mistaken for a current driver failure.
+これらにより、古い利用者空間を現在の driver 障害と誤認することを防ぎました。
 
-## Remaining boundary after driver success
+## ドライバー成功後に残った境界
 
-Once `wlan0` existed, the remaining path was application-level networking:
+`wlan0` が存在した後、残る経路はアプリケーション層のネットワークでした。
 
 ```text
 VintageNet supervision
@@ -105,18 +113,22 @@ VintageNet supervision
 -> nerves_ssh
 ```
 
-The later investigation found two independent blockers in that path:
+その後の調査で、この経路に独立した 2 つの阻害要因を確認しました。
 
-- VintageNet's native `if_monitor` crashed because the Linux 3.10 compatibility patch defined `IFA_FLAGS` without expanding `IFA_MAX`.
-- `wpa_supplicant` rejected the generated `wps_cred_processing=1` option because the Buildroot binary lacked that WPS configuration support.
+- Linux 3.10 互換 patch が `IFA_MAX` を拡張せず `IFA_FLAGS` を定義したため、VintageNet の
+  native `if_monitor` が停止した
+- Buildroot の実行ファイルに該当 WPS 設定への対応がないため、`wpa_supplicant` が生成された
+  `wps_cred_processing=1` を拒否した
 
-Those confirmed fixes are documented in [`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md).
+確認済みの修正は、
+[`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md)
+に記載しています。
 
-## Reusable lessons
+## 再利用可能な知見
 
-- Preserve a known-good kernel while proving userspace and hardware bootstrap.
-- Verify the exact final root filesystem before every boot.
-- Use explicit command paths in early boot environments.
-- Do not cross hardware families in driver fallback logic.
-- Treat a precise failure at a later layer as progress.
-- Distinguish `wlan0` existence from Wi-Fi association and IP assignment.
+- 利用者空間と hardware 初期準備を証明する間は、正常動作する既知の kernel を維持する
+- 起動試験ごとに、正確な最終 root filesystem を検証する
+- 初期起動環境では明示的な command path を使用する
+- driver の切り替えで異なる hardware family をまたがない
+- 後段の層で具体的な障害が現れることを進展として扱う
+- `wlan0` の存在と、Wi-Fi 接続および IP address の割り当てを区別する

@@ -1,295 +1,284 @@
-# ADR 0005: Provide a standard persistent data partition
-
-## Status
-
-Accepted
-
-## Context
-
-The Atom Cam 2 root filesystem is read-only, and the platform currently does not
-provide the standard writable Nerves `/data` filesystem.
-
-Runtime state is therefore stored directly on the writable MicroSD mount under
-`/media/mmc`, including:
-
-- The NervesTime timestamp file
-- NervesSSH host keys and user state
-
-This solved immediate persistence problems, but application-specific
-`/media/mmc` paths are not the standard Nerves contract.
-
-A standard Nerves system provides an application data filesystem mounted at
-`/data`. It survives firmware upgrades, can be reset independently, and allows
-libraries to use conventional persistent paths.
-
-Firmware metadata is different from application data. It identifies the running
-firmware and must change with firmware activation, so it must not become stale
-state in `/data`.
-
-The final Atom Cam 2 media uses an externally supplied control kernel whose
-SHA-256 is protected by the build and release flow. The repository kernel
-configuration currently disables ext2, ext3, ext4, and F2FS, but it does not by
-itself prove which filesystems are available in the protected kernel binary.
-Filesystem selection must therefore be based on read-only runtime inspection and
-hardware evidence. This decision does not authorize replacing the protected
-kernel or weakening its verification.
-
-## Decision
-
-Add a dedicated writable application-data partition to the Atom Cam 2 MicroSD
-layout and mount it at `/data`.
-
-The partition must:
-
-- Be separate from the boot and provisioning filesystem.
-- Use a Linux filesystem supported reliably by the protected kernel.
-- Be initialized on first boot when necessary.
-- Be mounted read-write before applications that depend on it start.
-- Survive the fwup `upgrade` task.
-- Be reset to an uninitialized, known state by the fwup `complete` task.
-- Be clearable through a standard factory-reset operation.
-
-A read-only hardware audit confirmed the following protected-kernel contract:
-
-- The MicroSD device is `/dev/mmcblk0` on the verified hardware.
-- The existing boot filesystem is `/dev/mmcblk0p1`.
-- The protected kernel supports ext2, VFAT, exFAT, JFFS2, and SquashFS.
-- The protected kernel does not report ext4 or F2FS support.
-- The original root filesystem did not provide `mkfs.ext2`, `e2fsck`, or
-  `fsck.ext2`; the implementation must include the required e2fsprogs tools.
-
-Use ext2 for the first application-data filesystem implementation. It is the
-only filesystem confirmed on the protected kernel that provides normal Linux
-filesystem semantics on a MicroSD block partition. Add the required e2fsprogs
-userspace programs before changing the media layout.
-
-Ext2 does not provide a journal. Power-interruption, corruption, repair, and
-reformat behavior must therefore pass physical testing before this ADR can be
-accepted. If ext2 cannot meet the recovery requirements, stop implementation
-and record a separate protected-kernel decision. Do not silently use the FAT or
-exFAT boot filesystem for general application data.
-
-Do not rely on MicroSD enumeration alone for the application-partition path.
-The implementation should derive or expose a stable device path for partition 2
-from the boot device selected by the initramfs.
-
-Continue using the Nerves Runtime application-partition metadata contract.
-However, do not use the standard `nerves_runtime` 0.13.13 initializer unchanged.
-It formats the application partition whenever a read-write mount fails and does
-not attempt filesystem repair first. A generic mount failure must not authorize
-destructive reformatting.
-
-Override `:nerves_runtime, :init_module` with an Atom Cam 2-specific one-shot
-initializer that applies the following policy:
-
-- If the early boot environment has already mounted `/data`, unmount it before
-  checking the filesystem.
-- Read the first 128 KiB of the application-data partition.
-- Treat the partition as intentionally uninitialized only when all bytes in
-  that region are `0xff`.
-- Only the intentionally uninitialized state may trigger `mkfs.ext2`.
-- Treat read errors, short reads, and all other partition contents as an
-  existing or unknown filesystem state that must not be formatted
-  automatically.
-- For an existing filesystem, ensure that it is unmounted and run `e2fsck -p`
-  before the first read-write mount. This returns quickly for a clean
-  filesystem and checks one left unclean by an interrupted write. Ext2 can
-  accept a mount while still containing directory-entry damage, so mount
-  success alone is not an integrity check.
-- Retry the read-write mount only when `e2fsck` returns status `0` or `1`.
-- When the `e2fsck` status includes the reboot-required value `2`, leave
-  `/data` unmounted and report that a reboot is required. This includes statuses
-  `2` and `3`.
-- For any other `e2fsck` status, or if the mount still fails after successful
-  repair, leave `/data` unmounted and report the failure without formatting.
+# ADR 0005: 標準的な永続データパーティションを提供する
+
+## 状態
+
+承認済み
+
+## 背景
+
+Atom Cam 2 の root filesystem は読み取り専用であり、現在の基盤には標準的な
+Nerves の書き込み可能な `/data` ファイルシステムがありません。
+
+そのため、実行時状態は書き込み可能な MicroSD のマウント先である `/media/mmc` に
+直接保存しています。対象には次が含まれます。
+
+- NervesTime の時刻ファイル
+- NervesSSH のホスト鍵と利用者状態
+
+これにより当面の永続化問題は解決しましたが、アプリケーション固有の
+`/media/mmc` パスは標準的な Nerves の契約ではありません。
+
+標準的な Nerves system は、`/data` にマウントされるアプリケーションデータ用
+ファイルシステムを提供します。この領域はファームウェア更新後も維持され、個別に
+初期化でき、ライブラリは一般的な永続化先を利用できます。
+
+ファームウェアメタデータはアプリケーションデータとは異なります。稼働中の
+ファームウェアを識別し、ファームウェアの有効化に合わせて変化する必要があるため、
+`/data` に古い状態として残してはなりません。
+
+最終的な Atom Cam 2 の記録媒体では、外部から提供される制御カーネルを使用し、
+その SHA-256 をビルドおよびリリース手順で保護します。リポジトリ内のカーネル設定では
+現在 ext2、ext3、ext4、および F2FS を無効にしていますが、それだけでは保護対象の
+カーネル実体で利用できるファイルシステムを証明できません。ファイルシステムの選択は、
+読み取り専用の実行時調査と実機での根拠に基づく必要があります。この決定は、
+保護対象カーネルの置き換えや検証の緩和を認めるものではありません。
+
+## 決定
+
+Atom Cam 2 の MicroSD 構成に、書き込み可能な専用アプリケーションデータ
+パーティションを追加し、`/data` にマウントします。
+
+パーティションは次の条件を満たす必要があります。
+
+- 起動およびプロビジョニング用ファイルシステムと分離する
+- 保護対象カーネルで安定して利用できる Linux ファイルシステムを使用する
+- 必要に応じて初回起動時に初期化する
+- 依存するアプリケーションの起動前に読み書き可能でマウントする
+- fwup の `upgrade` タスク実行後も維持する
+- fwup の `complete` タスクで未初期化の既知状態へ戻す
+- 標準的な工場出荷状態への初期化操作で消去できる
+
+読み取り専用の実機調査により、保護対象カーネルについて次の契約を確認しました。
+
+- 検証済み実機上の MicroSD device は `/dev/mmcblk0`
+- 既存の起動用ファイルシステムは `/dev/mmcblk0p1`
+- 保護対象カーネルは ext2、VFAT、exFAT、JFFS2、および SquashFS に対応する
+- 保護対象カーネルは ext4 または F2FS 対応を報告しない
+- 元の root filesystem には `mkfs.ext2`、`e2fsck`、`fsck.ext2` がないため、
+  実装で必要な e2fsprogs の各処理を追加する必要がある
+
+最初のアプリケーションデータ用ファイルシステムには ext2 を使用します。保護対象
+カーネル上で確認済みのファイルシステムのうち、MicroSD のブロックパーティションに
+通常の Linux ファイルシステムの意味を提供できる唯一の方式です。記録媒体構成を
+変更する前に、必要な e2fsprogs の利用者空間プログラムを追加します。
+
+ext2 には journal がありません。そのため、停電、破損、修復、再初期化の動作は、
+この ADR を受け入れる前に実機試験へ合格する必要があります。ext2 が復旧要件を
+満たせない場合は実装を停止し、保護対象カーネルに関する別の決定を記録します。
+一般的なアプリケーションデータの保存先として、FAT または exFAT の起動用
+ファイルシステムへ暗黙に切り替えてはなりません。
+
+アプリケーションパーティションのパスを、MicroSD の列挙順だけに依存させません。
+initramfs が選択した起動 device から、partition 2 の安定した device path を導出または
+公開する必要があります。
+
+Nerves Runtime のアプリケーションパーティション用メタデータ契約は引き続き使用します。
+ただし、標準の `nerves_runtime` 0.13.13 の初期化処理をそのまま使用しません。この処理は、
+読み書き可能なマウントが失敗すると、最初にファイルシステム修復を試みずに
+アプリケーションパーティションを初期化します。一般的なマウント失敗を、破壊的な
+再初期化の許可として扱ってはなりません。
+
+`:nerves_runtime, :init_module` を Atom Cam 2 固有の一回限りの初期化処理で
+上書きし、次の方針を適用します。
+
+- 初期起動環境がすでに `/data` をマウントしている場合、ファイルシステム確認前に
+  アンマウントする
+- アプリケーションデータパーティションの先頭 128 KiB を読み取る
+- その範囲の全バイトが `0xff` の場合に限り、意図的な未初期化状態として扱う
+- 意図的な未初期化状態の場合だけ `mkfs.ext2` を実行できる
+- 読み取りエラー、短い読み取り、その他すべての内容は、既存または状態不明の
+  ファイルシステムとして扱い、自動で初期化しない
+- 既存のファイルシステムでは、アンマウント状態を確認し、最初の読み書き可能な
+  マウント前に `e2fsck -p` を実行する。正常なファイルシステムでは短時間で完了し、
+  書き込み中断により正常終了していないファイルシステムを検査できる。ext2 は
+  ディレクトリー項目の破損が残った状態でもマウントできるため、マウント成功だけでは
+  完全性を確認できない
+- `e2fsck` の終了状態が `0` または `1` の場合だけ、読み書き可能なマウントを再試行する
+- `e2fsck` の終了状態に再起動要求値 `2` が含まれる場合は、`/data` をマウントせず、
+  再起動が必要であることを報告する。状態 `2` および `3` が該当する
+- その他の `e2fsck` 終了状態、または修復成功後もマウントできない場合は、
+  初期化せずに `/data` を未マウントのままにして失敗を報告する
+
+先頭 128 KiB の無効化印は、記録媒体の生存期間に関する契約の一部です。fwup の
+`complete` および工場出荷状態への初期化操作は、意図的にこの印を作成できます。
+マウント失敗だけでこの状態を作成したり、暗示したりしてはなりません。
 
-The first 128 KiB invalidation marker is part of the media lifecycle contract.
-The fwup `complete` and factory-reset operations may create it deliberately.
-Mount failure alone must never create or imply that state.
+永続サービス状態を `/data` へ移動します。
 
-Move persistent service state to `/data`:
-
-- NervesSSH host and user state
-- NervesTime state
-- Future application databases, caches, and durable configuration
-
-Remove project-specific paths when the corresponding library defaults work with
-the new `/data` layout. Otherwise, configure explicit paths beneath `/data`.
-
-Keep these outside application data:
-
-- Firmware slot and activation metadata
-- Current firmware metadata
-- Device provisioning
-- Authorized keys supplied with the media
-- Hostname supplied with the media
-- Factory calibration
-- Bootloader and kernel resources
+- NervesSSH のホスト状態と利用者状態
+- NervesTime の状態
+- 将来のアプリケーションデータベース、キャッシュ、永続設定
 
-Provisioning must be preserved independently by the fwup `upgrade` and
-factory-reset tasks.
+新しい `/data` 構成で各ライブラリの既定値が利用できる場合は、プロジェクト固有の
+パスを削除します。利用できない場合は、`/data` 配下の明示的なパスを設定します。
 
-The initial partition-layout transition requires a complete media
-reinstallation. An in-place repartitioning migration is not required for the
-first implementation. The fwup `upgrade` task for firmware expecting `/data`
-must reject media that still has the old one-partition flat-SD layout.
+次の要素はアプリケーションデータの外側に維持します。
 
-The migration procedure must clearly warn that runtime-only state, including the
-current SSH host key, may be reset once unless it is backed up and restored
-explicitly.
+- ファームウェアスロットおよび有効化メタデータ
+- 現在のファームウェアメタデータ
+- 機器のプロビジョニング
+- 記録媒体に与えられた認証済み公開鍵
+- 記録媒体に与えられたホスト名
+- 工場調整値
+- bootloader とカーネル資源
 
-## Consequences
-
-### Positive
+プロビジョニングは、fwup の `upgrade` および工場出荷状態への初期化タスクとは
+独立して維持しなければなりません。
 
-- Applications can use the standard `/data` contract.
-- Library-specific `/media/mmc` overrides can be removed.
-- Firmware upgrades can preserve application data by design.
-- Factory reset becomes a distinct, testable operation.
-- Future databases and durable services gain Linux filesystem semantics.
+最初のパーティション構成移行には、記録媒体の完全な再インストールが必要です。
+初期実装では、既存環境をその場で再パーティションする移行は不要です。`/data` を
+前提とするファームウェアの fwup `upgrade` タスクは、古い単一パーティションの
+平坦な MicroSD 構成を拒否しなければなりません。
 
-### Negative
+移行手順では、現在の SSH ホスト鍵を含む実行時だけの状態について、明示的に
+バックアップして復元しない限り一度初期化される可能性があることを明確に警告します。
 
-- The MicroSD layout changes and requires a complete reinstall.
-- The ext2 data filesystem needs first-boot formatting and recovery behavior.
-- Ext2 has no journal, so power interruption can require filesystem repair or
-  reinitialization.
-- Unrecoverable corruption can leave `/data` unavailable until explicit
-  servicing or factory reset.
-- Adding e2fsprogs increases the root filesystem size.
-- The first migration may replace the current SSH host identity unless it is
-  explicitly preserved.
-- The boot/provisioning filesystem and application-data filesystem must be
-  managed separately.
-- The final application-partition path must be stable even if MicroSD device
-  enumeration differs from the verified hardware sample.
-
-## Data lifecycle
-
-### Complete installation
-
-- Create the dedicated data partition in the partition table.
-- Invalidate its initial contents so first boot cannot reuse stale filesystem
-  state from previously used media.
-- Let the Atom Cam 2 initializer recognize the explicit invalidation marker,
-  format the partition as ext2, and mount it at `/data`.
-- Preserve only explicitly supplied device provisioning and media configuration.
-
-The host-side `complete` task does not need to create a mounted filesystem. It
-must leave a deterministic uninitialized partition that exercises the same
-first-boot initialization and recovery behavior used in the field.
-
-### Firmware upgrade
-
-- Require the expected boot and data partition offsets before writing.
-- Reject the old one-partition flat-SD layout.
-- Do not format, invalidate, resize, or overwrite the data partition.
-- Mount the existing data after booting the new firmware.
-- Preserve application and service state.
-
-### Factory reset
-
-- Invalidate or clear only the data partition.
-- Preserve the current firmware, protected kernel, device provisioning,
-  authorized keys, hostname, and factory calibration.
-- Reboot into the currently installed firmware.
-
-ADR 0005 owns these application-data reset semantics and the initial
-`factory-reset` operation. ADR 0006 may integrate the same operation with an A/B
-firmware layout, but it must not redefine what persistent data is preserved.
-
-### Filesystem recovery
-
-Do not use mount failure as permission to reformat an existing filesystem.
-
-For a partition that does not contain the explicit invalidation marker:
-
-1. Ensure that it is unmounted.
-2. Run `e2fsck -p`.
-3. Mount it read-write only after status `0` or `1`.
-4. Leave `/data` unmounted when the status includes the reboot-required value
-   `2`, after an unrepaired error, after an operational failure, or after
-   a mount failure.
-
-The `e2fsck` exit status is a sum of condition values. The reboot-required value
-`2` may therefore appear as status `2` or in combination with another value,
-such as status `3`. The initializer must report that condition without mounting
-or formatting the partition.
-
-An operator may later choose an explicit factory reset when recovery is not
-possible. Automatic recovery must favor preservation of potentially recoverable
-application data over unattended destructive reinitialization.
-
-Do not log application data, Wi-Fi credentials, authorized keys, SSH private
-keys, or other secrets while diagnosing initialization or recovery.
-
-## Scope boundary with ADR 0006
-
-ADR 0005 includes:
-
-- The dedicated application-data partition
-- First-boot initialization and mounting
-- `complete`, `upgrade`, and factory-reset data lifecycle
-- Persistence paths for applications and runtime services
-
-ADR 0005 does not include:
-
-- A/B root-filesystem slots
-- Active or pending slot selection
-- Firmware validation or boot-attempt accounting
-- Automatic rollback, manual revert, or prevent-revert behavior
-- Enabling remote firmware upload
-
-Those behaviors remain exclusively within ADR 0006.
-
-## Verification strategy
-
-The protected-kernel and current-userspace capability audit is recorded in
-`docs/worklog/20260719-adr-0005-persistent-data-capability-audit.md`.
-
-- Add and verify `mkfs.ext2`, `e2fsck`, and `fsck.ext2` before changing the
-  partition layout.
-- Confirm a stable application-partition path derived from the boot device.
-- Confirm that only an all-`0xff` first 128 KiB region authorizes formatting.
-- Confirm that read errors and non-marker content never authorize formatting.
-- Confirm that an existing filesystem invokes `e2fsck -p` while unmounted and
-  before its first read-write mount.
-- Confirm that `e2fsck` statuses `0` and `1` permit a mount retry.
-- Confirm that statuses containing the reboot-required value `2` and all
-  failure statuses leave `/data` unmounted without invoking `mkfs.ext2`.
-- Boot with an uninitialized data partition and confirm first-boot setup.
-- Confirm `/data` is mounted read-write before dependent services start.
-- Persist SSH state and time state under `/data`.
-- Reboot and verify both remain unchanged.
-- Apply an fwup upgrade and confirm test data survives.
-- Confirm the upgrade task rejects old one-partition media.
-- Apply a complete installation and confirm old data is reset.
-- Run factory reset and confirm data is cleared without changing firmware or
-  provisioning.
-- Interrupt writes and boot repeatedly to test filesystem recovery.
-- Confirm no current-firmware metadata is read from stale `/data` content.
-- Confirm logs and reports do not expose secrets.
-
-## Acceptance criteria
-
-- `/data` is a dedicated writable application filesystem.
-- Ext2 is supported by the protected kernel and passes physical
-  power-interruption and recovery testing.
-- Only the explicit application-partition invalidation marker authorizes
-  automatic formatting.
-- An existing or unknown filesystem is never reformatted after a mount or
-  repair failure.
-- Nerves Runtime reports the application partition accurately.
-- NervesMOTD can report real application-partition usage.
-- NervesSSH host keys persist using `/data`.
-- NervesTime state persists using `/data`.
-- `upgrade` preserves `/data` and rejects old one-partition media.
-- `complete` and factory reset clear `/data` as documented.
-- Provisioning remains separate and preserved.
-- Application code no longer treats `/media/mmc` as general persistent storage.
-- The protected kernel verification contract remains unchanged.
-
-## References
-
-- [Nerves FAQ: persistent data](https://hexdocs.pm/nerves/faq.html)
-- [nerves_runtime filesystem initialization](https://hexdocs.pm/nerves_runtime/)
+## 影響
+
+### 利点
+
+- アプリケーションが標準的な `/data` 契約を利用できる
+- ライブラリ固有の `/media/mmc` 上書き設定を削除できる
+- 設計上、ファームウェア更新後もアプリケーションデータを維持できる
+- 工場出荷状態への初期化を、独立して試験可能な操作にできる
+- 将来のデータベースと永続サービスで Linux ファイルシステムの意味を利用できる
+
+### 欠点
+
+- MicroSD 構成が変更され、完全な再インストールが必要になる
+- ext2 データファイルシステムに初回起動時の初期化と復旧処理が必要になる
+- ext2 には journal がないため、停電後にファイルシステムの修復または再初期化が
+  必要になる場合がある
+- 復旧不能な破損では、明示的な保守または工場出荷状態への初期化を行うまで
+  `/data` が利用できない場合がある
+- e2fsprogs の追加により root filesystem が大きくなる
+- 明示的に維持しない限り、最初の移行で現在の SSH ホスト識別情報が変わる可能性がある
+- 起動・プロビジョニング用ファイルシステムとアプリケーションデータ用ファイル
+  システムを別々に管理する必要がある
+- 検証済み実機と MicroSD device の列挙順が異なる場合でも、最終的な
+  アプリケーションパーティションのパスを安定させる必要がある
+
+## データの生存期間
+
+### 完全インストール
+
+- パーティションテーブルに専用データパーティションを作成する
+- 以前に使用した記録媒体の古いファイルシステム状態を初回起動で再利用しないよう、
+  先頭内容を無効化する
+- Atom Cam 2 の初期化処理が明示的な無効化印を認識し、パーティションを ext2 で
+  初期化して `/data` にマウントする
+- 明示的に与えた機器のプロビジョニングと記録媒体設定だけを維持する
+
+ホスト側の `complete` タスクが、マウント済みのファイルシステムを作成する必要は
+ありません。現場で利用する初回起動時の初期化および復旧処理と同じ経路を通る、
+決定的な未初期化パーティションを残す必要があります。
+
+### ファームウェア更新
+
+- 書き込み前に、想定する起動用およびデータ用パーティションの位置を要求する
+- 古い単一パーティションの平坦な MicroSD 構成を拒否する
+- データパーティションを初期化、無効化、サイズ変更、または上書きしない
+- 新しいファームウェアの起動後、既存データをマウントする
+- アプリケーションとサービスの状態を維持する
+
+### 工場出荷状態への初期化
+
+- データパーティションだけを無効化または消去する
+- 現在のファームウェア、保護対象カーネル、機器のプロビジョニング、認証済み公開鍵、
+  ホスト名、および工場調整値を維持する
+- 現在インストール済みのファームウェアへ再起動する
+
+ADR 0005 は、これらのアプリケーションデータ初期化の意味と、最初の
+`factory-reset` 操作を定義します。ADR 0006 は同じ操作を A/B ファームウェア構成へ
+統合できますが、どの永続データを維持するかを再定義してはなりません。
+
+### ファイルシステム復旧
+
+既存のファイルシステムを再初期化する許可として、マウント失敗を使用してはなりません。
+
+明示的な無効化印を含まないパーティションについて、次の処理を行います。
+
+1. アンマウントされていることを確認する
+2. `e2fsck -p` を実行する
+3. 終了状態が `0` または `1` の場合だけ、読み書き可能でマウントする
+4. 終了状態に再起動要求値 `2` が含まれる場合、未修復エラー、処理失敗、または
+   マウント失敗の場合は、`/data` を未マウントのままにする
+
+`e2fsck` の終了状態は条件値の合計です。そのため、再起動要求値 `2` は状態 `2` として、
+または状態 `3` など他の値との組み合わせとして現れる場合があります。初期化処理は、
+パーティションをマウントまたは初期化せずに、その状態を報告しなければなりません。
+
+復旧できない場合、運用担当者は後から明示的に工場出荷状態への初期化を選択できます。
+自動復旧では、無人で破壊的に再初期化するよりも、復旧可能性のあるアプリケーション
+データの維持を優先します。
+
+初期化または復旧の診断中に、アプリケーションデータ、Wi-Fi 認証情報、認証済み公開鍵、
+SSH 秘密鍵、その他の秘密情報を記録してはなりません。
+
+## ADR 0006 との範囲境界
+
+ADR 0005 には次が含まれます。
+
+- 専用アプリケーションデータパーティション
+- 初回起動時の初期化とマウント
+- `complete`、`upgrade`、工場出荷状態への初期化におけるデータの生存期間
+- アプリケーションと実行時サービスの永続化先
+
+ADR 0005 には次を含みません。
+
+- A/B root filesystem スロット
+- 稼働中または保留中スロットの選択
+- ファームウェア検証または起動試行回数の管理
+- 自動ロールバック、手動復帰、または復帰禁止の動作
+- リモートでのファームウェア書き込みの有効化
+
+これらの動作は ADR 0006 だけが扱います。
+
+## 検証方針
+
+保護対象カーネルおよび現在の利用者空間の能力調査は、
+`docs/worklog/20260719-adr-0005-persistent-data-capability-audit.md` に記録しています。
+
+- パーティション構成を変更する前に、`mkfs.ext2`、`e2fsck`、`fsck.ext2` を追加して
+  検証する
+- 起動 device から導出した安定したアプリケーションパーティションのパスを確認する
+- 先頭 128 KiB がすべて `0xff` の場合だけ初期化を許可することを確認する
+- 読み取りエラーと無効化印以外の内容で初期化を許可しないことを確認する
+- 既存のファイルシステムについて、アンマウント状態かつ最初の読み書き可能な
+  マウント前に `e2fsck -p` が実行されることを確認する
+- `e2fsck` の状態 `0` と `1` でマウント再試行を許可することを確認する
+- 再起動要求値 `2` を含む状態とすべての失敗状態で、`mkfs.ext2` を実行せず
+  `/data` を未マウントのままにすることを確認する
+- 未初期化のデータパーティションで起動し、初回起動処理を確認する
+- 依存サービスの起動前に `/data` が読み書き可能でマウントされることを確認する
+- SSH 状態と時刻状態を `/data` に永続化する
+- 再起動後も両方が変化しないことを確認する
+- fwup の更新を適用し、試験データが維持されることを確認する
+- 更新タスクが古い単一パーティションの記録媒体を拒否することを確認する
+- 完全インストールを適用し、古いデータが初期化されることを確認する
+- 工場出荷状態への初期化を実行し、ファームウェアまたはプロビジョニングを変更せずに
+  データだけが消去されることを確認する
+- 書き込みを中断して繰り返し起動し、ファイルシステム復旧を試験する
+- 古い `/data` の内容から現在のファームウェアメタデータを読み取らないことを確認する
+- ログと報告に秘密情報が含まれないことを確認する
+
+## 受け入れ条件
+
+- `/data` が書き込み可能な専用アプリケーションファイルシステムである
+- ext2 が保護対象カーネルで利用でき、実機での停電および復旧試験へ合格する
+- 明示的なアプリケーションパーティション無効化印だけが自動初期化を許可する
+- 既存または状態不明のファイルシステムを、マウントまたは修復失敗後に再初期化しない
+- Nerves Runtime がアプリケーションパーティションを正確に報告する
+- NervesMOTD が実際のアプリケーションパーティション使用量を報告できる
+- NervesSSH のホスト鍵が `/data` を使用して永続化される
+- NervesTime の状態が `/data` を使用して永続化される
+- `upgrade` が `/data` を維持し、古い単一パーティションの記録媒体を拒否する
+- `complete` と工場出荷状態への初期化が、文書どおりに `/data` を消去する
+- プロビジョニングが分離され、維持される
+- アプリケーションコードが `/media/mmc` を一般的な永続記憶領域として扱わない
+- 保護対象カーネルの検証契約が変更されない
+
+## 参考資料
+
+- [Nerves FAQ: 永続データ](https://hexdocs.pm/nerves/faq.html)
+- [nerves_runtime のファイルシステム初期化](https://hexdocs.pm/nerves_runtime/)

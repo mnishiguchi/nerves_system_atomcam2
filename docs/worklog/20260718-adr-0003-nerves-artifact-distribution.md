@@ -1,37 +1,36 @@
-# ADR 0003 artifact distribution worklog
+# ADR 0003 成果物配布の作業記録
 
-## Scope
+## 対象範囲
 
-This worklog records the investigation, implementation, release, and
-remaining work for ADR 0003.
+この作業記録は、ADR 0003 の調査、実装、release、残作業を記録します。
 
-- Date: 2026-07-18
-- Branch: `feat/distribute-nerves-artifacts`
-- Commit: `1c0ba6f985f862d4a63903369679bba2dc90ded6`
-- System version: `0.1.0`
-- Toolchain version: `0.1.0`
-- Host: Linux x86_64
+- 日付: 2026-07-18
+- ブランチ: `feat/distribute-nerves-artifacts`
+- コミット: `1c0ba6f985f862d4a63903369679bba2dc90ded6`
+- システムバージョン: `0.1.0`
+- ツールチェインバージョン: `0.1.0`
+- ホスト: Linux x86_64
 
-## Published state
+## 公開状態
 
-The repository has no `v0.1.0` Git tag or GitHub release.
+リポジトリには `v0.1.0` Git tag または GitHub release がありませんでした。
 
-The only existing tag observed during the baseline was:
+基準確認時に存在した tag は次だけでした。
 
 ```text
 verified-atomcam2-ping-ssh-baseline
 ```
 
-## Expected artifacts
+## 想定する成果物
 
-The root Nerves project attempted to download:
+root の Nerves project は次の取得を試みました。
 
 ```text
 nerves_system_atomcam2-portable-0.1.0-0AD109E.tar.gz
 nerves_toolchain_atomcam2-linux_x86_64-0.1.0-FB9E9DE.tar.xz
 ```
 
-Both packages resolve from:
+両 package の取得条件:
 
 ```text
 Repository: mnishiguchi/nerves_system_atomcam2
@@ -39,44 +38,40 @@ Release tag: v0.1.0
 Download method: github_release
 ```
 
-Both downloads returned HTTP 404 because the release and assets do not exist.
+release と asset が存在しないため、両方の取得は HTTP 404 を返しました。
 
-The previously observed system artifact ended in `BE444FF`. The current source
-expects `0AD109E`, confirming that the system checksum inputs changed.
+以前に観測した system 成果物の末尾は `BE444FF` でした。現在の source は `0AD109E` を
+想定しており、system の検査値入力が変化したことを確認しました。
 
-## Example application result
+## サンプルアプリケーションの結果
 
-A clean-cache `mix deps.get` in the example application failed before Nerves
-artifact resolution:
+新しい cache でサンプルアプリケーションの `mix deps.get` を実行すると、Nerves の
+成果物解決前に失敗しました。
 
 ```text
 fatal: couldn't find remote ref v0.1.0
 ```
 
-The example application references the system repository at the nonexistent
-`v0.1.0` tag.
+サンプルアプリケーションは、存在しない `v0.1.0` tag の system repository を参照していました。
 
-## Toolchain project result
+## ツールチェーンプロジェクトの結果
 
-Running the toolchain project independently resolved Nerves `1.15.0`, while
-the root project currently uses Nerves `1.14.3`.
+toolchain project を単独で実行すると Nerves `1.15.0` を解決しましたが、root project は
+現在 Nerves `1.14.3` を使用しています。
 
-The standalone command then failed with:
+その後、単独 command は次で失敗しました。
 
 ```text
 Compiling Nerves packages requires nerves_bootstrap to be started
 ```
 
-The exact toolchain filename was nevertheless reported by the root Nerves
-environment.
+ただし、正確な toolchain filename は root の Nerves environment から報告されました。
 
-## Reproducibility findings
+## 再現性に関する判明事項
 
-The system package currently uses the same list for package contents and
-artifact checksum inputs.
+system package は現在、package に含める file 一覧と成果物検査値の入力に同じ一覧を使用します。
 
-The checksum includes files that do not directly affect the generated system,
-including:
+検査値には、生成 system へ直接影響しない次の file も含まれます。
 
 - `docs`
 - `scripts`
@@ -84,59 +79,51 @@ including:
 - `README.md`
 - `CHANGELOG.md`
 
-Documentation and release-process changes therefore alter the expected system
-artifact filename.
+そのため、文書と release 手順の変更でも想定 system 成果物の filename が変化します。
 
-The existing release script does not build the toolchain through
-`mix nerves.artifact`. It calculates the checksum separately and archives the
-directory supplied through `NERVES_TOOLCHAIN`.
+既存 release script は、`mix nerves.artifact` で toolchain を構築しません。検査値を別途計算し、
+`NERVES_TOOLCHAIN` で指定した directory を書庫化します。
 
-## Follow-up observation
+## 後続の観測
 
-After this worklog was committed as `aaa7b8f`, the expected system artifact
-changed to:
+この作業記録を `aaa7b8f` として commit した後、想定 system 成果物は次へ変化しました。
 
 ```text
 nerves_system_atomcam2-portable-0.1.0-593A6F9.tar.gz
 ```
 
-This confirms that changes under `docs` currently change the system artifact
-checksum.
+これにより、`docs` 配下の変更で現在の system 成果物検査値が変化することを確認しました。
 
-The subsequent system build also wrote the current Git revision into the
-target `/usr/lib/os-release` file:
+続く system build は、現在の Git revision を対象機器の `/usr/lib/os-release` へ書き込みました。
 
 ```text
 VERSION=-gaaa7b8f
 ```
 
-Excluding documentation from the checksum could therefore allow artifacts
-built from different commits to use the same filename while containing
-different embedded revision metadata.
+文書を検査値から除外すると、異なる commit から構築した成果物が同じ filename を持ちながら、
+異なる組み込み revision metadata を含む可能性があります。
 
-The current `checksum: package_files()` configuration will remain unchanged
-unless further verification demonstrates that narrowing it is safe.
+さらに検証して範囲を狭めても安全であることを証明するまでは、現在の
+`checksum: package_files()` 設定を変更しません。
 
-Running `mix nerves.artifact.details` for the root package was not a read-only
-inspection. It triggered a system build and stopped at the post-image step
-because `ATOMCAM2_KERNEL_IMAGE` was not set. The protected kernel was not
-modified.
+root package に対する `mix nerves.artifact.details` は読み取り専用の確認ではありませんでした。
+system build を起動し、`ATOMCAM2_KERNEL_IMAGE` が未設定だったため image 後処理で停止しました。
+保護対象 kernel は変更されませんでした。
 
-For filename-only inspection, use `mix deps.get` with the validated local
-toolchain override and do not follow it with `mix nerves.artifact.details`.
+filename だけを確認する場合は、検証済みローカル toolchain の上書き設定で `mix deps.get` を
+使用し、その後 `mix nerves.artifact.details` を実行しません。
 
-## Revised next milestone
+## 改訂した次の到達点
 
-Make the toolchain package independently reproducible and ensure its artifact
-identity is generated by the Nerves package configuration rather than by a
-separate checksum implementation.
+toolchain package を単独で再現可能にし、独立した検査値実装ではなく Nerves package 設定から
+成果物識別情報を生成します。
 
-Do not create the `v0.1.0` tag or GitHub release until both artifact archives
-have been built and verified manually.
+両方の成果物書庫を手動で構築して検証するまでは、`v0.1.0` tag または GitHub release を
+作成しません。
 
-## Validated toolchain build inputs
+## 検証済み toolchain build 入力
 
-The existing compiler was traced to the official Nerves toolchains repository:
+既存 compiler は公式 Nerves toolchains repository まで追跡できました。
 
 ```text
 Repository: https://github.com/nerves-project/toolchains.git
@@ -144,10 +131,9 @@ Revision: fa8f8ba3fd3927b2b4fcc23f3d71918e53fec5ba
 Base package: nerves_toolchain_mipsel_nerves_linux_musl
 ```
 
-The validated customization changes the target architecture from `24kec` to
-plain `mips32r2`.
+検証済みの変更では、対象 architecture を `24kec` から通常の `mips32r2` へ変更します。
 
-The resulting compiler defaults were verified as:
+生成 compiler の既定値を次として検証しました。
 
 ```text
 Target tuple: mipsel-nerves-linux-musl
@@ -160,17 +146,17 @@ DSP ASE: disabled
 DSP R2 ASE: disabled
 ```
 
-The tracked `toolchain/defconfig` matches the source configuration used to
-produce the validated compiler.
+追跡対象の `toolchain/defconfig` は、検証済み compiler の生成に使用した source 設定と
+一致します。
 
-The toolchain artifact checksum now derives from:
+toolchain 成果物の検査値は、現在次から算出します。
 
 ```text
 toolchain/UPSTREAM
 toolchain/defconfig
 ```
 
-The resulting Linux x86_64 artifact identity is:
+Linux x86_64 向け成果物識別情報:
 
 ```text
 Checksum: 977999CF3B8BA90118DAFB4D656EEFEFE00969E7790E98EA5BFDAAA789D90626
@@ -178,17 +164,16 @@ Checksum Short: 977999C
 Download File Name: nerves_toolchain_atomcam2-linux_x86_64-0.1.0-977999C.tar.xz
 ```
 
-A standalone `mix nerves.artifact.details` invocation was not used for final
-verification because Nerves attempted to resolve the toolchain's own expected
-installation path. The checksum was calculated directly with the same
-per-file SHA-256 algorithm used by Nerves.
+Nerves が toolchain 自身の想定インストール path を解決しようとするため、最終検証では
+単独の `mix nerves.artifact.details` を使用しませんでした。Nerves と同じ、file ごとの
+SHA-256 手順で検査値を直接計算しました。
 
-## Validated toolchain archive preparation
+## 検証済み toolchain 書庫の準備
 
-The toolchain archive preparation now requires `NERVES_TOOLCHAIN` explicitly.
-The previous developer-specific fallback path was removed.
+toolchain 書庫の準備では、`NERVES_TOOLCHAIN` を明示的に必須としました。以前の開発者固有の
+既定 path を削除しました。
 
-The validated compiler was checked directly before archiving:
+書庫化前に検証済み compiler を直接確認しました。
 
 ```text
 Target tuple: mipsel-nerves-linux-musl
@@ -200,56 +185,53 @@ DSP ASE: disabled
 DSP R2 ASE: disabled
 ```
 
-The private Buildroot input archive was regenerated successfully:
+非公開の Buildroot 入力書庫を正常に再生成しました。
 
 ```text
 target/toolchains/atomcam2-mips32r2-nerves-toolchain.tar.xz
 Archive root: mipsel-nerves-linux-musl/
 ```
 
-The release script now:
+release script は現在次を行います。
 
-- Rejects differing system and toolchain versions.
-- Derives the toolchain checksum from the checksum inputs declared in
-  `toolchain/mix.exs`.
-- Regenerates the private Buildroot input archive through the validated
-  preparation script.
-- Preserves the existing verified control-kernel SHA-256 requirement.
+- system と toolchain の version が異なる場合に拒否する
+- `toolchain/mix.exs` が宣言する検査値入力から toolchain の検査値を算出する
+- 検証済み準備 script で非公開の Buildroot 入力書庫を再生成する
+- 検証済みの制御 kernel SHA-256 要件を維持する
 
-The configured public toolchain artifact identity remains:
+設定済みの公開 toolchain 成果物識別情報は変わりません。
 
 ```text
 Checksum Short: 977999C
 Download File Name: nerves_toolchain_atomcam2-linux_x86_64-0.1.0-977999C.tar.xz
 ```
 
-The full system artifact and public toolchain artifact were not built during
-this milestone. The following completion record captures the subsequent build,
-release verification, publication, and merge work.
+この到達点では、完全な system 成果物と公開 toolchain 成果物を構築しませんでした。
+次の完了記録は、その後のビルド、release 検証、公開、merge 作業を記載します。
 
-## Completion record
+## 完了記録
 
-### Outcome
+### 到達結果
 
-The manual ADR 0003 artifact release path was completed successfully.
+ADR 0003 の手動成果物 release 経路を正常に完了しました。
 
-The implementation:
+実装は次を行います。
 
-- Records reproducible toolchain build inputs.
-- Validates the compiler before packaging it.
-- Produces coordinated system and toolchain artifacts.
-- Preserves the protected control-kernel verification.
-- Publishes both artifacts through the same versioned GitHub Release.
-- Preserves the existing flat MicroSD and SquashFS workflow.
+- 再現可能な toolchain build 入力を記録する
+- compiler を梱包前に検証する
+- 連携する system と toolchain の成果物を生成する
+- 保護対象の制御 kernel 検証を維持する
+- 同じ版付き GitHub Release で両方の成果物を公開する
+- 既存の平坦な MicroSD および SquashFS 手順を維持する
 
-The release was published as `v0.1.0`.
+release を `v0.1.0` として公開しました。
 
-Clean-room application verification, independent-application verification,
-device boot verification, and release automation remain open ADR 0003 work.
+クリーン環境でのアプリケーション検証、独立したアプリケーション検証、機器起動検証、
+release 自動化は、ADR 0003 の未完了作業として残ります。
 
-### Final artifacts
+### 最終成果物
 
-The published release contains:
+公開 release には次が含まれます。
 
 ```text
 nerves_system_atomcam2-portable-0.1.0-A044D4E.tar.gz
@@ -257,40 +239,38 @@ nerves_toolchain_atomcam2-linux_x86_64-0.1.0-977999C.tar.xz
 SHA256SUMS
 ```
 
-The published files were downloaded again from GitHub, and both archive
-checksums passed verification against `SHA256SUMS`.
+公開 file を GitHub から再取得し、両書庫の検査値が `SHA256SUMS` と一致することを
+確認しました。
 
-### Release provenance
+### リリースの来歴
 
-The annotated release tag points to:
+注釈付き release tag の参照先:
 
 ```text
 Tag: v0.1.0
 Commit: b99df9fc74cfcbd340c95c380f61129cee0b04db
 ```
 
-Pull request `#3` was squash-merged into `main` as:
+pull request `#3` は次として `main` へ squash merge されました。
 
 ```text
 e1845ec1410784c63b2c19adedf9900497a5e68d
 ```
 
-The file tree of the release tag was verified as identical to the squash
-commit on `main`.
+release tag と `main` 上の squash commit の file tree が同一であることを確認しました。
 
-Because the pull request was squash-merged, the tagged release commit is not
-an ancestor of `main`. Reproduction of `v0.1.0` must start from the tag:
+pull request が squash merge されたため、tag 付き release commit は `main` の祖先では
+ありません。`v0.1.0` の再現は tag から開始する必要があります。
 
 ```sh
 git switch --detach v0.1.0
 ```
 
-Do not replace the published `v0.1.0` assets with artifacts built from a later
-commit.
+公開済み `v0.1.0` asset を、後の commit から構築した成果物に置き換えてはなりません。
 
-### Toolchain build inputs
+### ツールチェーン構築入力
 
-The compiler was traced to:
+compiler の参照元:
 
 ```text
 Repository: https://github.com/nerves-project/toolchains.git
@@ -298,21 +278,20 @@ Revision: fa8f8ba3fd3927b2b4fcc23f3d71918e53fec5ba
 Base package: nerves_toolchain_mipsel_nerves_linux_musl
 ```
 
-The Atom Cam 2 customization changes the architecture from `24kec` to plain
-`mips32r2`.
+Atom Cam 2 の変更では architecture を `24kec` から通常の `mips32r2` へ変えます。
 
-The reproducible inputs are tracked in:
+再現可能な入力は次で追跡します。
 
 ```text
 toolchain/UPSTREAM
 toolchain/defconfig
 ```
 
-These files are also the checksum inputs declared by `toolchain/mix.exs`.
+これらの file は、`toolchain/mix.exs` で宣言する検査値入力でもあります。
 
-### Validated compiler properties
+### 検証済み compiler の性質
 
-The release compiler was verified as:
+release compiler の検証結果:
 
 ```text
 Target tuple: mipsel-nerves-linux-musl
@@ -325,87 +304,84 @@ DSP ASE: disabled
 DSP R2 ASE: disabled
 ```
 
-### Toolchain archive distinction
+### 2 種類の toolchain 書庫
 
-Two toolchain archives are involved.
+2 種類の toolchain 書庫が関係します。
 
-The private Buildroot input archive is:
+非公開の Buildroot 入力書庫:
 
 ```text
 target/toolchains/atomcam2-mips32r2-nerves-toolchain.tar.xz
 Archive root: mipsel-nerves-linux-musl/
 ```
 
-The public Nerves toolchain artifact is:
+公開 Nerves toolchain 成果物:
 
 ```text
 nerves_toolchain_atomcam2-linux_x86_64-0.1.0-977999C.tar.xz
 Archive root: nerves_toolchain_atomcam2/
 ```
 
-They have different consumers and archive roots. They are not interchangeable.
+利用側と書庫 root が異なります。互いに置き換えることはできません。
 
-### Protected kernel
+### 保護対象 kernel
 
-The release process continues to require the verified Atom Cam 2 control
-kernel with SHA-256:
+release 処理では、引き続き次の SHA-256 を持つ検証済み Atom Cam 2 制御 kernel を必須とします。
 
 ```text
 b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc
 ```
 
-ADR 0003 did not change the kernel, the SquashFS root filesystem layout, or
-the existing flat MicroSD installation workflow.
+ADR 0003 は kernel、SquashFS root filesystem 構成、既存の平坦な MicroSD
+インストール手順を変更しませんでした。
 
-### Release safeguards
+### リリースの安全措置
 
-The release scripts now:
+release script は現在次を行います。
 
-- Require `NERVES_TOOLCHAIN` explicitly.
-- Reject an unavailable compiler directory.
-- Reject differing system and toolchain versions.
-- Validate the compiler target, ABI, architecture, floating-point mode, and
-  DSP settings.
-- Regenerate the private Buildroot input archive.
-- Derive the public toolchain checksum from `toolchain/mix.exs`.
-- Require the protected control-kernel checksum.
-- Require exactly one system artifact and one toolchain artifact.
-- Generate `SHA256SUMS`.
-- Require a clean worktree before publication.
+- `NERVES_TOOLCHAIN` を明示的に必須とする
+- 利用できない compiler directory を拒否する
+- system と toolchain の version が異なる場合に拒否する
+- compiler の target、ABI、architecture、floating-point mode、DSP 設定を検証する
+- 非公開の Buildroot 入力書庫を再生成する
+- `toolchain/mix.exs` から公開 toolchain の検査値を算出する
+- 保護対象の制御 kernel 検査値を必須とする
+- system 成果物 1 つと toolchain 成果物 1 つだけを必須とする
+- `SHA256SUMS` を生成する
+- 公開前に clean worktree を必須とする
 
-The developer-specific fallback toolchain path was removed.
+開発者固有の toolchain 既定 path は削除しました。
 
-### Validation completed
+### 完了した検証
 
-The following checks passed:
+次の検査に合格しました。
 
-- Shell syntax validation
+- shell 構文検査
 - `git diff --check`
 - `./scripts/smoke-check.sh`
-- Missing `NERVES_TOOLCHAIN` rejection
-- Version mismatch rejection
-- Compiler target validation
-- MIPS o32 ABI validation
-- MIPS32 Release 2 validation
-- Software floating-point validation
-- Hardware floating-point rejection
-- DSP and DSP R2 rejection
-- Private archive root validation
-- Public toolchain archive root validation
-- Protected-kernel SHA-256 verification
-- Full system artifact build
-- Full public toolchain artifact build
-- Local `SHA256SUMS` verification
-- Published asset download
-- Downloaded asset checksum verification
+- `NERVES_TOOLCHAIN` 欠落時の拒否
+- version 不一致の拒否
+- compiler target の検証
+- MIPS o32 ABI の検証
+- MIPS32 Release 2 の検証
+- software floating-point の検証
+- hardware floating-point の拒否
+- DSP と DSP R2 の拒否
+- 非公開書庫 root の検証
+- 公開 toolchain 書庫 root の検証
+- 保護対象 kernel SHA-256 の検証
+- 完全な system 成果物ビルド
+- 完全な公開 toolchain 成果物ビルド
+- ローカル `SHA256SUMS` の検証
+- 公開 asset の取得
+- 取得済み asset の検査値検証
 
-### Artifact checksum behavior
+### 成果物検査値の動作
 
-The system package currently uses its package file set as checksum input.
+system package は現在、package file 一式を検査値入力として使用します。
 
-Consequently, documentation and release-process changes can change the
-expected system artifact filename. During this work, the observed suffixes
-included:
+そのため、文書と release 手順の変更で想定 system 成果物の filename が変化する場合があります。
+この作業中に観測した末尾:
 
 ```text
 BE444FF
@@ -414,46 +390,44 @@ BE444FF
 A044D4E
 ```
 
-The final `v0.1.0` suffix is `A044D4E`.
+最終的な `v0.1.0` の末尾は `A044D4E` です。
 
-Adding or changing this worklog may produce another expected system suffix on
-`main`. That does not invalidate the published release. The `v0.1.0` tag
-remains the authoritative source state for the `A044D4E` artifact.
+この作業記録の追加または変更により、`main` 上で別の想定 system 末尾が生成される可能性が
+あります。公開 release は無効になりません。`v0.1.0` tag が `A044D4E` 成果物の正式な
+source 状態です。
 
-### Investigation lessons
+### 調査から得た知見
 
-#### Work from the repository root
+#### リポジトリ root で作業する
 
-Some commands were initially run from the example application directory.
+一部 command は当初、サンプルアプリケーション directory から実行しました。
 
-Use:
+リポジトリ全体の操作前に次を使用します。
 
 ```sh
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 ```
 
-before repository-wide operations.
+#### 成果物の確認を読み取り専用と決めつけない
 
-#### Do not assume artifact inspection is read-only
+root system package では、`mix nerves.artifact.details` が package compilation と
+Buildroot build を起動しました。
 
-For the root system package, `mix nerves.artifact.details` triggered package
-compilation and a Buildroot build.
+filename だけの確認には、明示的に検証済みローカル toolchain を指定した `mix deps.get` の方が
+安全でした。
 
-For filename-only inspection, `mix deps.get` with an explicit validated local
-toolchain was safer.
+#### 単独 toolchain の確認は異なる動作をする
 
-#### Standalone toolchain inspection behaves differently
+`toolchain/` 内で `mix nerves.artifact.details` を実行すると、Nerves は toolchain package
+自身の想定インストール path を解決しようとしました。
 
-Running `mix nerves.artifact.details` inside `toolchain/` caused Nerves to
-resolve the toolchain package's own expected installation path.
+そのため、最終的な toolchain 識別情報は `toolchain/mix.exs` が宣言する検査値入力から
+算出しました。
 
-The final toolchain identity was therefore calculated from the checksum
-inputs declared in `toolchain/mix.exs`.
+#### 単独の Mix command はローカル file を作成する
 
-#### Standalone Mix commands create local files
-
-Running Mix inside `toolchain/` may create:
+`toolchain/` 内で Mix を実行すると、次を作成する場合があります。
 
 ```text
 toolchain/_build
@@ -461,81 +435,75 @@ toolchain/deps
 toolchain/mix.lock
 ```
 
-Use a temporary copy for isolated experiments or remove these files before
-committing.
+分離した試験には一時複製を使用するか、commit 前にこれらを削除します。
 
-#### Debug logs may expose authentication details
+#### デバッグログに認証情報が現れる場合がある
 
-`NERVES_DEBUG=1` can print partially masked GitHub authentication information.
+`NERVES_DEBUG=1` は、部分的に隠した GitHub 認証情報を表示する場合があります。
 
-Do not commit raw debug logs.
+生の debug log を commit してはなりません。
 
-#### Feature branches may not have an upstream yet
+#### 機能ブランチに上流ブランチがない場合がある
 
-Immediately after creating a local feature branch, plain `git pull` may fail
-because no upstream is configured.
+ローカル feature branch の作成直後は upstream が未設定であり、単純な `git pull` が
+失敗する場合があります。
 
-Update `main` before creating the branch, or use explicit remote references:
+branch 作成前に `main` を更新するか、明示的な remote 参照を使用します。
 
 ```sh
 git fetch origin
 git rebase origin/main
 ```
 
-Only run the rebase with a clean worktree.
+rebase は clean worktree でだけ実行します。
 
-#### Shell scripts should be restart-safe
+#### シェルスクリプトは再実行に耐える必要がある
 
-A partially successful script may already have created a branch or renamed a
-file.
+一部成功した script が、すでに branch を作成または file を名称変更している場合があります。
 
-Before repeating a command, check the current branch, file paths, and Git
-status. Prefer scripts that accept both the initial and partially completed
-states.
+command の再実行前に、現在の branch、file path、Git status を確認します。初期状態と
+途中完了状態の両方を受け入れる script を優先します。
 
-#### Heredoc delimiters must not occur in generated content
+#### ヒアドキュメントの終端文字を生成内容に含めない
 
-The first consolidation script used a heredoc delimiter that also appeared as
-a standalone line inside the generated Markdown. The shell ended the heredoc
-early and executed the remaining document as commands.
+最初の統合 script は、生成する Markdown 内で単独行としても現れる heredoc delimiter を
+使用しました。shell は heredoc を早期終了し、残りの文書を command として実行しました。
 
-Use a unique delimiter that does not appear anywhere in the payload.
+書き込み内容のどこにも現れない固有 delimiter を使用します。
 
-### Preferred future release workflow
+### 将来推奨する release 手順
 
-Future releases should separate feature and release work:
+将来の release では、機能作業と release 作業を分離します。
 
-1. Implement and merge a feature pull request.
-2. Open a separate release pull request.
-3. Finalize versions, release notes, and build inputs.
-4. Merge the release pull request.
-5. Tag the exact release pull-request merge commit.
-6. Build from that tag.
-7. Verify the artifacts.
-8. Create a draft release.
-9. Complete clean-room and device verification.
-10. Publish the release.
+1. 機能用 pull request を実装して merge する
+2. 独立した release pull request を開く
+3. version、release note、build 入力を確定する
+4. release pull request を merge する
+5. release pull request の正確な merge commit に tag を付ける
+6. その tag から構築する
+7. 成果物を検証する
+8. draft release を作成する
+9. クリーン環境および機器での検証を完了する
+10. release を公開する
 
-The combined feature-and-release workflow used for `v0.1.0` was accepted as a
-one-time exception.
+`v0.1.0` で使用した機能・release 一体型の手順は、一度限りの例外として受け入れました。
 
-### Remaining ADR 0003 work
+### ADR 0003 の残作業
 
-The following acceptance work remains:
+次の受け入れ作業が残ります。
 
-- Run the example application with an isolated artifact cache.
-- Confirm released artifacts are downloaded without local overrides.
-- Run `mix deps.get`, `mix compile`, and `mix firmware`.
-- Confirm the build does not invoke a local system build.
-- Verify an independently generated Nerves application.
-- Boot firmware built from the downloaded artifacts on an Atom Cam 2.
-- Add automated release generation and verification.
-- Decide how automation safely handles an existing draft or release.
-- Update ADR 0003 where the implemented workflow differs from the original
-  wording.
-- Change the ADR status only after the remaining acceptance criteria pass.
+- 分離した成果物 cache でサンプルアプリケーションを実行する
+- ローカル上書き設定なしで公開済み成果物を取得することを確認する
+- `mix deps.get`、`mix compile`、`mix firmware` を実行する
+- ビルドがローカル system build を起動しないことを確認する
+- 独立して生成した Nerves application を検証する
+- 取得済み成果物から構築したファームウェアを Atom Cam 2 で起動する
+- release の生成と検証を自動化する
+- 既存の draft または release を自動化が安全に扱う方法を決定する
+- 実装手順が当初の記述と異なる箇所を ADR 0003 で更新する
+- 残る受け入れ条件に合格してから ADR の状態を変更する
 
-The release script already provides the next verification entry point:
+release script は、次の検証入口をすでに提供しています。
 
 ```sh
 ./scripts/release-artifacts.sh --verify

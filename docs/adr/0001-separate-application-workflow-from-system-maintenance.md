@@ -1,38 +1,39 @@
-# ADR: Separate application development from system maintenance
+# ADR: アプリケーション開発とシステム保守を分離する
 
-## Status
+## 状態
 
-Accepted on July 16, 2026.
+2026 年 7 月 16 日に承認済み。
 
-The installation workflow in this ADR is superseded by
-[ADR 0004](0004-adopt-fwup-for-standard-media-workflows.md).
+この ADR のインストール手順は、
+[ADR 0004](0004-adopt-fwup-for-standard-media-workflows.md) によって置き換えられています。
 
-Implementation is prepared in source. Closure requires successful local compilation,
-publishing the `v0.1.0` release artifacts, and verifying a clean-checkout build
-and hardware boot.
+実装はソースコード上で準備済みです。完了とするには、ローカルでのコンパイル成功、
+`v0.1.0` のリリース成果物の公開、クリーンなチェックアウトからのビルド、および
+実機起動の確認が必要です。
 
-## Context
+## 背景
 
-A regular Nerves application consumes prebuilt system and toolchain artifacts.
-Application developers should fetch dependencies, build firmware, and install it
-without rebuilding Buildroot, Linux, or the cross-compilation toolchain.
+通常の Nerves アプリケーションは、事前構築済みのシステムおよびツールチェーンの
+成果物を利用します。アプリケーション開発者は、Buildroot、Linux、または
+クロスコンパイル用ツールチェーンを再構築することなく、依存関係を取得し、
+ファームウェアを構築してインストールできるべきです。
 
-The initial Atom Cam 2 port mixed application and system concerns. Reproducing
-ping and SSH required a custom MIPS32R2 soft-float toolchain, a local Buildroot
-archive, a Linux 3.10 compatibility edit to VintageNet source, and a target-
-specific flat-file MicroSD installation procedure.
+Atom Cam 2 への初期移植では、アプリケーションとシステムの関心事が混在していました。
+ping と SSH を再現するには、MIPS32R2 ソフトフロート専用ツールチェーン、ローカルの
+Buildroot 書庫、VintageNet ソースに対する Linux 3.10 互換修正、および対象機器固有の
+平坦なファイル構成による MicroSD インストール手順が必要でした。
 
-The target also differs from a conventional Nerves disk layout. It boots vendor-
-named kernel and SquashFS files from a FAT partition that is mounted by the
-running system.
+この対象機器は、一般的な Nerves のディスク構成とも異なります。実行中のシステムが
+マウントする FAT パーティションから、ベンダー固有名のカーネルファイルと
+SquashFS ファイルを起動します。
 
-## Decision
+## 決定
 
-Separate the workflow into application and system-maintainer responsibilities.
+作業手順を、アプリケーション開発者の責務とシステム保守担当者の責務に分離します。
 
-### Application development
+### アプリケーション開発
 
-The supported workflow is:
+対応する手順は次のとおりです。
 
 ```sh
 mix setup
@@ -40,78 +41,78 @@ mix firmware
 mix atomcam2.install
 ```
 
-`mix setup` retrieves dependencies only. It must not build Buildroot, construct a
-toolchain archive, or modify dependency source.
+`mix setup` は依存関係の取得だけを行います。Buildroot の構築、ツールチェーン書庫の
+作成、依存ライブラリのソース変更を行ってはなりません。
 
-The example application consumes the tagged `nerves_system_atomcam2` Git source.
-That package resolves matching prebuilt system and Atom Cam 2 custom toolchain
-artifacts from GitHub Releases.
+サンプルアプリケーションは、タグが付与された `nerves_system_atomcam2` の Git
+ソースを利用します。このパッケージは、対応する事前構築済みのシステム成果物と
+Atom Cam 2 専用ツールチェーン成果物を GitHub Releases から解決します。
 
-Maintainers can select the local system source explicitly with:
+保守担当者は、次の設定によってローカルのシステムソースを明示的に選択できます。
 
 ```sh
 export ATOMCAM2_SYSTEM_SOURCE=local
 ```
 
-### Target compatibility
+### 対象機器との互換性
 
-Linux 3.10 compatibility belongs to the Nerves system rather than the
-application. A small Buildroot package installs
-`atomcam2-linux-3.10-compat.h` into the system staging sysroot. The system's
-target compiler flags include that header, allowing VintageNet to compile
-without editing `deps/vintage_net`.
+Linux 3.10 との互換対応は、アプリケーションではなく Nerves system が担います。
+小さな Buildroot パッケージが `atomcam2-linux-3.10-compat.h` をシステムの
+ステージング用 sysroot に配置します。システムの対象コンパイラーフラグにはこの
+ヘッダーが含まれるため、`deps/vintage_net` を変更せずに VintageNet を
+コンパイルできます。
 
-### Installation
+### インストール
 
-Use `mix atomcam2.install` for installation and application updates. It delegates
-to the repository's validated flat-SD installer, which validates the payload,
-backs up existing files, installs and verifies the required files, and
-synchronizes writes.
+インストールおよびアプリケーション更新には `mix atomcam2.install` を使用します。
+この処理は、リポジトリ内で検証済みの平坦な MicroSD 用インストーラーへ委譲します。
+インストーラーは、書き込み内容の検証、既存ファイルのバックアップ、必要ファイルの
+配置と検証、および書き込みの同期を行います。
 
-### Remote updates
+### リモート更新
 
-`mix upload` is unsupported. The current fwup `upgrade` task would write files on
-the same FAT partition mounted by the running system, and that operation has not
-been proven safe. The application configures the fwup SSH subsystem with a
-precheck that rejects remote updates.
+`mix upload` には対応しません。現在の fwup の `upgrade` タスクは、実行中の
+システムがマウントしている同一の FAT パーティションへファイルを書き込むため、
+安全性が実証されていません。アプリケーションは fwup の SSH サブシステムに
+事前検査を設定し、リモート更新を拒否します。
 
-A future ADR may enable remote updates after the storage and boot design provides
-a demonstrably safe update boundary.
+将来、記憶領域と起動方式によって安全な更新境界を実証できた場合は、別の ADR で
+リモート更新を有効にできます。
 
-### System maintenance and release
+### システム保守とリリース
 
-System maintainers are responsible for:
+システム保守担当者は、次の作業を担います。
 
-- Building and validating the MIPS32R2 soft-float toolchain without DSP ASE.
-- Preparing the Buildroot input archive.
-- Maintaining Linux, initramfs, rootfs overlays, and vendor Wi-Fi integration.
-- Building the custom toolchain and system release artifacts.
-- Publishing both artifacts under the release tag matching their package version.
-- Running isolated release verification and hardware verification.
+- DSP ASE を使用しない MIPS32R2 ソフトフロート用ツールチェーンの構築と検証
+- Buildroot 入力書庫の準備
+- Linux、initramfs、rootfs overlay、およびベンダー Wi-Fi 統合の保守
+- 専用ツールチェーンとシステムのリリース成果物の構築
+- パッケージ版と一致するリリースタグで両方の成果物を公開
+- 分離環境でのリリース検証と実機検証
 
-`scripts/release-artifacts.sh` builds both artifacts. Its explicit `--publish`
-option creates the GitHub release, and `--verify` clones that release into an
-isolated directory and builds the example application without local system or
-toolchain overrides.
+`scripts/release-artifacts.sh` は両方の成果物を構築します。明示的な `--publish`
+オプションは GitHub リリースを作成します。`--verify` は、そのリリースを分離した
+ディレクトリへ複製し、ローカルのシステムまたはツールチェーンの上書き設定を使用せずに
+サンプルアプリケーションを構築します。
 
-## Consequences
+## 影響
 
-Application builds use the familiar Nerves dependency and firmware workflow and
-avoid rebuilding or modifying platform internals.
+アプリケーションのビルドでは、一般的な Nerves の依存関係取得とファームウェア構築の
+手順を利用でき、基盤内部の再構築や変更を避けられます。
 
-System releases now include two coordinated artifacts: the Nerves system and the
-Atom Cam 2 custom toolchain. Their versions and release tag must remain aligned.
+システムリリースには、Nerves system と Atom Cam 2 専用ツールチェーンという、
+連携する 2 つの成果物が含まれます。両者の版とリリースタグは一致させる必要があります。
 
-Offline MicroSD installation remains target-specific, but it is explicit and
-safe. Remote updates remain unavailable rather than exposing an unverified
-in-place write path.
+オフラインでの MicroSD インストールは対象機器固有のままですが、明示的かつ安全です。
+検証されていない実行中領域への上書き経路を公開する代わりに、リモート更新は引き続き
+無効とします。
 
-## Closure criteria
+## 完了条件
 
-This ADR can be marked implemented after all of the following are recorded:
+次のすべてが記録された時点で、この ADR を実装完了とできます。
 
-- `v0.1.0` contains the system and custom toolchain artifacts.
-- `scripts/release-artifacts.sh --verify` succeeds with isolated Nerves caches.
-- The resulting payload boots on Atom Cam 2 hardware.
-- `nerves.local`, ping, SSH, Toolshed, and `mix atomcam2.install` remain working.
-- An attempted remote fwup upload is rejected by the target precheck.
+- `v0.1.0` にシステム成果物と専用ツールチェーン成果物が含まれている
+- 分離した Nerves キャッシュで `scripts/release-artifacts.sh --verify` が成功する
+- 生成された書き込み内容が Atom Cam 2 実機で起動する
+- `nerves.local`、ping、SSH、Toolshed、および `mix atomcam2.install` が引き続き動作する
+- fwup によるリモート書き込みを試みると、対象機器側の事前検査で拒否される

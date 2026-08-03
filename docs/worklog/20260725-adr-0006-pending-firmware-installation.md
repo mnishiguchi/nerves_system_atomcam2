@@ -1,24 +1,22 @@
-# ADR 0006 pending firmware installation validation
+# ADR 0006 保留中ファームウェア導入の検証
 
-## Summary
+## 概要
 
-Implemented and validated the first pending firmware installation workflow for
-ADR 0006 on physical AtomCam 2 hardware.
+ADR 0006 における最初の保留中ファームウェア導入手順を実装し、物理 Atom Cam 2 で検証した。
 
-## Validation steps
+## 検証手順
 
-- Built the immutable boot manager SquashFS image.
-- Verified the embedded boot manager init script matched the source.
-- Installed the diagnostic boot manager image on the FAT boot partition.
-- Reproduced a metadata write failure caused by the minimal boot environment
-  not providing `sync`.
-- Updated metadata writes to tolerate environments where `sync` is unavailable.
-- Rebuilt the boot manager image and verified the updated helper was embedded.
-- Booted AtomCam 2 successfully into the Nerves application.
+- 不変の起動管理用 SquashFS 画像を構築した。
+- 埋め込まれた起動管理用 `init` が原本と一致することを確認した。
+- 診断用の起動管理画像を FAT 起動用パーティションへ導入した。
+- 最小起動環境に `sync` がないことによる情報書き込み失敗を再現した。
+- `sync` が利用できない環境でも情報を書き込めるように修正した。
+- 起動管理画像を再構築し、更新した補助処理が埋め込まれていることを確認した。
+- Atom Cam 2 を Nerves アプリケーションまで正常に起動した。
 
-## Observed boot state
+## 観測した起動状態
 
-The boot manager reported successful handoff to the application root: 
+起動管理処理は、アプリケーション用ルートへの引き渡し成功を報告した。
 
 ```text
 stage=application_root
@@ -27,8 +25,6 @@ boot_policy_selected_slot=A
 boot_policy_selection_reason=pending_attempt_limit
 ```
 
-## Notes
+## 備考
 
-Application-level automatic confirmation after health checks remains a future
-integration step. The boot metadata protocol already provides the required
-operations for that integration.
+健全性確認後にアプリケーションから自動確定する連携は、今後の作業として残る。起動情報の手順には、その連携に必要な操作がすでに用意されている。

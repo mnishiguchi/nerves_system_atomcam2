@@ -1,10 +1,10 @@
-# AtomCam2 board support
+# AtomCam2 基板対応
 
-This directory contains board-specific glue for the Atom Cam 2 Nerves system.
+このディレクトリには、Atom Cam 2 Nerves システム固有の接続処理を置く。
 
-## Supported boot model
+## 対応する起動方式
 
-The supported physical system currently uses the verified control kernel originally obtained from `atomcam_tools`. That kernel includes the active vendor initramfs.
+現在の対応対象である物理システムは、もともと `atomcam_tools` から取得した検証済み制御カーネルを使用する。このカーネルには、実際に動作する製造元 initramfs が含まれる。
 
 ```text
 U-Boot
@@ -16,16 +16,12 @@ U-Boot
   -> Nerves release
 ```
 
-The initramfs source in this directory documents and reproduces the required handoff for future custom-kernel work. It is not the active initramfs while the supported firmware uses the protected control kernel.
+このディレクトリの initramfs 原本は、将来の独自カーネル作業に必要な引き渡し処理を記録・再現するものである。対応ファームウェアが保護対象制御カーネルを使用する間は、実際に動作する initramfs ではない。
 
-## Principle
+## 原則
 
-Keep board-specific code limited to confirmed Atom Cam 2 requirements. The supported Nerves system owns the root filesystem, runtime, provisioning, and firmware workflow; it does not import the general `atomcam_tools` userland or update mechanism.
+基板固有のコードは、確認済みの Atom Cam 2 要件に限定する。対応 Nerves システムは、ルートファイルシステム、実行環境、機器設定、ファームウェア手順を所有する。一般的な `atomcam_tools` の利用者空間や更新機構は取り込まない。
 
-ADR 0008 adds an optional manual compatibility service that reads the protected
-vendor camera filesystems. It remains disabled by default, keeps internal flash
-read-only, uses private writable state under `/data`, and leaves Nerves in
-control of networking, the watchdog, updates, rollback, and recovery. Camera
-modules in the protected kernel are permanent once loaded, so stopping the
-manual runtime cleans up its processes, mounts, and IPC and requires a reboot
-before another start.
+ADR 0008 は、保護された製造元カメラ用ファイルシステムを読む任意の手動互換サービスを追加する。既定では無効で、内蔵フラッシュを読み取り専用に保ち、書き込み可能な私有状態を `/data` 配下へ置き、ネットワーク、監視タイマー、更新、巻き戻し、復旧は Nerves が管理し続ける。
+
+保護対象カーネルのカメラ用モジュールは、読み込み後に恒久扱いとなる。そのため手動実行環境の停止では、処理、マウント、IPC を後始末し、再度開始する前に再起動を要求する。

@@ -1,58 +1,43 @@
-# ADR 0007: standard Nerves update alignment
+# ADR 0007: 標準 Nerves 更新手順への整合
 
-## Date
+## 日付
 
 2026-07-26
 
-## Outcome
+## 結果
 
-ADR 0007 was rejected after comparing its mandatory-signing proposal with the
-official Nerves systems baseline.
+必須署名を提案した ADR 0007 を、公式 Nerves システムの基準と比較した結果、却下した。
 
-The supported application workflow remains:
+対応するアプリケーション手順は引き続き次である。
 
 ```sh
 mix firmware
 mix upload nerves.local
 ```
 
-Firmware signing remains an optional fwup capability. This project does not add
-a signing build alias, embedded trust store, device-side fwup policy wrapper,
-release-key ceremony, or key-rotation procedure without a deployment threat
-model that requires them.
+ファームウェア署名は fwup の任意機能として残す。導入環境の脅威想定が必要としない限り、署名用の構築別名、組み込み信頼情報、対象側 fwup 方針処理、公開鍵管理手順、鍵更新手順は追加しない。
 
-The Atom Cam 2-specific A/B updater remains necessary because the protected
-kernel and custom media layout do not expose the ordinary Nerves application
-partitions. SSH public-key authentication authorizes updates. Fwup archive and
-resource integrity, firmware metadata checks, inactive-slot selection, written
-rootfs verification, health confirmation, and rollback provide the baseline
-delivery and installation checks.
+保護対象カーネルと独自媒体構成は通常の Nerves アプリケーション用パーティションを提供しないため、Atom Cam 2 固有の A/B 更新処理は引き続き必要である。更新の権限は SSH 公開鍵認証で管理する。基準となる配布・導入検査は、fwup 書庫と資源の完全性、ファームウェア情報、非稼働スロット選択、書き込み済み rootfs の検証、健全性確認、巻き戻しで構成する。
 
-## Issue #12 coverage
+## Issue #12 の対応範囲
 
-- Firmware transport: NervesSSH firmware subsystem.
-- Update authorization: SSH public-key authentication.
-- Candidate validation: fwup integrity plus platform, architecture, UUID,
-  destination, and rootfs checks.
-- Installation: inactive application slot only.
-- Interrupted transfer handling: staged file cleanup without reboot.
-- Progress and failures: receiving phase, byte count, installing phase, fwup
-  write progress, updater output, and SSH exit status.
+- ファームウェア通信: NervesSSH ファームウェア部分処理
+- 更新権限: SSH 公開鍵認証
+- 候補検証: fwup の完全性に加え、基盤、命令体系、UUID、書き込み先、rootfs の検査
+- 導入先: 非稼働アプリケーション用スロットだけ
+- 送信中断: 再起動せず、一時保存ファイルを削除
+- 進行と失敗表示: 受信段階、バイト数、導入段階、fwup 書き込み進行、更新処理出力、SSH 終了状態
 
-## Verification
+## 検証
 
-- `MIX_TARGET=host mix test`: 23 tests passed.
-- `mix smoke`: repository smoke checks and updater regression matrices passed.
-- Target `mix firmware`: built a valid fwup archive without a signature.
-- Rootfs inspection: `/usr/bin/fwup` is the packaged fwup 1.16.0 ELF binary;
-  no signing trust store or policy-wrapper backup is present.
-- A one-time transition archive signed for the previously installed
-  experimental updater booted in Slot A and validated successfully.
-- A subsequent ordinary unsigned `mix upload nerves.local` wrote Slot B,
-  reported `receiving`, `installing`, and fwup write progress, rebooted, and
-  validated successfully.
+- `MIX_TARGET=host mix test`: 23 件成功
+- `mix smoke`: リポジトリ静的検査と更新処理の回帰試験一式が成功
+- 対象向け `mix firmware`: 署名なしの有効な fwup 書庫を構築
+- rootfs 調査: `/usr/bin/fwup` は梱包済み fwup 1.16.0 ELF 実行形式であり、署名信頼情報や方針処理の予備ファイルはない
+- 以前導入した実験的更新処理から移行するための一回限りの署名済み書庫は、スロット A で起動・検証成功
+- その後の通常の署名なし `mix upload nerves.local` はスロット B を書き込み、`receiving`、`installing`、fwup 書き込み進行を表示し、再起動後に検証成功
 
-Final device state:
+最終機器状態は次である。
 
 ```text
 active_slot=B

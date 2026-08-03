@@ -1,68 +1,47 @@
-# ADR 0008 Phase 5: opt-in boot integration
+# ADR 0008 第 5 段階: 任意有効化による起動連携
 
-Date: July 27, 2026
+日付: 2026-07-27
 
-## Scope
+## 範囲
 
-Start the already validated vendor camera compatibility runtime after boot
-without weakening Nerves firmware validation, networking, timekeeping,
-watchdog, OTA, or rollback behavior.
+Nerves のファームウェア検証、ネットワーク、時刻管理、監視タイマー、OTA、巻き戻しを弱めず、検証済みの製造元カメラ互換実行環境を起動後に開始する。
 
-## Implemented policy
+## 実装した方針
 
-`Atomcam2NervesApp.VendorCamera` is supervised on the Atom Cam 2 target. It
-remains dormant unless:
+Atom Cam 2 対象では `Atomcam2NervesApp.VendorCamera` を監督する。ただし、次のファイルに `enabled=true` がある場合だけ動作する。
 
 ```text
 /data/atomcam2-vendor-camera/auto-start.conf
 ```
 
-contains `enabled=true`. Missing, disabled, or malformed configuration cannot
-start the vendor runtime.
+設定の欠落、無効、不正では製造元実行環境を開始しない。
 
-An enabled worker waits for:
+有効な処理は次を待つ。
 
-- validated firmware;
-- an Internet connection on `wlan0`;
-- synchronized system time; and
-- the existing compatibility precheck.
+- 検証済みファームウェア
+- `wlan0` のインターネット接続
+- 同期済みのシステム時刻
+- 既存の互換事前検査
 
-It invokes only `atomcam2-vendor-camera precheck` and
-`atomcam2-vendor-camera start`, verifies `result=running`, and makes at most one
-automatic start attempt per boot. Later degradation remains visible to the
-operator without an automatic restart or reboot loop.
+呼び出すのは `atomcam2-vendor-camera precheck` と `atomcam2-vendor-camera start` だけであり、`result=running` を確認する。一起動につき自動開始は最大一回とする。後の劣化は操作担当者へ見える状態で残し、自動再開や再起動循環を起こさない。
 
-## Reboot-state correction
+## 再起動状態の修正
 
-Power cycling the Phase 4 firmware exposed a stale-state boundary. The
-persistent runtime marker still said `running`, while its recorded boot ID
-belonged to the prior boot and all vendor processes were stopped. `status`
-therefore reported `result=degraded`, which correctly left the mobile
-application offline but would also have blocked automatic startup.
+第 4 段階ファームウェアの電源断で、古い状態の境界が見つかった。永続的な実行状態印は `running` のままだが、記録した起動 ID は前回起動のもので、製造元処理はすべて停止していた。`status` は `result=degraded` を返し、携帯アプリをオフラインとして正しく扱う一方、自動開始も妨げる状態であった。
 
-Status reporting now treats all transient lifecycle states from a different
-boot as `prepared`, matching the cleanup already performed by `start`. It does
-not hide a same-boot failure or mutate persistent state during a status check.
+現在の状態報告では、別起動に属する一時的な生存周期状態を `prepared` と扱う。これは `start` がすでに行う後始末と一致する。同一起動中の失敗は隠さず、状態確認だけで永続状態を変更しない。
 
-## Target command-runner correction
+## 対象側命令実行方法の修正
 
-The first Phase 5 candidate used `MuonTrap.cmd/3`. Its port helper exited with
-`:epipe` on the protected Linux 3.10 target whenever the worker checked camera
-status. Repeated worker restarts reached the supervisor restart limit and
-stopped only the example application. Nerves SSH, networking, watchdog, and
-the unvalidated candidate remained reachable.
+最初の第 5 段階候補は `MuonTrap.cmd/3` を使用した。しかし保護対象 Linux 3.10 上で、処理がカメラ状態を調べるたびにポート補助処理が `:epipe` で終了した。繰り返し再起動が監督上限へ達し、見本アプリケーションだけが停止した。Nerves SSH、ネットワーク、監視タイマー、未検証候補は引き続き到達可能であった。
 
-The candidate was recovered by temporarily setting `enabled=false`, restarting
-the application, and allowing the normal firmware-health checks to validate
-it. All health gates passed.
+一時的に `enabled=false` とし、アプリケーションを再開し、通常のファームウェア健全性確認で候補を検証して復旧した。すべての健全性条件は成功した。
 
-The worker now uses the standard `System.cmd/3` path already proven by the
-firmware-health and manual camera flows. This removes the incompatible helper
-without adding another service or dependency.
+現在の処理は、ファームウェア健全性と手動カメラ経路ですでに実機確認済みの標準 `System.cmd/3` を使う。非互換の補助処理を除き、新しいサービスや依存を追加しない。
 
-## Initial corrected-firmware acceptance
+## 最初の修正版ファームウェア受入
 
-The first firmware with the target-compatible command path was:
+対象互換の命令経路を持つ最初のファームウェアは次である。
 
 ```text
 UUID: 1d0ce1ad-c228-5764-2327-c7d7d2536017
@@ -70,7 +49,7 @@ slot: B
 validation: validated
 ```
 
-On its first candidate boot, the enabled worker initially reported:
+最初の候補起動では、処理は当初次を報告した。
 
 ```text
 phase=waiting
@@ -78,7 +57,7 @@ start_attempts=0
 waiting=validated_firmware,synchronized_time
 ```
 
-After firmware validation and time synchronization, it reported:
+ファームウェア検証と時刻同期後は次となった。
 
 ```text
 phase=running
@@ -86,7 +65,7 @@ start_attempts=1
 last_result=started
 ```
 
-The compatibility status confirmed:
+互換状態は次を確認した。
 
 ```text
 process=iCamera_app state=running
@@ -98,68 +77,52 @@ private_watchdog_view=absent
 result=running
 ```
 
-Nerves `heart` remained the owner of `/dev/watchdog0`. Wi-Fi reported
-`:internet`, Nerves time reported synchronized, the application remained
-started, and a new one-minute MP4 finalized at:
+Nerves `heart` は `/dev/watchdog0` を保持し、Wi-Fi は `:internet`、Nerves 時刻は同期済み、アプリケーションは稼働中であった。新しい一分 MP4 が次へ確定した。
 
 ```text
 /data/atomcam2-vendor-camera/spool/record/20260727/17/25.mp4
 bytes=4418336
 ```
 
-## Persistence reboot
+## 永続化再起動
 
-A deliberate ordinary reboot then verified the persistent boundary. Before
-startup:
+意図的な通常再起動で永続境界を確認した。開始前の状態は次であった。
 
-- the same firmware remained validated in slot B;
-- `enabled=true` remained under `/data`;
-- stale prior-boot runtime state reported `prepared`;
-- the camera processes were stopped;
-- the worker waited only for synchronized time; and
-- `start_attempts` remained zero.
+- 同じファームウェアがスロット B で検証済み
+- `/data` に `enabled=true` を保持
+- 前回起動の古い実行状態は `prepared` と報告
+- カメラ処理は停止中
+- 処理が待つのは時刻同期だけ
+- `start_attempts=0`
 
-After synchronization, the worker again reached `phase=running` with exactly
-one attempt. All three vendor processes and both isolation shims were healthy,
-Nerves retained the watchdog, and a post-reboot segment finalized:
+同期後、処理は再び正確に一回の試行で `phase=running` へ達した。製造元三処理と二つの隔離補助処理は健全で、Nerves は監視タイマーを保持し、再起動後の区切りが次へ確定した。
 
 ```text
 /data/atomcam2-vendor-camera/spool/record/20260727/17/28.mp4
 bytes=3580569
 ```
 
-The running device answered 30 of 30 pings with no packet loss.
+稼働機器は 30 回中 30 回の ping に応答した。
 
-## Final candidate and data-filesystem repair
+## 最終候補とデータ用ファイルシステム修復
 
-The final polish made configuration parsing strictly accept only the enabled or
-disabled line, extended status-call tolerance across the bounded startup
-sequence, and contained command-process exits inside the worker. Host coverage
-increased to 38 passing tests.
+最終調整では、設定解析を有効行または無効行だけに厳密化し、上限付き開始手順を通じた状態呼び出しの許容時間を伸ばし、命令処理の終了を作業処理内に閉じ込めた。ホスト試験は 38 件すべて成功した。
 
-The first upload of that final build did not complete while the vendor runtime
-was active. The target had no remaining installer process or update lock, but
-the interrupted attempt left updater-owned temporary paths. Removing the
-orphan exposed an ext2 directory-entry error:
+最終構築物の最初の送信は、製造元実行環境の稼働中には完了しなかった。対象に導入処理や更新鍵は残らなかったが、中断した試行は更新処理所有の一時経路を残した。残留物を削除すると ext2 のディレクトリ項目誤りが表面化した。
 
 ```text
 ext2_lookup: deleted inode referenced: 155047
 ```
 
-Ordinary `/data` writes still passed. The vendor runtime and example
-application were stopped, `/data` was unmounted, and the established ADR 0005
-repair command ran:
+通常の `/data` 書き込みは成功していた。製造元実行環境と見本アプリケーションを停止し、`/data` を外し、ADR 0005 で確立した修復命令を実行した。
 
 ```text
 e2fsck -p -f /dev/rootdisk0p4
 ```
 
-It returned status 1 and repaired two inode block counts plus the orphaned
-updater entry. A second offline `e2fsck -f -n` returned status 0. `/data`
-remounted read-write, and the exact updater staging and work directories were
-empty.
+状態 1 で、inode ブロック数二件と更新処理の孤立項目を修復した。二回目のオフライン `e2fsck -f -n` は状態 0 となった。`/data` を読み書き可能で再マウントし、更新用一時保存・作業ディレクトリが空であることを確認した。
 
-With the camera workload stopped, the same final bundle installed normally:
+カメラ負荷を停止した状態では、同じ最終書庫を正常に導入できた。
 
 ```text
 UUID: ba2a02ba-e525-5f86-cf35-40343d3f1ff5
@@ -168,19 +131,13 @@ validation: validated
 SHA-256: 4a290ce8d19e96da27cb95dc09906a87721996cf0a5e32dfac04c7b20bff7748
 ```
 
-The exact final candidate repeated the readiness-gated automatic startup with
-`start_attempts=1`, all vendor processes and isolation checks healthy, Nerves
-watchdog ownership intact, and both updater directories empty. It answered 30
-of 30 pings and finalized:
+正確な最終候補は、準備条件に基づく自動開始を `start_attempts=1` で再現した。製造元処理と隔離検査はすべて健全、Nerves の監視タイマー所有は維持、更新用二ディレクトリは空であった。30/30 ping に応答し、次の録画を確定した。
 
 ```text
 /data/atomcam2-vendor-camera/spool/record/20260727/17/58.mp4
 bytes=4833565
 ```
 
-## Mobile-application acceptance
+## 携帯アプリ受入
 
-After the final candidate validated and started the runtime automatically, the
-operator confirmed that the standard Atom mobile application connected and
-worked normally. This closes the Phase 5 operator acceptance check without
-another firmware change.
+最終候補が検証され、自動的に実行環境を開始した後、操作担当者は標準 Atom 携帯アプリが接続し正常に動作することを確認した。追加のファームウェア変更なしで、第 5 段階の操作担当者受入を完了した。
