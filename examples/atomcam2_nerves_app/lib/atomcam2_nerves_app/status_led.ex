@@ -15,8 +15,6 @@ defmodule Atomcam2NervesApp.StatusLed do
 
   use GenServer
 
-  require Logger
-
   # Both status LEDs are wired active-low (drive the pin low to light
   # them). sysfs `active_low` normalizes that, so the patterns below can
   # use 1 = lit.

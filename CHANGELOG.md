@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add the status dashboard (Phase 1 of the proposal): `GET /status.json`
+  as the canonical machine-readable state (camera, rtsp, system, memory,
+  network, firmware, storage, logs), `GET /` as an HTML view of the same
+  data (inline CSS, meta refresh, no JavaScript), and `GET /healthz`.
+  Served by OTP's `:inets` httpd on port 80 (configurable), JSON encoded
+  with OTP's `:json` (nil normalized to null at the encoding layer). Off
+  by default: `Dashboard.enable(true/false)` from IEx starts or fully
+  terminates the server — a disabled dashboard has no open port and no
+  cost — and the choice persists across reboots. Measured on hardware:
+  +316 KB BEAM RSS while enabled, camera unaffected by request bursts.
+
 - Fix the intermittent silent boot: about half of all boots (soft or
   cold alike) came up with the audio driver half-initialized — the codec
   probe succeeded but /dev/dsp was never registered and IMP_AO_Enable
