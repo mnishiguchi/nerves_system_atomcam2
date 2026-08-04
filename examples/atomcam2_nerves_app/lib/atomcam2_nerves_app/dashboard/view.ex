@@ -25,6 +25,10 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         td:first-child { color: #aaa; }
         .logs td { font-family: monospace; font-size: .75rem; }
         a { color: #9cf; }
+        .ops { margin: 1rem 0; }
+        .ops form { display: inline; }
+        .ops button { background: #333; color: #ddd; border: 1px solid #666;
+                      padding: .35rem .9rem; margin-right: .6rem; cursor: pointer; }
       </style>
     </head>
     <body>
@@ -37,6 +41,16 @@ defmodule Atomcam2NervesApp.Dashboard.View do
       #{section("firmware", data.firmware)}
       #{section("storage", data.storage)}
       #{logs_section(data.logs)}
+      <div class="ops">
+        <form method="post" action="/announce"
+              onsubmit="return confirm('テスト発声を再生しますか?')">
+          <button type="submit">テスト発声</button>
+        </form>
+        <form method="post" action="/reboot"
+              onsubmit="return confirm('本当に再起動しますか?')">
+          <button type="submit">再起動</button>
+        </form>
+      </div>
       <p><a href="/status.json">status.json</a></p>
     </body>
     </html>

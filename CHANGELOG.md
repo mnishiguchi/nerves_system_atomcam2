@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add dashboard operations (Phase 2): `POST /announce` plays the boot
+  announcement and `POST /reboot` reboots the device, each behind a
+  confirm dialog in the HTML. Reads stay anonymous; the POST routes
+  require HTTP Basic auth (user `admin`) and are rejected until a
+  password is set with `Dashboard.set_password/1` (persisted, compared
+  with a constant-time SHA-256 check; `nil` removes it and disables the
+  operations). Verified on hardware: unauthenticated and wrong-password
+  POSTs return 401, announce and reboot run only when authenticated.
+
 - Add the status dashboard (Phase 1 of the proposal): `GET /status.json`
   as the canonical machine-readable state (camera, rtsp, system, memory,
   network, firmware, storage, logs), `GET /` as an HTML view of the same
