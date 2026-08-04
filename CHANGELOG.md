@@ -8,8 +8,11 @@
   require HTTP Basic auth (user `admin`) and are rejected until a
   password is set with `Dashboard.set_password/1` (persisted, compared
   with a constant-time SHA-256 check; `nil` removes it and disables the
-  operations). Verified on hardware: unauthenticated and wrong-password
-  POSTs return 401, announce and reboot run only when authenticated.
+  operations). The 401 sends a `WWW-Authenticate` header (charlist key,
+  so inets emits the real header name) and Firefox/Chrome prompt for
+  credentials. Verified on hardware: unauthenticated and wrong-password
+  POSTs return 401, the browser buttons trigger the auth dialog, and
+  announce and reboot run only when authenticated.
 
 - Add the status dashboard (Phase 1 of the proposal): `GET /status.json`
   as the canonical machine-readable state (camera, rtsp, system, memory,
