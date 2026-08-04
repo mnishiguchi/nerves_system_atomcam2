@@ -18,6 +18,7 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
 
   Record.defrecordp(:httpd_mod, :mod, Record.extract(:mod, from_lib: "inets/include/httpd.hrl"))
 
+  alias Atomcam2NervesApp.CameraNative
   alias Atomcam2NervesApp.Dashboard.{Collector, Server, View}
 
   @announce_command "/usr/bin/atomcam2-boot-announce"
@@ -46,6 +47,19 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
     reply(200, "text/plain", "ok")
   end
 
+  defp respond(~c"GET", "/snapshot.jpg") do
+    case CameraNative.snapshot() do
+      {:ok, path} ->
+        case File.read(path) do
+          {:ok, jpeg} -> reply(200, "image/jpeg", jpeg)
+          {:error, _reason} -> reply(503, "text/plain", "no snapshot")
+        end
+
+      {:error, _reason} ->
+        reply(503, "text/plain", "snapshot unavailable")
+    end
+  end
+
   defp respond(_method, _uri) do
     reply(404, "text/plain", "not found")
   end
@@ -69,6 +83,12 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
       end)
 
     reply(200, "text/plain", "rebooting")
+  end
+
+  defp operate("/night/" <> mode) when mode in ["on", "off", "auto"] do
+    CameraNative.night_vision(String.to_existing_atom(mode))
+    Logger.info("Dashboard: night vision #{mode}")
+    redirect_home("night #{mode}")
   end
 
   defp operate(_uri), do: reply(404, "text/plain", "not found")

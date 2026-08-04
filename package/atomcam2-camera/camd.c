@@ -52,7 +52,11 @@
 #define FR_NUM 25
 #define FR_DEN 1
 #define CHN 0
+#define JPEG_CHN 2     /* second encoder channel, same group, JPEG profile */
 #define GRP 0
+#define SNAP_PATH "/tmp/camd.snap"    /* touch to request a snapshot */
+#define SNAP_OUT "/tmp/camd.jpg"      /* newest JPEG written here */
+#define SNAP_TMP "/tmp/camd.jpg.tmp"
 #define ASM_MAX (1024 * 1024)
 #define CTL_PATH "/tmp/camd.ctl"
 /* Created once the loopback has its format (S_FMT + STREAMON): the RTSP
@@ -239,6 +243,133 @@ static int step(const char *label, int rc)
 	return rc;
 }
 
+/* Capture one JPEG from the JPEG encoder channel (same group as H.264, so
+ * it carries the same OSD overlay) and write it atomically to SNAP_OUT.
+ * The channel is only started for the duration of the capture. */
+static void capture_jpeg(void)
+{
+	if (IMP_Encoder_StartRecvPic(JPEG_CHN) < 0) {
+		fprintf(stderr, "camd: snap StartRecvPic failed\n");
+		return;
+	}
+
+	int ok = 0;
+	if (IMP_Encoder_PollingStream(JPEG_CHN, 2000) == 0) {
+		IMPEncoderStream stream;
+		if (IMP_Encoder_GetStream(JPEG_CHN, &stream, 1) == 0) {
+			int fd = open(SNAP_TMP, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+			if (fd >= 0) {
+				unsigned int p;
+				for (p = 0; p < stream.packCount; p++) {
+					IMPEncoderPack *pk = &stream.pack[p];
+					if (pk->length == 0) continue;
+					uint32_t rem = stream.streamSize - pk->offset;
+					if (pk->length <= rem) {
+						write(fd, (void *)(stream.virAddr + pk->offset), pk->length);
+					} else {
+						write(fd, (void *)(stream.virAddr + pk->offset), rem);
+						write(fd, (void *)(uintptr_t)stream.virAddr, pk->length - rem);
+					}
+				}
+				close(fd);
+				rename(SNAP_TMP, SNAP_OUT);
+				ok = 1;
+			}
+			IMP_Encoder_ReleaseStream(JPEG_CHN, &stream);
+		}
+	}
+	IMP_Encoder_StopRecvPic(JPEG_CHN);
+	fprintf(stderr, "camd: snap %s\n", ok ? "ok" : "failed");
+	fflush(stderr);
+}
+
+/* Poll SNAP_PATH once per second: if present, take a snapshot and remove
+ * the request marker. */
+static void poll_snap(void)
+{
+	if (access(SNAP_PATH, F_OK) != 0) return;
+	unlink(SNAP_PATH);
+	capture_jpeg();
+}
+
+/* -- Night vision -------------------------------------------------------
+ * Three pieces, all owned here because the ISP running mode needs the
+ * libimp handle that lives in this process:
+ *   - ISP running mode: DAY (color) / NIGHT (mono, low-light tuning)
+ *   - IR-cut filter: GPIO 52/53 H-bridge, pulsed to move the filter in
+ *     (day, blocks IR) or out (night, passes IR)
+ *   - IR LED: GPIO 26, on at night to illuminate the scene
+ * Mode: 0 = off (force day), 1 = on (force night), 2 = auto (by ISP gain).
+ */
+#define IRCUT_A_GPIO 53
+#define IRCUT_B_GPIO 52
+#define IR_LED_GPIO 26
+/* Gain is [24.8] fixed point; 1x = 256. Switch to night above ~8x, back to
+ * day below ~4x — hysteresis so it does not oscillate at dusk. */
+#define NIGHT_GAIN_ON (8 * 256)
+#define NIGHT_GAIN_OFF (4 * 256)
+
+static int night_mode = 2;   /* default auto */
+static int night_active = -1; /* current physical state: -1 unknown, 0 day, 1 night */
+
+static void gpio_set(int gpio, int value)
+{
+	char path[64];
+	snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio);
+	int fd = open(path, O_WRONLY);
+	if (fd < 0) {
+		char ex[64];
+		int efd = open("/sys/class/gpio/export", O_WRONLY);
+		if (efd >= 0) { snprintf(ex, sizeof(ex), "%d", gpio); write(efd, ex, strlen(ex)); close(efd); }
+		snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/direction", gpio);
+		int dfd = open(path, O_WRONLY);
+		if (dfd >= 0) { write(dfd, "out", 3); close(dfd); }
+		snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", gpio);
+		fd = open(path, O_WRONLY);
+	}
+	if (fd >= 0) { write(fd, value ? "1" : "0", 1); close(fd); }
+}
+
+/* Pulse the H-bridge ~120ms to slide the IR-cut filter, then release. */
+static void ircut_move(int to_night)
+{
+	gpio_set(IRCUT_A_GPIO, to_night ? 0 : 1);
+	gpio_set(IRCUT_B_GPIO, to_night ? 1 : 0);
+	usleep(120 * 1000);
+	gpio_set(IRCUT_A_GPIO, 0);
+	gpio_set(IRCUT_B_GPIO, 0);
+}
+
+static void apply_night(int night)
+{
+	if (night == night_active) return;
+	night_active = night;
+	IMP_ISP_Tuning_SetISPRunningMode(night ? IMPISP_RUNNING_MODE_NIGHT : IMPISP_RUNNING_MODE_DAY);
+	ircut_move(night);
+	gpio_set(IR_LED_GPIO, night);
+	fprintf(stderr, "camd: night -> %s\n", night ? "on" : "off");
+	fflush(stderr);
+}
+
+/* Called each second when in auto mode. */
+static void night_auto_tick(void)
+{
+	if (night_mode != 2) return;
+	uint32_t gain = 0;
+	if (IMP_ISP_Tuning_GetTotalGain(&gain) < 0) return;
+	if (!night_active && gain >= NIGHT_GAIN_ON) apply_night(1);
+	else if (night_active && gain <= NIGHT_GAIN_OFF) apply_night(0);
+}
+
+static void set_night_mode(const char *arg)
+{
+	if (!strcmp(arg, "on"))        { night_mode = 1; apply_night(1); }
+	else if (!strcmp(arg, "off"))  { night_mode = 0; apply_night(0); }
+	else if (!strcmp(arg, "auto")) { night_mode = 2; night_active = -1; night_auto_tick(); }
+	fprintf(stderr, "camd: night mode = %s\n", arg);
+	fflush(stderr);
+}
+
 /* Render current time into clock_buf and push it to the OSD region. */
 static void render_clock(void)
 {
@@ -320,6 +451,8 @@ static int poll_ctl(void)
 	else if (sscanf(buf, "qp %d %d", &a, &b) == 2) set_qp(a, b);
 	else if (!strcmp(buf, "info off"))   set_info("");
 	else if (!strncmp(buf, "info ", 5)) set_info(buf + 5);
+	else if (!strcmp(buf, "snap"))       capture_jpeg();
+	else if (!strncmp(buf, "night ", 6)) set_night_mode(buf + 6);
 	else if (sscanf(buf, "clockpos %d %d", &a, &b) == 2) move_clock(a, b);
 	else if (sscanf(buf, "logopos %d %d", &a, &b) == 2) move_logo(a, b);
 	else if (sscanf(buf, "infopos %d %d", &a, &b) == 2) move_info(a, b);
@@ -456,6 +589,23 @@ int main(int argc, char **argv)
 	if (step("Encoder_CreateChn", IMP_Encoder_CreateChn(CHN, &echn)) < 0) return 1;
 	if (step("Encoder_RegisterChn", IMP_Encoder_RegisterChn(CHN, CHN)) < 0) return 1;
 
+	/* Second encoder channel, JPEG, registered to the same group so it
+	 * receives the same OSD-overlaid frames. Only started on demand for a
+	 * snapshot, so it costs nothing while idle. */
+	{
+		IMPEncoderChnAttr jenc;
+		memset(&jenc, 0, sizeof(jenc));
+		rc = IMP_Encoder_SetDefaultParam(&jenc, IMP_ENC_PROFILE_JPEG, IMP_ENC_RC_MODE_FIXQP,
+				W, H, FR_NUM, FR_DEN, 0, 0, 25, 0);
+		if (step("Encoder_SetDefaultParam(jpeg)", rc) < 0) return 1;
+		/* Share the H.264 channel's buffer instead of allocating a second
+		 * full-res encoder buffer (which exhausts rmem and crashes). Must
+		 * be called after the shared channel is created, before this one. */
+		step("Encoder_SetbufshareChn(jpeg)", IMP_Encoder_SetbufshareChn(JPEG_CHN, CHN));
+		if (step("Encoder_CreateChn(jpeg)", IMP_Encoder_CreateChn(JPEG_CHN, &jenc)) < 0) return 1;
+		if (step("Encoder_RegisterChn(jpeg)", IMP_Encoder_RegisterChn(CHN, JPEG_CHN)) < 0) return 1;
+	}
+
 	if (step("Bind FS->OSD", IMP_System_Bind(&fs_cell, &osd_cell)) < 0) return 1;
 	if (step("Bind OSD->ENC", IMP_System_Bind(&osd_cell, &enc_cell)) < 0) return 1;
 	if (step("IMP_OSD_Start", IMP_OSD_Start(GRP)) < 0) return 1;
@@ -473,8 +623,9 @@ int main(int argc, char **argv)
 	if (step("Encoder_StartRecvPic", IMP_Encoder_StartRecvPic(CHN)) < 0) return 1;
 
 	render_clock();
+	night_auto_tick();   /* set day/night from the current scene at startup */
 	fprintf(stderr, "camd: running at %d kbps. control via %s\n", bitrate, CTL_PATH);
-	fprintf(stderr, "camd:   clock on|off / logo on|off / info <text>|off / bitrate <kbps> / qp <min> <max> / quit\n");
+	fprintf(stderr, "camd:   clock/logo on|off / info <text>|off / snap / night on|off|auto / bitrate <kbps> / qp <min> <max> / quit\n");
 	fflush(stderr);
 
 	for (i = 0; i < frames; i++) {
@@ -482,6 +633,8 @@ int main(int argc, char **argv)
 		if ((i % FR_NUM) == 0) {                 /* once per second */
 			render_clock();
 			poll_info_file();
+			poll_snap();
+			night_auto_tick();
 		}
 
 		rc = IMP_Encoder_PollingStream(CHN, 1000);

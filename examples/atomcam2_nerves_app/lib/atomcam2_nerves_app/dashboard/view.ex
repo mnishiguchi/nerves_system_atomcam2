@@ -29,10 +29,20 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         .ops form { display: inline; }
         .ops button { background: #333; color: #ddd; border: 1px solid #666;
                       padding: .35rem .9rem; margin-right: .6rem; cursor: pointer; }
+        .snap img { max-width: 100%; border: 1px solid #444; }
+        .snap { margin: 1rem 0; }
       </style>
     </head>
     <body>
       <h1>atomcam2 status</h1>
+      <div class="snap">
+        <img src="/snapshot.jpg?#{:erlang.system_time(:second)}" alt="snapshot">
+      </div>
+      <div class="ops">
+        <form method="post" action="/night/on"><button type="submit">夜間 ON</button></form>
+        <form method="post" action="/night/auto"><button type="submit">夜間 AUTO</button></form>
+        <form method="post" action="/night/off"><button type="submit">夜間 OFF</button></form>
+      </div>
       #{section("camera", data.camera)}
       #{section("rtsp", data.rtsp)}
       #{section("system", data.system)}
