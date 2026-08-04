@@ -2,7 +2,7 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   @moduledoc """
   Play the boot announcement once at application startup: three short
   beeps followed by 「起動しました。」 (one PCM file), with the infrared
-  LED blinking three times on a one-second cycle in sync.
+  LED blinking five times on a one-second cycle in sync.
 
   Cold boots intermittently leave the audio driver broken
   (`IMP_AO_Enable = -1`, no /dev/dsp) even with the correct module load
@@ -21,7 +21,7 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   @command "/usr/bin/atomcam2-boot-announce"
   @history_path "/data/boot-announce-history.log"
   @ir_led_gpio 26
-  @ir_blinks 3
+  @ir_blinks 5
   @max_attempts 6
   @retry_delay_ms 30_000
   # Wait for CameraNative's module loading to surface the audio devices so
