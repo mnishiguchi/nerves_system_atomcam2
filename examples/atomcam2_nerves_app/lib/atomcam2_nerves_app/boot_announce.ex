@@ -8,7 +8,9 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   (`IMP_AO_Enable = -1`, no /dev/dsp) even with the correct module load
   order, so playback retries every 30 seconds. Every attempt logs the
   player's step output, and the final outcome is appended to
-  `/data/boot-announce-history.log` (once /data is mounted) so the
+  `/media/mmc/boot-announce-history.log` — the FAT boot partition, which
+  is writable seconds after power-on, so the record survives even when
+  power is cut before /data finishes its filesystem check — so the
   failure pattern can be tracked across boots: if a retry eventually
   succeeds the hardware just needed time, if all attempts fail the boot
   is permanently wedged and the module-load timing is to blame.
@@ -19,7 +21,7 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   require Logger
 
   @command "/usr/bin/atomcam2-boot-announce"
-  @history_path "/data/boot-announce-history.log"
+  @history_path "/media/mmc/boot-announce-history.log"
   @ir_led_gpio 26
   @ir_blinks 5
   @max_attempts 6
@@ -81,7 +83,8 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   end
 
   # One line per boot, e.g. "2026-08-04 02:10:33Z up=41s ok on attempt 1".
-  # /data may still be under its filesystem check; retry for a few minutes.
+  # The FAT partition is mounted by pre-run, so the first write normally
+  # succeeds; the retry is belt and braces.
   defp record_history(result) do
     line =
       "#{DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_string()} " <>
