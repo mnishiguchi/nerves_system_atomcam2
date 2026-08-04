@@ -2,6 +2,15 @@
 
 ## 未公開
 
+> 既知の不具合(2026-08-04、調査中): native カメラのスナップショット・
+> ナイトビジョン導入後に 3 件の不具合を確認。(A) ナイトビジョン切替が
+> H.264 を停止させる(有力仮説: `SetISPRunningMode` のインライン実行)、
+> (B) camd の kill・ソフト再起動反復後にフレームが出ない(電源断で復旧)、
+> (C) RTSP の sprop 間欠欠落。いずれも真因は未確定。詳細と切り分け手順は
+> [native カメラ不具合 技術相談](docs/20260804_native_camera_不具合_技術相談.md)。
+> 上記機能(JPEG スナップショット・ナイトビジョン)は本注記の解決まで
+> 実験的扱い。
+
 - Lay the dashboard out as atomcam_tools-style tabs (映像 / 状態 / ログ /
   操作). Tabs are pure CSS via `:target` on the URL fragment, so the
   chosen tab survives the meta refresh, with `:has()` selecting the
