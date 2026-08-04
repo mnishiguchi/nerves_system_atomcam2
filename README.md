@@ -31,10 +31,35 @@ MicroSD から起動
 - カメラ映像の RTSP 配信(任意、再エンコードなし)
 - 1 分単位の連続録画
 - SFTP による NAS 転送、再試行、容量上限、保存期間の管理
+- 起動アナウンス(ビープ + 音声)とステータス LED 表示
+- 映像への OSD デバッグ表示と状態ダッシュボード(いずれも任意、既定 OFF)
 
 カメラ互換機能、RTSP 配信、NAS 転送は初期状態では無効です。Nerves が起動、
-ネットワーク、ハードウェア watchdog、更新、復旧を管理します。Web UI、Samba、
+ネットワーク、ハードウェア watchdog、更新、復旧を管理します。Samba、
 内蔵フラッシュへの書き込みには対応していません。
+
+## 状態モニタリング
+
+どちらも既定 OFF で、SSH(IEx)から有効化します。
+
+**OSD デバッグ表示** — RTSP 映像の左上に IEx 初期表示相当のシステム情報を
+オーバーレイします(3 秒毎更新)。カメラを見ながらそのまま状態を確認できます。
+
+```elixir
+Atomcam2NervesApp.CameraNative.osd_debug(true)   # false で非表示
+```
+
+![RTSP 映像上の OSD デバッグ表示](docs/assets/osd-debug-panel.jpg)
+
+**状態ダッシュボード** — `http://<ip>/` の HTML と、その正規 API
+`GET /status.json`(機械可読、Home Assistant 等の連携向け)。OFF のときは
+HTTP サーバごと停止し、ポートも閉じます。
+
+```elixir
+Atomcam2NervesApp.Dashboard.enable(true)   # false で全停止
+```
+
+![状態ダッシュボード](docs/assets/dashboard.png)
 
 > このプロジェクトは実験段階です。無人環境や重要な用途へ導入する前に、停電、
 > クラッシュの反復、長時間運転、温度、ファイルシステム復旧を利用環境で検証して
