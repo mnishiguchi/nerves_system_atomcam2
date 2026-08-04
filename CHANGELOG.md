@@ -2,6 +2,13 @@
 
 ## 未公開
 
+- Lay the dashboard out as atomcam_tools-style tabs (映像 / 状態 / ログ /
+  操作). Tabs are pure CSS via `:target` on the URL fragment, so the
+  chosen tab survives the meta refresh, with `:has()` selecting the
+  default (映像) tab and highlighting the active one — still no
+  JavaScript. 映像 holds the snapshot, night-vision buttons, and RTSP
+  URL; 操作 holds the authenticated announce/reboot buttons.
+
 - Add on-device JPEG snapshots and a dashboard preview. camd gains a
   JPEG encoder channel (same group as H.264, so the still carries the
   OSD overlay) captured on demand via `/tmp/camd.snap`; no H.264 decode

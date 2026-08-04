@@ -51,9 +51,11 @@ Atomcam2NervesApp.CameraNative.osd_debug(true)   # false で非表示
 
 ![RTSP 映像上の OSD デバッグ表示](docs/assets/osd-debug-panel.jpg)
 
-**状態ダッシュボード** — `http://<ip>/` の HTML と、その正規 API
-`GET /status.json`(機械可読、Home Assistant 等の連携向け)。OFF のときは
-HTTP サーバごと停止し、ポートも閉じます。
+**状態ダッシュボード** — `http://<ip>/` の HTML(映像・状態・ログ・操作の
+タブ構成)と、その正規 API `GET /status.json`(機械可読、Home Assistant 等
+の連携向け)。映像タブには JPEG スナップショットとナイトビジョン切替、
+操作タブにはテスト発声・再起動(管理パスワード必須)。OFF のときは HTTP
+サーバごと停止し、ポートも閉じます。
 
 ```elixir
 Atomcam2NervesApp.Dashboard.enable(true)   # false で全停止
