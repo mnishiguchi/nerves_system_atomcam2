@@ -93,8 +93,10 @@ announce_ready() {
 
 announce_ready || exit 1
 
+# Keep the player's step-by-step output (IMP_AO_* return codes): it is the
+# primary evidence when the cold-boot playback failure strikes.
 if ! LD_LIBRARY_PATH="$vendor_system/lib:$vendor_root/lib" \
-    "$player" "$sound_file" "$gain" "$rate" "$volume" >/dev/null 2>&1; then
+    "$player" "$sound_file" "$gain" "$rate" "$volume" >&2; then
   echo "atomcam2-boot-announce: playback failed" >&2
   exit 1
 fi
