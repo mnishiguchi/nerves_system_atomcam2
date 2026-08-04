@@ -14,6 +14,7 @@ defmodule Atomcam2NervesApp.Dashboard.Server do
   require Logger
 
   @config_path "/data/atomcam2-dashboard/enabled.conf"
+  @password_path "/data/atomcam2-dashboard/password.conf"
   @default_port 80
   # /data may still be under its filesystem check at boot; poll until the
   # config becomes readable before deciding the initial state.
@@ -34,6 +35,34 @@ defmodule Atomcam2NervesApp.Dashboard.Server do
 
   @spec enabled?() :: boolean()
   def enabled?, do: GenServer.call(__MODULE__, :enabled?)
+
+  @spec set_password(String.t() | nil) :: :ok | {:error, term()}
+  def set_password(nil) do
+    case File.rm(@password_path) do
+      :ok -> :ok
+      {:error, :enoent} -> :ok
+      {:error, _reason} = error -> error
+    end
+  end
+
+  def set_password(password) when is_binary(password) and password != "" do
+    with :ok <- File.mkdir_p(Path.dirname(@password_path)),
+         :ok <- File.write(@password_path, password) do
+      File.chmod(@password_path, 0o600)
+    end
+  end
+
+  @doc false
+  @spec password_valid?(String.t()) :: boolean()
+  def password_valid?(candidate) when is_binary(candidate) do
+    case File.read(@password_path) do
+      {:ok, password} when password != "" ->
+        :crypto.hash(:sha256, candidate) == :crypto.hash(:sha256, password)
+
+      _other ->
+        false
+    end
+  end
 
   @impl GenServer
   def init(_options) do
