@@ -69,10 +69,14 @@
 #define INFO_PATH "/tmp/camd.info"
 #define INFO_COLS 80
 #define INFO_LINES 14
-#define INFO_CELL_W 16
-#define INFO_LINE_H 32
-#define INFO_W (INFO_COLS * INFO_CELL_W)     /* 1280 */
-#define INFO_H (INFO_LINES * INFO_LINE_H)    /* 448 */
+/* The IPU rejects OSD regions over ~1 MB ("ipu buffer too small", needs
+ * 2293760 at 2x), so the panel renders at 1x (8x16 glyphs): 640x224x4 =
+ * 573 KB fits. */
+#define INFO_SCALE 1
+#define INFO_CELL_W (8 * INFO_SCALE)
+#define INFO_LINE_H (16 * INFO_SCALE)
+#define INFO_W (INFO_COLS * INFO_CELL_W)     /* 640 */
+#define INFO_H (INFO_LINES * INFO_LINE_H)    /* 224 */
 #define INFO_SRC_MAX 4096
 
 static unsigned char asm_buf[ASM_MAX];
@@ -132,9 +136,13 @@ static void render_info(void)
 			unsigned char bits = glyph[row];
 			for (col = 0; col < 8; col++) {
 				if (!(bits & (0x80 >> col))) continue;
-				uint32_t *px = cell + (row * 2) * INFO_W + col * 2;
-				px[0] = px[1] = 0xffffffff;
-				px[INFO_W] = px[INFO_W + 1] = 0xffffffff;
+				uint32_t *base = cell
+					+ (row * INFO_SCALE) * INFO_W
+					+ col * INFO_SCALE;
+				int sy, sx;
+				for (sy = 0; sy < INFO_SCALE; sy++)
+					for (sx = 0; sx < INFO_SCALE; sx++)
+						base[sy * INFO_W + sx] = 0xffffffff;
 			}
 		}
 		column++;
