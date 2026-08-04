@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <linux/videodev2.h>
 
 #include <imp/imp_common.h>
@@ -60,16 +61,24 @@
 #define CLOCK_CHARS 20
 #define CLOCK_W (CLOCK_CHARS * OSD_CELL_W)   /* 320 */
 
-/* Free-text system-info line (top-left). 8x16 ASCII glyphs scaled 2x. */
-#define INFO_CHARS 40
+/* Free-text debug panel (top-left). 8x16 ASCII glyphs scaled 2x, up to
+ * INFO_LINES lines of INFO_COLS columns. Content comes either from the
+ * "info <text>" control command (single line) or from INFO_PATH, a plain
+ * multi-line text file polled once per second — remove the file to hide
+ * the panel. The buffer only becomes resident when the panel is used. */
+#define INFO_PATH "/tmp/camd.info"
+#define INFO_COLS 80
+#define INFO_LINES 14
 #define INFO_CELL_W 16
-#define INFO_ROW_H 32
-#define INFO_W (INFO_CHARS * INFO_CELL_W)    /* 640 */
+#define INFO_LINE_H 32
+#define INFO_W (INFO_COLS * INFO_CELL_W)     /* 1280 */
+#define INFO_H (INFO_LINES * INFO_LINE_H)    /* 448 */
+#define INFO_SRC_MAX 4096
 
 static unsigned char asm_buf[ASM_MAX];
 static uint32_t clock_buf[CLOCK_CHARS * OSD_ROW_H * OSD_CELL_W]; /* bgra */
-static uint32_t info_buf[INFO_CHARS * INFO_CELL_W * INFO_ROW_H]; /* bgra */
-static char info_text[INFO_CHARS + 1];
+static uint32_t info_buf[INFO_W * INFO_H]; /* bgra */
+static char info_src[INFO_SRC_MAX];
 
 static IMPRgnHandle rgnClock, rgnLogo, rgnInfo;
 
@@ -97,32 +106,38 @@ static void move_info(int x, int y)
 	memset(&a, 0, sizeof(a));
 	a.type = OSD_REG_PIC;
 	a.rect.p0.x = x; a.rect.p0.y = y;
-	a.rect.p1.x = x + INFO_W - 1; a.rect.p1.y = y + INFO_ROW_H - 1;
+	a.rect.p1.x = x + INFO_W - 1; a.rect.p1.y = y + INFO_H - 1;
 	a.fmt = PIX_FMT_BGRA;
 	a.data.picData.pData = NULL;
 	IMP_OSD_SetRgnAttr(rgnInfo, &a);
 }
 
-/* Render info_text into info_buf (white, 2x-scaled 8x16 glyphs) and push it. */
+/* Render info_src (multi-line) into info_buf (white, 2x-scaled 8x16
+ * glyphs) and push it to the OSD region. */
 static void render_info(void)
 {
 	memset(info_buf, 0, sizeof(info_buf));
-	unsigned i, row, col;
-	for (i = 0; i < INFO_CHARS && info_text[i]; i++) {
-		unsigned char c = (unsigned char)info_text[i];
+	unsigned line = 0, column = 0, row, col;
+	const char *p;
+	for (p = info_src; *p && line < INFO_LINES; p++) {
+		if (*p == '\n') { line++; column = 0; continue; }
+		if (column >= INFO_COLS) continue;
+		unsigned char c = (unsigned char)*p;
 		if (c < 32 || c > 126) c = ' ';
 		const unsigned char *glyph = osd_font8x16[c - 32];
+		uint32_t *cell = info_buf
+			+ (line * INFO_LINE_H) * INFO_W
+			+ column * INFO_CELL_W;
 		for (row = 0; row < 16; row++) {
 			unsigned char bits = glyph[row];
 			for (col = 0; col < 8; col++) {
 				if (!(bits & (0x80 >> col))) continue;
-				uint32_t *px = info_buf
-					+ (row * 2) * INFO_W
-					+ i * INFO_CELL_W + col * 2;
+				uint32_t *px = cell + (row * 2) * INFO_W + col * 2;
 				px[0] = px[1] = 0xffffffff;
 				px[INFO_W] = px[INFO_W + 1] = 0xffffffff;
 			}
 		}
+		column++;
 	}
 	IMPOSDRgnAttrData d;
 	memset(&d, 0, sizeof(d));
@@ -132,10 +147,42 @@ static void render_info(void)
 
 static void set_info(const char *text)
 {
-	strncpy(info_text, text, INFO_CHARS);
-	info_text[INFO_CHARS] = 0;
+	strncpy(info_src, text, INFO_SRC_MAX - 1);
+	info_src[INFO_SRC_MAX - 1] = 0;
 	render_info();
-	IMP_OSD_ShowRgn(rgnInfo, GRP, info_text[0] != 0);
+	IMP_OSD_ShowRgn(rgnInfo, GRP, info_src[0] != 0);
+}
+
+/* Poll INFO_PATH once per second: render it when it changes, hide the
+ * panel when it disappears. The control-file "info <text>" command still
+ * works for one-off single lines. */
+static void poll_info_file(void)
+{
+	static time_t last_mtime;
+	static long last_size = -1;
+	struct stat st;
+
+	if (stat(INFO_PATH, &st) != 0) {
+		if (last_size != -1) {
+			last_size = -1;
+			last_mtime = 0;
+			set_info("");
+		}
+		return;
+	}
+
+	if (st.st_mtime == last_mtime && (long)st.st_size == last_size) return;
+	last_mtime = st.st_mtime;
+	last_size = (long)st.st_size;
+
+	int fd = open(INFO_PATH, O_RDONLY);
+	if (fd < 0) return;
+	int n = read(fd, info_src, INFO_SRC_MAX - 1);
+	close(fd);
+	if (n < 0) n = 0;
+	info_src[n] = 0;
+	render_info();
+	IMP_OSD_ShowRgn(rgnInfo, GRP, info_src[0] != 0);
 }
 
 static void move_logo(int x, int y)
@@ -328,7 +375,7 @@ static int osd_init(void)
 	n.rect.p0.x = info_x;
 	n.rect.p0.y = info_y;
 	n.rect.p1.x = info_x + INFO_W - 1;
-	n.rect.p1.y = info_y + INFO_ROW_H - 1;
+	n.rect.p1.y = info_y + INFO_H - 1;
 	n.fmt = PIX_FMT_BGRA;
 	n.data.picData.pData = NULL;
 	if (step("SetRgnAttr info", IMP_OSD_SetRgnAttr(rgnInfo, &n)) < 0) return -1;
@@ -416,7 +463,10 @@ int main(int argc, char **argv)
 
 	for (i = 0; i < frames; i++) {
 		if (poll_ctl()) break;
-		if ((i % FR_NUM) == 0) render_clock();   /* once per second */
+		if ((i % FR_NUM) == 0) {                 /* once per second */
+			render_clock();
+			poll_info_file();
+		}
 
 		rc = IMP_Encoder_PollingStream(CHN, 1000);
 		if (rc < 0) continue;

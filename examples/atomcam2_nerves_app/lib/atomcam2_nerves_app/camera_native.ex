@@ -30,16 +30,18 @@ defmodule Atomcam2NervesApp.CameraNative do
   # daemon supervisor starts it again.
   @camd_frames "2000000000"
   @camd_args [@camd_frames, @loopback_device, "gc2053", "0x37"]
-  @camd_ctl_path "/tmp/camd.ctl"
   @rtsp_args ["-Q", "2", "-P", "8554", @loopback_device]
 
   # The loopback writer has to set the H.264 format (S_FMT) before
   # v4l2rtspserver opens the device, so give camd a head start.
   @rtsp_delay_ms 8_000
   @poll_interval_ms 5_000
-  # The top-left OSD line on the video: IP, firmware version, available
-  # memory, CPU usage. Refreshed every few seconds ("realtime").
+  # Debug overlay on the video (top-left): an IEx-greeting-sized system
+  # summary, refreshed every few seconds. Off by default so operational
+  # video stays clean; toggle with osd_debug/1 or the conf file.
   @info_refresh_ms 3_000
+  @info_path "/tmp/camd.info"
+  @debug_conf_path "/data/atomcam2-native-camera/osd-debug.conf"
 
   # The vendor start sequence loads tx_isp first and audio right after;
   # loading audio.ko before tx_isp leaves the codec half-initialized
@@ -72,6 +74,17 @@ defmodule Atomcam2NervesApp.CameraNative do
     GenServer.call(server, :status)
   end
 
+  @doc """
+  Enable or disable the on-video debug overlay. Persists across reboots
+  (`#{@debug_conf_path}`); the overlay follows within a few seconds.
+  """
+  @spec osd_debug(boolean()) :: :ok | {:error, term()}
+  def osd_debug(enable) when is_boolean(enable) do
+    with :ok <- File.mkdir_p(Path.dirname(@debug_conf_path)) do
+      File.write(@debug_conf_path, "enabled=#{enable}\n")
+    end
+  end
+
   @impl GenServer
   def init(_options) do
     # The daemons are linked; trap exits so a crashing camd or RTSP server
@@ -100,8 +113,18 @@ defmodule Atomcam2NervesApp.CameraNative do
   def handle_info(:update_info, state) do
     {cpu_percent, cpu_sample} = cpu_usage(state.cpu_sample)
 
-    if alive?(state.camd_pid) do
-      write_ctl("info " <> system_info_line(cpu_percent))
+    cond do
+      not alive?(state.camd_pid) ->
+        :ok
+
+      debug_overlay_enabled?() ->
+        File.write(@info_path, debug_overlay_text(state, cpu_percent))
+
+      File.exists?(@info_path) ->
+        File.rm(@info_path)
+
+      true ->
+        :ok
     end
 
     Process.send_after(self(), :update_info, @info_refresh_ms)
@@ -277,41 +300,138 @@ defmodule Atomcam2NervesApp.CameraNative do
 
   defp alive?(pid), do: is_pid(pid) and Process.alive?(pid)
 
-  # camd consumes one command per write; the info line simply overwrites
-  # whatever was pending, which is fine for a periodic status refresh.
-  defp write_ctl(command) do
-    File.write(@camd_ctl_path, command <> "\n")
+  defp debug_overlay_enabled? do
+    case File.read(@debug_conf_path) do
+      {:ok, contents} -> String.trim(contents) == "enabled=true"
+      {:error, _reason} -> false
+    end
   end
 
-  # "192.168.1.77 v0.4.0 M:21M C:37%" — ASCII only, 40 columns max (the
-  # OSD font covers printable ASCII).
-  defp system_info_line(cpu_percent) do
-    [first_ipv4(), firmware_version(), mem_available(), cpu_text(cpu_percent)]
+  # An IEx-greeting-sized system summary, one field per line. camd renders
+  # up to 14 lines x 80 columns; content is not abbreviated.
+  defp debug_overlay_text(state, cpu_percent) do
+    lines = [
+      "atomcam2_nerves_app #{firmware_version() || "?"}  slot=#{active_slot()}",
+      "Host: #{hostname()}  Uptime: #{uptime_text()}",
+      "Clock: #{clock_text()}  NTP: #{ntp_text()}",
+      "Load: #{loadavg_text()}  CPU: #{(cpu_percent && "#{cpu_percent}%") || "?"}",
+      mem_line(),
+      beam_line(),
+      "eth0: #{ipv4_of("eth0") || "-"}  wlan0: #{ipv4_of("wlan0") || "-"}",
+      "Camera: #{state.phase}  RTSP: :8554/video0_unicast",
+      data_line()
+    ]
+
+    lines
     |> Enum.reject(&is_nil/1)
-    |> Enum.join(" ")
-    |> String.replace(~r/[^ -~]/, "?")
-    |> String.slice(0, 40)
+    |> Enum.join("\n")
+    |> String.replace(~r/[^ -~\n]/, "?")
+    |> Kernel.<>("\n")
   end
 
-  # Kernel 3.10 has no MemAvailable; approximate it as
-  # MemFree + Buffers + Cached (page cache is reclaimable).
-  defp mem_available do
-    with {:ok, contents} <- File.read("/proc/meminfo") do
-      kb =
-        ~r/^(?:MemFree|Buffers|Cached):\s+(\d+)/m
-        |> Regex.scan(contents, capture: :all_but_first)
-        |> List.flatten()
-        |> Enum.map(&String.to_integer/1)
-        |> Enum.sum()
+  defp active_slot do
+    case Nerves.Runtime.KV.get("nerves_fw_active") do
+      slot when is_binary(slot) -> String.upcase(slot)
+      _other -> "?"
+    end
+  rescue
+    _exception -> "?"
+  end
 
-      if kb > 0, do: "M:#{div(kb, 1024)}M"
+  defp hostname do
+    case :inet.gethostname() do
+      {:ok, name} -> List.to_string(name)
+      _other -> "?"
+    end
+  end
+
+  defp uptime_text do
+    with {:ok, contents} <- File.read("/proc/uptime"),
+         {seconds, _rest} <- Float.parse(contents) do
+      total = trunc(seconds)
+      days = div(total, 86_400)
+      hours = rem(div(total, 3_600), 24)
+      minutes = rem(div(total, 60), 60)
+      secs = rem(total, 60)
+
+      "#{days}d " <>
+        (:io_lib.format(~c"~2..0B:~2..0B:~2..0B", [hours, minutes, secs])
+         |> List.to_string())
+    else
+      _other -> "?"
+    end
+  end
+
+  defp clock_text do
+    DateTime.utc_now()
+    |> DateTime.add(9 * 3_600, :second)
+    |> Calendar.strftime("%Y-%m-%d %H:%M:%S JST")
+  end
+
+  defp ntp_text do
+    if NervesTime.synchronized?(), do: "sync", else: "unsync"
+  rescue
+    _exception -> "?"
+  end
+
+  defp loadavg_text do
+    with {:ok, contents} <- File.read("/proc/loadavg"),
+         [one, five, fifteen | _rest] <- String.split(contents) do
+      "#{one} #{five} #{fifteen}"
+    else
+      _other -> "?"
+    end
+  end
+
+  # Kernel 3.10 has no MemAvailable; approximate the reclaimable headroom
+  # as MemFree + Buffers + Cached.
+  defp mem_line do
+    with {:ok, contents} <- File.read("/proc/meminfo") do
+      find = fn key ->
+        case Regex.run(~r/^#{key}:\s+(\d+)/m, contents) do
+          [_line, kb] -> String.to_integer(kb)
+          _other -> 0
+        end
+      end
+
+      total = find.("MemTotal")
+      free = find.("MemFree")
+      available = free + find.("Buffers") + find.("Cached")
+
+      "Mem: total #{div(total, 1024)}M  free #{div(free, 1024)}M  " <>
+        "avail(approx) #{div(available, 1024)}M"
     else
       _other -> nil
     end
   end
 
-  defp cpu_text(nil), do: nil
-  defp cpu_text(percent), do: "C:#{percent}%"
+  defp beam_line do
+    memory = :erlang.memory()
+
+    "BEAM: total #{div(memory[:total], 1_048_576)}M  " <>
+      "processes #{div(memory[:processes], 1_048_576)}M  " <>
+      "binary #{div(memory[:binary], 1_048_576)}M  " <>
+      "procs #{:erlang.system_info(:process_count)}"
+  end
+
+  defp data_line do
+    case System.cmd("df", ["-k", "/data"], stderr_to_stdout: true) do
+      {output, 0} ->
+        case output |> String.split("\n") |> Enum.at(1, "") |> String.split() do
+          [_fs, size_kb, used_kb, _avail, percent | _rest] ->
+            "/data: #{div(String.to_integer(used_kb), 1024)}M used of " <>
+              "#{div(String.to_integer(size_kb), 1024)}M (#{percent})"
+
+          _other ->
+            "/data: not mounted"
+        end
+
+      _error ->
+        "/data: ?"
+    end
+  rescue
+    _exception -> "/data: ?"
+  end
 
   # Overall CPU usage from consecutive /proc/stat samples: busy delta over
   # total delta. The first call only primes the sample.
@@ -336,28 +456,16 @@ defmodule Atomcam2NervesApp.CameraNative do
     end
   end
 
-  defp first_ipv4 do
-    with {:ok, interfaces} <- :inet.getifaddrs() do
-      # Wired first, then Wi-Fi, so the address people can reach wins.
-      Enum.find_value(["eth0", "wlan0"], fn ifname ->
-        interfaces
-        |> List.keyfind(String.to_charlist(ifname), 0)
-        |> case do
-          {_name, options} ->
-            options
-            |> Keyword.get_values(:addr)
-            |> Enum.find(&match?({_, _, _, _}, &1))
-            |> case do
-              {a, b, c, d} -> "#{a}.#{b}.#{c}.#{d}"
-              _other -> nil
-            end
-
-          nil ->
-            nil
-        end
-      end)
+  defp ipv4_of(ifname) do
+    with {:ok, interfaces} <- :inet.getifaddrs(),
+         {_name, options} <- List.keyfind(interfaces, String.to_charlist(ifname), 0),
+         {a, b, c, d} <-
+           options
+           |> Keyword.get_values(:addr)
+           |> Enum.find(&match?({_, _, _, _}, &1)) do
+      "#{a}.#{b}.#{c}.#{d}"
     else
-      _error -> nil
+      _other -> nil
     end
   end
 
