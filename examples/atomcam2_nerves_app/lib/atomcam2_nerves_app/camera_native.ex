@@ -32,6 +32,13 @@ defmodule Atomcam2NervesApp.CameraNative do
   @camd_args [@camd_frames, @loopback_device, "gc2053", "0x37"]
   @rtsp_args ["-Q", "2", "-P", "8554", @loopback_device]
 
+  # camd runtime control: one command per line written to the control
+  # file; a snapshot request is a marker file camd polls, and the JPEG it
+  # writes lands at @snapshot_path.
+  @camd_ctl_path "/tmp/camd.ctl"
+  @snapshot_request_path "/tmp/camd.snap"
+  @snapshot_path "/tmp/camd.jpg"
+
   # The loopback writer has to set the H.264 format (S_FMT) before
   # v4l2rtspserver opens the device — otherwise the SDP is published
   # without sprop-parameter-sets and players cannot decode. camd creates
@@ -87,6 +94,45 @@ defmodule Atomcam2NervesApp.CameraNative do
     with :ok <- File.mkdir_p(Path.dirname(@debug_conf_path)) do
       File.write(@debug_conf_path, "enabled=#{enable}\n")
     end
+  end
+
+  @doc """
+  Capture a JPEG snapshot from the camera's JPEG encoder channel and
+  return its path once camd has written it. The image carries the same
+  OSD overlay as the video. Returns `{:error, :timeout}` if camd does
+  not produce it in time (e.g. camera not running).
+  """
+  @spec snapshot(timeout()) :: {:ok, Path.t()} | {:error, term()}
+  def snapshot(timeout \\ 3_000) do
+    _ = File.rm(@snapshot_path)
+
+    with :ok <- File.write(@snapshot_request_path, "") do
+      await_snapshot(System.monotonic_time(:millisecond) + timeout)
+    end
+  end
+
+  defp await_snapshot(deadline) do
+    cond do
+      File.exists?(@snapshot_path) ->
+        {:ok, @snapshot_path}
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, :timeout}
+
+      true ->
+        Process.sleep(100)
+        await_snapshot(deadline)
+    end
+  end
+
+  @doc """
+  Set night vision: `:on` forces night mode (mono, IR-cut out, IR LED
+  on), `:off` forces day, `:auto` switches by the ISP gain. camd applies
+  it within a second.
+  """
+  @spec night_vision(:on | :off | :auto) :: :ok | {:error, term()}
+  def night_vision(mode) when mode in [:on, :off, :auto] do
+    File.write(@camd_ctl_path, "night #{mode}\n")
   end
 
   @impl GenServer

@@ -13,9 +13,19 @@ iCamera_app を置き換えるネイティブカメラデーモン `atomcam2-cam
   第 1 引数はフレーム数上限。終了したら監督側が再起動する
 - 実行時制御: **`/tmp/camd.ctl`** に 1 コマンドずつ書く
   (`clock on|off` / `logo on|off` / `info <text>` / `info off` /
-  `bitrate <kbps>` / `qp <min> <max>` / `clockpos <x> <y>` /
-  `logopos <x> <y>` / `infopos <x> <y>` / `quit`)。
+  `snap` / `night on|off|auto` / `bitrate <kbps>` / `qp <min> <max>` /
+  `clockpos <x> <y>` / `logopos <x> <y>` / `infopos <x> <y>` / `quit`)。
   /data 非依存にするため `/data/camd.ctl` から移した
+- **JPEG スナップショット**: `/tmp/camd.snap` を touch すると 1 枚撮って
+  `/tmp/camd.jpg` に出力(`snap` コマンドでも可)。**T31 の JPEG
+  エンコーダチャネル**(H.264 と同一グループ、OSD 込み)を使う。
+  ハマり: JPEG チャネルは **チャネル番号 2・initialQP 正の値(-1 は
+  量子化テーブルでクラッシュ)・`IMP_Encoder_SetbufshareChn` で H.264 と
+  バッファ共有(別バッファ確保は rmem 不足でクラッシュ)** が必要
+- **ナイトビジョン** `night on|off|auto`: ISP RunningMode(DAY/NIGHT)+
+  IR-cut フィルタ(GPIO 53/52 の H ブリッジをパルス)+ IR LED(GPIO 26)。
+  auto は `IMP_ISP_Tuning_GetTotalGain` を毎秒監視し、8x で夜・4x で昼に
+  ヒステリシス切替
 - **OSD**: 時計(右下、既定 ON)/ ロゴ(左下、**既定 OFF**)/
   **システム情報行(左上、`info <text>` で表示)**。info は printable
   ASCII 最大 40 文字、8x16 コンソールフォント(`osd_font8x16.h`、

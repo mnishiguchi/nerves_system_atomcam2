@@ -2,6 +2,22 @@
 
 ## 未公開
 
+- Add on-device JPEG snapshots and a dashboard preview. camd gains a
+  JPEG encoder channel (same group as H.264, so the still carries the
+  OSD overlay) captured on demand via `/tmp/camd.snap`; no H.264 decode
+  and no ffmpeg needed — this is how the atomcam_tools web UI does it
+  too. `CameraNative.snapshot/1` returns the JPEG path, and the
+  dashboard shows it at `GET /snapshot.jpg` and inline on the page.
+  Pitfalls found on this libimp: the JPEG channel must be channel 2 with
+  a positive initial QP (−1 crashes in the quant-table setup) and must
+  share the H.264 channel's buffer via `IMP_Encoder_SetbufshareChn` (a
+  second full-res buffer exhausts rmem and crashes).
+- Add night vision control. `CameraNative.night_vision(:on | :off |
+  :auto)` and the dashboard buttons drive camd, which sets the ISP
+  running mode (day/night), pulses the IR-cut filter (GPIO 53/52), and
+  the IR LED (GPIO 26). Auto switches on the ISP total gain with
+  hysteresis (night above ~8x, day below ~4x).
+
 - Add dashboard operations (Phase 2): `POST /announce` plays the boot
   announcement and `POST /reboot` reboots the device, each behind a
   confirm dialog in the HTML. Reads stay anonymous; the POST routes
