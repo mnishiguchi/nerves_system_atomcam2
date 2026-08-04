@@ -1,16 +1,19 @@
 defmodule Atomcam2NervesApp.BootAnnounce do
   @moduledoc """
-  Play the boot announcement once at application startup.
+  Play the boot announcement once at application startup: three short
+  beeps followed by 「起動しました。」 (one PCM file), with the infrared
+  LED blinking five times on a one-second cycle in sync.
 
-  The audio work happens in `/usr/bin/atomcam2-boot-announce`: it waits
-  for the audio devices (CameraNative loads the modules in the vendor's
-  order) and says 「起動しました。」 through the speaker. While the voice
-  plays, the infrared LED blinks three times on a one-second cycle —
-  timed here because busybox sleep cannot do sub-second delays. This
-  only works because operation is native-only; a running `iCamera_app`
-  would hold the IMPAudio lock. The status LEDs are driven separately by
-  `Atomcam2NervesApp.StatusLed`. The task is fire-and-forget: failures
-  are logged and never affect the rest of the supervision tree.
+  Cold boots intermittently leave the audio driver broken
+  (`IMP_AO_Enable = -1`, no /dev/dsp) even with the correct module load
+  order, so playback retries every 30 seconds. Every attempt logs the
+  player's step output, and the final outcome is appended to
+  `/media/mmc/boot-announce-history.log` — the FAT boot partition, which
+  is writable seconds after power-on, so the record survives even when
+  power is cut before /data finishes its filesystem check — so the
+  failure pattern can be tracked across boots: if a retry eventually
+  succeeds the hardware just needed time, if all attempts fail the boot
+  is permanently wedged and the module-load timing is to blame.
   """
 
   use Task, restart: :temporary
@@ -18,10 +21,13 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   require Logger
 
   @command "/usr/bin/atomcam2-boot-announce"
+  @history_path "/media/mmc/boot-announce-history.log"
   @ir_led_gpio 26
-  @ir_blinks 3
+  @ir_blinks 5
+  @max_attempts 6
+  @retry_delay_ms 30_000
   # Wait for CameraNative's module loading to surface the audio devices so
-  # the IR blink starts together with the voice, not during the wait.
+  # the IR blink starts together with the sound, not during the wait.
   @audio_wait_ms 25_000
 
   @spec start_link(keyword()) :: {:ok, pid()}
@@ -30,22 +36,39 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   end
 
   defp announce do
-    wait_for_audio_devices(@audio_wait_ms)
+    attempt(1)
+  rescue
+    exception ->
+      Logger.warning("boot announcement error: #{Exception.message(exception)}")
+  end
+
+  defp attempt(number) when number > @max_attempts do
+    Logger.warning(
+      "boot announcement gave up after #{@max_attempts} attempts (audio wedged this boot)"
+    )
+
+    record_history("failed after #{@max_attempts} attempts")
+  end
+
+  defp attempt(number) do
+    if number == 1, do: wait_for_audio_devices(@audio_wait_ms)
 
     {:ok, _blink_pid} = Task.start(fn -> blink_ir_led(@ir_blinks) end)
 
     case System.cmd(@command, [], stderr_to_stdout: true) do
-      {_output, 0} ->
-        Logger.info("boot announcement played")
+      {output, 0} ->
+        Logger.info("boot announcement played (attempt #{number})")
+        if number > 1, do: Logger.info("announcement recovery detail: #{String.trim(output)}")
+        record_history("ok on attempt #{number}")
 
       {output, status} ->
         Logger.warning(
-          "boot announcement failed (#{status}): #{String.trim(output)}"
+          "boot announcement attempt #{number} failed (#{status}): #{String.trim(output)}"
         )
+
+        Process.sleep(@retry_delay_ms)
+        attempt(number + 1)
     end
-  rescue
-    exception ->
-      Logger.warning("boot announcement error: #{Exception.message(exception)}")
   end
 
   defp wait_for_audio_devices(remaining_ms) when remaining_ms <= 0, do: :timeout
@@ -56,6 +79,39 @@ defmodule Atomcam2NervesApp.BootAnnounce do
     else
       Process.sleep(200)
       wait_for_audio_devices(remaining_ms - 200)
+    end
+  end
+
+  # One line per boot, e.g. "2026-08-04 02:10:33Z up=41s ok on attempt 1".
+  # The FAT partition is mounted by pre-run, so the first write normally
+  # succeeds; the retry is belt and braces.
+  defp record_history(result) do
+    line =
+      "#{DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_string()} " <>
+        "up=#{uptime_seconds()}s #{result}\n"
+
+    append_when_writable(line, 30)
+  end
+
+  defp append_when_writable(_line, 0), do: :ok
+
+  defp append_when_writable(line, tries_left) do
+    case File.write(@history_path, line, [:append]) do
+      :ok ->
+        :ok
+
+      {:error, _reason} ->
+        Process.sleep(10_000)
+        append_when_writable(line, tries_left - 1)
+    end
+  end
+
+  defp uptime_seconds do
+    with {:ok, contents} <- File.read("/proc/uptime"),
+         {seconds, _rest} <- Float.parse(contents) do
+      trunc(seconds)
+    else
+      _other -> -1
     end
   end
 

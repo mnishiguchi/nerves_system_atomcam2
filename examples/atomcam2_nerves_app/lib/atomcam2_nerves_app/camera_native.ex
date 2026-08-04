@@ -33,8 +33,12 @@ defmodule Atomcam2NervesApp.CameraNative do
   @rtsp_args ["-Q", "2", "-P", "8554", @loopback_device]
 
   # The loopback writer has to set the H.264 format (S_FMT) before
-  # v4l2rtspserver opens the device, so give camd a head start.
-  @rtsp_delay_ms 8_000
+  # v4l2rtspserver opens the device — otherwise the SDP is published
+  # without sprop-parameter-sets and players cannot decode. camd creates
+  # this marker once the loopback is ready; the RTSP server waits for it
+  # (camd init takes a variable 10-20 s, so a fixed delay races).
+  @camd_ready_path "/tmp/camd.ready"
+  @rtsp_poll_ms 2_000
   @poll_interval_ms 5_000
   # Debug overlay on the video (top-left): an IEx-greeting-sized system
   # summary, refreshed every few seconds. Off by default so operational
@@ -133,6 +137,8 @@ defmodule Atomcam2NervesApp.CameraNative do
 
   def handle_info({:EXIT, pid, reason}, %{camd_pid: pid} = state) do
     Logger.warning("camd exited (#{inspect(reason)}); restarting")
+    # A crashed camd cannot remove its own readiness marker.
+    File.rm(@camd_ready_path)
     schedule_check()
     {:noreply, %{state | camd_pid: nil, phase: :waiting}}
   end
@@ -173,10 +179,12 @@ defmodule Atomcam2NervesApp.CameraNative do
   end
 
   defp start_stack(state) do
+    File.rm(@camd_ready_path)
+
     with :ok <- load_camera_modules(),
          :ok <- ensure_dsp_node(),
          {:ok, camd_pid} <- start_camd() do
-      Process.send_after(self(), :start_rtsp, @rtsp_delay_ms)
+      Process.send_after(self(), :start_rtsp, @rtsp_poll_ms)
       Logger.info("Native camera started (camd)")
       %{state | phase: :starting, camd_pid: camd_pid, last_error: nil}
     else
@@ -192,6 +200,16 @@ defmodule Atomcam2NervesApp.CameraNative do
   end
 
   defp start_rtsp(state) do
+    if File.exists?(@camd_ready_path) do
+      start_rtsp_server(state)
+    else
+      # camd is still initializing (or restarting); check again shortly.
+      Process.send_after(self(), :start_rtsp, @rtsp_poll_ms)
+      state
+    end
+  end
+
+  defp start_rtsp_server(state) do
     case MuonTrap.Daemon.start_link(
            "/usr/bin/v4l2rtspserver",
            @rtsp_args,

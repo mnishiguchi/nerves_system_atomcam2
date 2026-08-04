@@ -2,9 +2,29 @@
 
 ## Unreleased
 
+- Fix the intermittent silent boot: about half of all boots (soft or
+  cold alike) came up with the audio driver half-initialized — the codec
+  probe succeeded but /dev/dsp was never registered and IMP_AO_Enable
+  returned -1 for the whole boot, pointing at audio.ko's contiguous DMA
+  allocation failing under late-boot memory fragmentation. The ISP and
+  audio modules (tx_isp first, then audio and speaker_ctl) now load from
+  `atomcam2-pre-run`, before the BEAM starts, while memory is pristine.
+  Verified 5/5 soft reboots and 4/4 power-cut boots announcing on the
+  first attempt; disable with `ATOMCAM2_PRE_RUN_AUDIO_MODULES=0`.
+- Prepend three short beeps (2 kHz) to the boot announcement, retry
+  playback every 30 seconds up to six times, and append one line per
+  boot to `/media/mmc/boot-announce-history.log` (the FAT partition, so
+  the record survives power cuts during the /data check) for tracking.
+  The player's IMP_AO_* step output is kept in the log on failure.
+- Start `v4l2rtspserver` only after camd signals loopback readiness via
+  `/tmp/camd.ready`. The previous fixed delay raced camd's variable
+  init; when the server opened the device before the writer's S_FMT,
+  the SDP was published without sprop-parameter-sets and players could
+  not decode the stream.
 - Add an on-video debug overlay, off by default so operational video
   stays clean. camd renders a top-left panel of up to 14 lines x 80
-  columns (public-domain Linux console 8x16 font scaled 2x) from
+  columns (public-domain Linux console 8x16 font; the IPU rejects OSD
+  regions over ~1 MB, so the panel draws at 1x) from
   `/tmp/camd.info`, polled once a second; `CameraNative` writes an
   IEx-greeting-sized summary every three seconds when enabled — app
   version and slot, hostname, uptime, JST clock and NTP state, load
@@ -15,8 +35,8 @@
   `/data/atomcam2-native-camera/osd-debug.conf`). A single-line
   `info <text>` control command also exists. Cheaper than an HTTP
   dashboard and with no new network surface.
-- Blink the infrared LED (GPIO 26) three times on a one-second cycle
-  while the boot announcement voice plays.
+- Blink the infrared LED (GPIO 26) five times on a one-second cycle
+  while the boot announcement plays.
 - Hide the OSD logo by default in camd itself instead of sending
   `logo off` after start, so the logo never flashes at startup.
   `logo on` via `/tmp/camd.ctl` still shows it.
@@ -27,10 +47,10 @@
   networking, SSH, camera) because it ran synchronously as the
   nerves_runtime init module. Measured on a power-cut boot, the network
   now answers at 29 s and RTSP publishes at 48 s while the check
-  finishes in the background. Known issue: the spoken announcement
-  still fails on cold boots — the audio driver comes up incomplete
-  (no /dev/dsp, IMP_AO_Enable -1) even with the correct module order;
-  soft reboots announce reliably. The check runs in the background:
+  finishes in the background. (The intermittent silent-boot issue this
+  surfaced was later root-caused to audio.ko's DMA allocation and fixed
+  by loading the modules in pre-run; see above.) The check runs in the
+  background:
   SSH host keys and the nerves_time file move to the FAT boot partition
   (`/media/mmc`) so sshd comes up with a stable host key and the clock
   restores early, and the boot announcement, status LEDs, and camera

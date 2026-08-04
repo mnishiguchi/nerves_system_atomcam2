@@ -9,7 +9,9 @@
 #
 ################################################################################
 
-ATOMCAM2_BOOT_ANNOUNCE_VERSION = 1
+# Bump when the prebuilt payloads change: local-site packages are NOT
+# rebuilt on file changes alone.
+ATOMCAM2_BOOT_ANNOUNCE_VERSION = 2
 ATOMCAM2_BOOT_ANNOUNCE_SITE = $(NERVES_DEFCONFIG_DIR)/package/atomcam2-boot-announce
 ATOMCAM2_BOOT_ANNOUNCE_SITE_METHOD = local
 

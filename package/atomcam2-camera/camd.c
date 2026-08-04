@@ -55,6 +55,10 @@
 #define GRP 0
 #define ASM_MAX (1024 * 1024)
 #define CTL_PATH "/tmp/camd.ctl"
+/* Created once the loopback has its format (S_FMT + STREAMON): the RTSP
+ * server must not open the device before that, or its SDP is left
+ * without sprop-parameter-sets and players cannot decode. */
+#define READY_PATH "/tmp/camd.ready"
 
 #define OSD_CELL_W 16          /* per-glyph cell width factor (sample) */
 #define OSD_ROW_H  34
@@ -461,6 +465,10 @@ int main(int argc, char **argv)
 	int lfd = loopback_open(dev);
 	if (lfd < 0) return 1;
 	step("loopback ready", 0);
+	{
+		int rfd = open(READY_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		if (rfd >= 0) close(rfd);
+	}
 
 	if (step("Encoder_StartRecvPic", IMP_Encoder_StartRecvPic(CHN)) < 0) return 1;
 
@@ -498,6 +506,7 @@ int main(int argc, char **argv)
 		IMP_Encoder_ReleaseStream(CHN, &stream);
 	}
 
+	unlink(READY_PATH);
 	fprintf(stderr, "camd: exiting after %d frames, %ld bytes\n", got, total);
 	fflush(stderr);
 
