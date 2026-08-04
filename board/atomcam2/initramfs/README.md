@@ -1,41 +1,34 @@
 # AtomCam2 initramfs
 
-This directory contains the text portion of the first-pass AtomCam2 initramfs.
+このディレクトリには、最初の AtomCam2 initramfs の文章部分を置く。
 
-The important `atomcam_tools` boot pattern kept here is the handoff from the
-vendor-named kernel image to `rootfs_hack.squashfs` on the FAT partition. The
-initramfs must contain a tiny shell environment, mount the SD card, mount the
-Nerves squashfs, move the FAT mount to `/media/mmc`, and then `switch_root`.
+ここで維持する重要な `atomcam_tools` 起動方式は、製造元名のカーネル画像から、FAT パーティション上の `rootfs_hack.squashfs` へ引き渡す処理である。initramfs は小さなシェル環境を含み、SD カードをマウントし、Nerves SquashFS をマウントし、FAT マウントを `/media/mmc` へ移動してから `switch_root` する。
 
-Current scope:
+現在の範囲は次のとおりである。
 
-- mount the first SD-card partition as VFAT
-- locate `rootfs_hack.squashfs`
-- mount it as the new root filesystem
-- move `dev`, `proc`, `sys`, and the SD-card mount into the new root
-- `switch_root` into `/sbin/init`
+- SD カードの第一パーティションを VFAT としてマウントする。
+- `rootfs_hack.squashfs` を見つける。
+- 新しいルートファイルシステムとしてマウントする。
+- `dev`、`proc`、`sys`、SD カードのマウントを新しいルートへ移す。
+- `/sbin/init` へ `switch_root` する。
 
-Deferred from the first loop:
+最初の実装では次を後回しにする。
 
-- exFAT second-partition support
-- on-device update unpacking
-- rootfs size validation
-- vendor recovery paths
+- exFAT 第二パーティション対応
+- 機器上での更新展開
+- rootfs の大きさ検証
+- 製造元復旧経路
 
-## Kernel support required
+## 必要なカーネル機能
 
-The initramfs handoff depends on these kernel capabilities being built in, not as modules:
+initramfs の引き渡し処理では、次のカーネル機能をモジュールではなく組み込みで必要とする。
 
-- MMC block device support
-- VFAT and required NLS tables for the SD-card boot partition
-- SquashFS with zlib support for the gzip-compressed `rootfs_hack.squashfs`
-- loop block device support because the squashfs image is mounted from a file
-- devtmpfs, procfs, and sysfs
+- MMC ブロックデバイス対応
+- SD カード起動用パーティションに必要な VFAT と NLS 表
+- gzip 圧縮された `rootfs_hack.squashfs` 用の zlib 対応 SquashFS
+- SquashFS 画像をファイルからマウントするための loop ブロックデバイス
+- devtmpfs、procfs、sysfs
 
+## BusyBox 実行環境
 
-## BusyBox runtime
-
-The initramfs BusyBox is dynamically linked with the custom plain-MIPS32R2
-musl toolchain. The initramfs therefore carries the matching `libc.so` and
-`/lib/ld-musl-mipsel-sf.so.1` symlink. BusyBox applets are symlinks rather than
-duplicated binaries so the built-in initramfs stays small.
+initramfs の BusyBox は、独自の純 MIPS32R2 musl 道具鎖で動的連結する。そのため initramfs には、対応する `libc.so` と `/lib/ld-musl-mipsel-sf.so.1` の別名を含める。組み込み initramfs を小さく保つため、BusyBox の小道具は実行形式の複製ではなくシンボリックリンクにする。

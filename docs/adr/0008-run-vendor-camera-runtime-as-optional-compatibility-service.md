@@ -1,328 +1,310 @@
-# ADR 0008: Run the vendor camera runtime as an optional compatibility service
+# ADR 0008: ベンダーカメラ実行環境を任意の互換サービスとして動かす
 
-## Status
+## 状態
 
-Accepted on July 26, 2026; implementation completed on July 28, 2026
+2026 年 7 月 26 日に承認、2026 年 7 月 28 日に実装完了
 
-The read-only feasibility gate and Phase 2 are complete. On July 27, 2026, the
-operator confirmed the standard mobile application, HD live view, recorded
-playback, and a healthy storage screen. The corrected runtime reaches healthy
-vendor network, cloud, and storage state while Nerves retains its ownership
-boundaries.
+読み取り専用の実現可能性判定と Phase 2 は完了しています。2026 年 7 月 27 日、
+運用担当者が標準のモバイルアプリケーション、HD ライブ表示、録画再生、正常な
+記憶領域画面を確認しました。修正後の実行環境では、Nerves が管理境界を維持したまま、
+ベンダー側のネットワーク、クラウド、記憶領域が正常な状態へ到達します。
 
-Phase 3 local continuous recording is also complete: finalized one-minute MP4
-segments appear under the `/data` spool, while the active segment remains in
-private tmpfs.
+Phase 3 のローカル連続録画も完了しています。完成した 1 分単位の MP4 分割ファイルは
+`/data` 配下の一時保管領域に現れ、書き込み中の分割ファイルは専用 tmpfs 内に残ります。
 
-Phase 4 is complete. The protected kernel cannot mount NFS or CIFS, so the
-exporter uses the OTP SFTP client already present in the firmware and leaves
-the kernel contract unchanged. It passed physical upload, checksum,
-atomic-publication, idempotency, outage recovery, selective retention, and
-spool-safety trials against both disposable and confined production endpoints.
-The exporter reuses one supervised SFTP session across polls, applies a hard
-deadline to each OTP operation, and reconnects only after failure or
-configuration change. A final 15-minute production run completed 14 export
-cycles through one authenticated session with 900 of 900 ping replies, stable
-management SSH, validated firmware, and healthy vendor and watchdog state.
-Disabling export closed the target channel, SSH client, and server session.
+Phase 4 は完了しています。保護対象カーネルでは NFS または CIFS をマウントできないため、
+転送処理はファームウェアにすでに含まれる OTP SFTP client を使用し、カーネルの契約を
+変更しません。使い捨ての接続先と制限された本番接続先の両方に対し、実機での転送、
+検査値、原子的な公開、冪等性、停止からの復旧、選択的な保存期間管理、一時保管領域の
+安全性試験へ合格しました。転送処理は 1 つの監視対象 SFTP session を複数回の確認処理で
+再利用し、各 OTP 操作へ厳格な期限を設定し、失敗または設定変更後だけ再接続します。
+最終的な 15 分間の本番試験では、1 回の認証済み session で 14 回の転送を完了し、
+ping は 900 回中 900 回成功、管理用 SSH は安定、ファームウェアは検証済み、
+ベンダー側と watchdog は正常でした。転送を無効にすると、対象 channel、SSH client、
+server session が閉じました。
 
-Phase 5 is complete. The application has an opt-in boot worker that waits for
-validated firmware, Internet connectivity, synchronized time, and a successful
-compatibility precheck. Candidate and ordinary-reboot trials pass persistent
-opt-in, stale-state recovery, one automatic start attempt, healthy vendor
-processes, watchdog ownership, Wi-Fi/SSH stability, and post-reboot recording.
-Later degradation remains visible without stopping Nerves, rebooting, or
-attempting an automatic process restart.
+Phase 5 は完了しています。アプリケーションには、検証済みファームウェア、
+インターネット接続、同期済み時刻、互換性の事前検査成功を待つ、任意有効化の起動処理が
+あります。更新候補の起動試験と通常再起動試験では、永続的な有効化設定、古い状態からの
+復旧、1 回だけの自動起動試行、正常なベンダー処理、watchdog の管理主体、Wi-Fi/SSH の
+安定性、再起動後の録画へ合格しています。後から状態が悪化した場合も、Nerves の停止、
+再起動、自動的な処理再起動を行わずに状態を確認できます。
 
-The Phase 5 target evidence is recorded in
-[`../worklog/20260727-adr-0008-opt-in-boot-integration.md`](../worklog/20260727-adr-0008-opt-in-boot-integration.md).
+Phase 5 の実機上の根拠は、
+[`../worklog/20260727-adr-0008-opt-in-boot-integration.md`](../worklog/20260727-adr-0008-opt-in-boot-integration.md)
+に記録しています。
 
-## Context
+## 背景
 
-The v0.2.0 system provides the ordinary Nerves application workflow, persistent
-`/data`, A/B firmware updates, rollback, Wi-Fi, SSH, timekeeping, and a hardware
-watchdog. It deliberately does not run the Atom Cam 2 vendor camera
-application.
+v0.2.0 system は、通常の Nerves アプリケーション開発手順、永続的な `/data`、
+A/B ファームウェア更新、ロールバック、Wi-Fi、SSH、時刻管理、hardware watchdog を
+提供します。Atom Cam 2 のベンダーカメラアプリケーションは意図的に動かしません。
 
-The next product goal is narrower than adopting the complete `atomcam_tools`
-environment:
+次の製品目標は、`atomcam_tools` 環境全体の採用より限定的です。
 
-- preserve live viewing through the standard Atom mobile application;
-- produce continuous one-minute recordings locally;
-- export completed recordings to a NAS; and
-- retain NAS recordings for a configurable period, initially about 20 days.
+- 標準の Atom モバイルアプリケーションによるライブ表示を維持する
+- 1 分単位の連続録画をローカルに作成する
+- 完成した録画を NAS へ転送する
+- NAS 上の録画を設定可能な期間、当初は約 20 日間維持する
 
-The vendor camera application and its libraries use a uClibc MIPS userspace,
-while Nerves uses musl. The vendor application also expects fixed paths such as
-`/system`, `/configs`, `/tmp`, and `/media/mmc`, loads camera-specific kernel
-modules, uses System V IPC, and starts helper processes.
+ベンダーカメラアプリケーションとそのライブラリは uClibc の MIPS 利用者空間を
+使用しますが、Nerves は musl を使用します。ベンダーアプリケーションはさらに、
+`/system`、`/configs`、`/tmp`、`/media/mmc` などの固定パスを前提とし、
+カメラ固有のカーネル module を読み込み、System V IPC を使用して補助処理を起動します。
 
-The protected v0.2.0 control kernel already exposes the vendor root, application,
-and configuration filesystems under `/atom`. A physical-device feasibility
-probe found that:
+保護対象の v0.2.0 制御カーネルは、ベンダーの root、application、configuration の
+各ファイルシステムをすでに `/atom` 配下へ公開しています。実機での実現可能性調査では、
+次を確認しました。
 
-- `/atom`, `/atom/system`, and `/atom/configs` are mounted read-only;
-- the camera, ISP, audio, and VPU modules match the running kernel release;
-- the vendor executables and their uClibc libraries are present;
-- the camera's reserved 36 MiB memory region is present;
-- `/data` provides a large writable ext2 filesystem;
-- Nerves `heart` owns `/dev/watchdog0`;
-- the vendor `assis` process also opens and controls the hardware watchdog; and
-- the protected kernel does not currently expose NFS or CIFS client support.
+- `/atom`、`/atom/system`、`/atom/configs` は読み取り専用でマウントされている
+- camera、ISP、audio、VPU の module が稼働中カーネルの版と一致する
+- ベンダー実行ファイルと対応する uClibc ライブラリが存在する
+- カメラ用に予約された 36 MiB の記憶領域が存在する
+- `/data` に大容量の書き込み可能な ext2 ファイルシステムがある
+- Nerves の `heart` が `/dev/watchdog0` を管理している
+- ベンダーの `assis` 処理も hardware watchdog を開いて制御する
+- 保護対象カーネルは現在 NFS または CIFS client 対応を公開していない
 
-The stock vendor startup script is not a safe integration point. In addition to
-camera initialization, it starts its own Wi-Fi flow, writes hardware registers,
-loads unrelated drivers, starts factory and USB helpers, and starts the
-watchdog-owning `assis` process.
+標準のベンダー起動スクリプトは安全な統合点ではありません。カメラ初期化に加えて、
+独自の Wi-Fi 処理、hardware register への書き込み、無関係な driver の読み込み、
+工場試験および USB 補助処理の起動、watchdog を管理する `assis` 処理の起動を行います。
 
-The evidence is recorded in
-[`../worklog/20260726-adr-0008-vendor-camera-feasibility.md`](../worklog/20260726-adr-0008-vendor-camera-feasibility.md).
+根拠は、
+[`../worklog/20260726-adr-0008-vendor-camera-feasibility.md`](../worklog/20260726-adr-0008-vendor-camera-feasibility.md)
+に記録しています。
 
-A subsequent mobile failure and corrected physical trial established that:
+その後のモバイル接続失敗と、修正後の実機試験により次を確認しました。
 
-- `assis`, `hl_client`, and `iCamera_app` are all required for the vendor
-  mobile/cloud path;
-- a narrow preload shim lets `assis` run without opening the hardware watchdog;
-- the vendor network flow can consume Nerves connection state without changing
-  the interface, DHCP client, supplicant, or DNS ownership;
-- the vendor SD checks can use a regular-file placeholder and the `/data` spool
-  without seeing the real MicroSD block device;
-- vendor network, cloud, SD health, and SD mount initialization complete;
-- Nerves `heart` retains sole hardware-watchdog ownership;
-- the vendor-requested GC2053 sensor interface is `data_interface=1`;
-- the three primary vendor processes use about 23 MiB combined RSS in the
-  corrected trial;
-- Nerves Wi-Fi, SSH, firmware validation, and recovery remain healthy; and
-- stop cleans primary processes, vendor descendants, mounts, and IPC, while a
-  reboot remains required to remove the permanent camera modules.
+- ベンダーのモバイル・クラウド経路には `assis`、`hl_client`、`iCamera_app` の
+  すべてが必要である
+- 小さな preload shim により、hardware watchdog を開かずに `assis` を動かせる
+- ベンダーのネットワーク処理は、interface、DHCP client、supplicant、DNS の管理主体を
+  変更せず、Nerves の接続状態を利用できる
+- ベンダーの SD 検査は、実際の MicroSD block device を見せずに、通常ファイルの
+  代替物と `/data` の一時保管領域を利用できる
+- ベンダーのネットワーク、クラウド、SD 健全性、SD マウントの初期化が完了する
+- Nerves の `heart` が hardware watchdog の唯一の管理主体として残る
+- ベンダーが要求する GC2053 sensor interface は `data_interface=1`
+- 修正後の試験で、主要な 3 つのベンダー処理が使用する RSS の合計は約 23 MiB
+- Nerves の Wi-Fi、SSH、ファームウェア検証、復旧は正常なままである
+- 停止時に主要処理、ベンダーの子孫処理、マウント、IPC を消去するが、恒久的に読み込まれた
+  camera module の除去には再起動が必要である
 
-That evidence is recorded in
-[`../worklog/20260726-adr-0008-mobile-and-storage-compatibility.md`](../worklog/20260726-adr-0008-mobile-and-storage-compatibility.md).
+この根拠は、
+[`../worklog/20260726-adr-0008-mobile-and-storage-compatibility.md`](../worklog/20260726-adr-0008-mobile-and-storage-compatibility.md)
+に記録しています。
 
-## Decision
+## 決定
 
-Add an optional vendor camera compatibility service, disabled by default.
+既定では無効な、任意のベンダーカメラ互換サービスを追加します。
 
-Do not import the complete `atomcam_tools` root filesystem, service manager,
-network stack, web UI, update flow, Samba server, or NAS implementation.
+`atomcam_tools` の root filesystem、service manager、network stack、Web UI、
+更新処理、Samba server、NAS 実装を一括で取り込みません。
 
-### Ownership
+### 管理主体
 
-Nerves owns:
+Nerves は次を管理します。
 
-- boot, OTA update, rollback, recovery, and the hardware watchdog;
-- Wi-Fi, DHCP, DNS, mDNS, SSH, and time synchronization;
-- mounting and unmounting the compatibility environment;
-- starting, supervising, and stopping vendor processes;
-- writable configuration and recording state under `/data`; and
-- NAS transfer, retry, publication, spool limits, and retention.
+- 起動、OTA 更新、ロールバック、復旧、hardware watchdog
+- Wi-Fi、DHCP、DNS、mDNS、SSH、時刻同期
+- 互換環境のマウントとアンマウント
+- ベンダー処理の起動、監視、停止
+- `/data` 配下の書き込み可能な設定と録画状態
+- NAS 転送、再試行、公開、一時保管容量、保存期間
 
-The vendor runtime owns only:
+ベンダー実行環境が管理するのは次だけです。
 
-- the camera, ISP, audio, and encoder drivers required for capture;
-- vendor camera processes needed for the standard mobile application;
-- encoding and finalization of local recording segments; and
-- the vendor protocol behavior required by the mobile application.
+- 撮影に必要な camera、ISP、audio、encoder の driver
+- 標準モバイルアプリケーションに必要なベンダーカメラ処理
+- ローカル録画分割ファイルの符号化と完成処理
+- モバイルアプリケーションが必要とするベンダー protocol の動作
 
-The service must not hand boot, networking, watchdog, update, or reboot policy
-to vendor processes.
+起動、ネットワーク、watchdog、更新、再起動の方針をベンダー処理へ渡してはなりません。
 
-### Vendor filesystems and writable state
+### ベンダーファイルシステムと書き込み可能な状態
 
-Keep the protected vendor root and application filesystems read-only. Keep the
-original internal configuration partition mounted read-only as the source of
-factory identity, calibration, pairing, and application configuration.
+保護対象のベンダー root および application ファイルシステムを読み取り専用のまま
+維持します。元の内部 configuration パーティションも、工場識別情報、調整値、
+組み合わせ情報、アプリケーション設定の情報源として読み取り専用で維持します。
 
-Before the first manual start, copy the required configuration into:
+最初の手動起動前に、必要な configuration を次へコピーします。
 
 ```text
 /data/atomcam2-vendor-camera/configs
 ```
 
-Protect that directory as device-private state. Do not print configuration
-contents or copy them into build artifacts, reports, logs, or Git.
+このディレクトリを機器固有の非公開状態として保護します。内容を表示したり、
+ビルド成果物、報告、ログ、Git へコピーしたりしてはなりません。
 
-Overmount the private copy at `/atom/configs` only inside the compatibility
-layout. Stopping the service must reveal the original read-only mount again.
-The service must never remount an internal MTD partition read-write.
+互換環境内だけで、非公開の複製を `/atom/configs` に重ねてマウントします。
+サービス停止時は、元の読み取り専用マウントが再び見える必要があります。内部 MTD
+パーティションを読み書き可能で再マウントしてはなりません。
 
-Keep transient vendor state in a size-bounded private tmpfs. Store durable
-service configuration, the recording spool, and minimal runtime metadata below:
+一時的なベンダー状態は、容量を制限した専用 tmpfs に保存します。永続的なサービス設定、
+録画の一時保管領域、最小限の実行時メタデータは、次の配下に保存します。
 
 ```text
 /data/atomcam2-vendor-camera
 ```
 
-### Compatibility isolation
+### 互換性の分離
 
-Run the vendor uClibc processes in a `chroot` rooted at `/atom`. This is a
-compatibility boundary for paths and libraries, not a security sandbox.
+ベンダーの uClibc 処理を、`/atom` を root とする `chroot` 内で動かします。
+これはパスとライブラリに関する互換境界であり、安全隔離環境ではありません。
 
-Bind or mount only the resources the camera runtime needs. In particular:
+カメラ実行環境に必要な資源だけを bind または mount します。特に次を行います。
 
-- expose the camera device nodes created by the selected modules;
-- expose the v4l2loopback nodes when RTSP publishing is built, so the runtime
-  can write encoded frames out to a server that Nerves owns. These are virtual
-  devices with no capture hardware behind them, so the boundary is unchanged:
-  the vendor runtime still cannot reach a real capture device, the MicroSD, the
-  watchdog, or the network;
-- expose procfs and the required sysfs paths;
-- provide a private writable tmpfs for `/tmp`;
-- map the private configuration copy to `/configs`;
-- map the local recording spool to the vendor media path; and
-- replace or hide vendor commands that can restart Wi-Fi, modify flash, reboot
-  the device, or claim the real watchdog.
+- 選択した module が作成する camera device node を公開する
+- RTSP 公開機能を構築する場合は v4l2loopback node を公開し、実行環境から、Nerves が
+  管理する server へ符号化済み frame を書き出せるようにする。これらは背後に撮影機器を
+  持たない仮想 device であるため、境界は変化しない。ベンダー実行環境は引き続き、実際の
+  撮影 device、MicroSD、watchdog、ネットワークへ到達できない
+- procfs と必要な sysfs path を公開する
+- `/tmp` に専用の書き込み可能な tmpfs を提供する
+- 非公開の configuration 複製を `/configs` へ対応付ける
+- ローカル録画の一時保管領域をベンダーの media path へ対応付ける
+- Wi-Fi の再起動、flash の変更、機器の再起動、実際の watchdog の取得が可能な
+  ベンダーコマンドを置き換えるか隠す
 
-Do not run the stock `app_init.sh`. Define and test a minimal ordered module and
-process list instead. Do not load the vendor Wi-Fi, exFAT, USB Ethernet,
-factory-test, or firmware-update components.
+標準の `app_init.sh` を実行しません。代わりに、最小限の module と処理の順序を定義し、
+試験します。ベンダーの Wi-Fi、exFAT、USB Ethernet、工場試験、ファームウェア更新の
+各要素を読み込みません。
 
-The compatibility service must not disable Nerves `heart` or release its
-hardware-watchdog ownership. `assis` is required, so a small freestanding shim
-implements only its four watchdog calls and leaves the real watchdog absent
-from the private device view. The same shim acknowledges only the already
-established `/dev/mmcblk0p1` to `/media/mmc` compatibility mapping. Importing
-the broad `atomcam_tools` preload layer is not part of this decision.
+互換サービスは Nerves の `heart` を無効にしたり、hardware watchdog の管理権を
+解放したりしてはなりません。`assis` は必要であるため、小さな独立 shim が 4 つの
+watchdog 呼び出しだけを実装し、専用 device view から実際の watchdog を除外します。
+同じ shim は、すでに確立済みの `/dev/mmcblk0p1` から `/media/mmc` への互換対応だけを
+受け入れます。広範囲な `atomcam_tools` preload layer の取り込みは、この決定に
+含めません。
 
-The fake `/dev/mmcblk0p1` must remain a verified regular file on the bounded
-private device tmpfs, and the vendor process must not receive `CAP_MKNOD`. The
-real Nerves MicroSD block device must never be exposed to the vendor runtime.
-Vendor `tf_prepare`, `blkid`, Wi-Fi, DHCP, supplicant, DNS, and mount
-expectations may be emulated only where Nerves already owns the corresponding
-resource.
+偽の `/dev/mmcblk0p1` は、容量制限された専用 device tmpfs 上の通常ファイルであることを
+常に検証し、ベンダー処理へ `CAP_MKNOD` を与えてはなりません。Nerves が使用する実際の
+MicroSD block device をベンダー実行環境へ公開してはなりません。ベンダーの
+`tf_prepare`、`blkid`、Wi-Fi、DHCP、supplicant、DNS、mount に関する期待は、対応する
+資源を Nerves がすでに管理している場合に限り模倣できます。
 
-### Mobile-application compatibility
+### モバイルアプリケーションとの互換性
 
-Mobile live viewing is an acceptance criterion, not an assumption. The initial
-manual trial must verify that the existing device identity and pairing state are
-sufficient when Nerves continues to own Wi-Fi.
+モバイルのライブ表示を受け入れ条件とし、前提とはしません。最初の手動試験では、
+Nerves が Wi-Fi を管理し続ける状態で、既存の機器識別情報と組み合わせ状態だけで
+十分かを確認します。
 
-The service must not report success merely because `iCamera_app` stays alive.
-Success requires:
+`iCamera_app` が動き続けていることだけを理由に、サービスが成功を報告してはなりません。
+成功には次が必要です。
 
-- live viewing from the standard Atom application;
-- stable Nerves Wi-Fi and SSH;
-- continued Nerves hardware-watchdog ownership;
-- healthy Nerves firmware validation state; and
-- a clean, bounded stop sequence.
+- 標準の Atom アプリケーションからライブ表示できる
+- Nerves の Wi-Fi と SSH が安定している
+- Nerves が hardware watchdog の管理を維持している
+- Nerves のファームウェア検証状態が正常である
+- 停止処理が正常かつ範囲を限定して完了する
 
-The July 27 physical acceptance passed all five requirements. The already-paired
-application showed the camera online, opened HD live view, played recorded
-footage, and showed continuous local recording without the earlier SD-card
-error.
+7 月 27 日の実機受け入れでは、5 要件すべてに合格しました。すでに組み合わせ済みの
+アプリケーションで camera がオンラインと表示され、HD ライブ表示、録画再生、
+以前の SD card error がない連続ローカル録画を確認しました。
 
-### Recording boundary
+### 録画の境界
 
-The vendor runtime may create and finalize one-minute MP4 segments in a local
-spool below `/data`. Incomplete files and completed files awaiting export must
-have separate paths or an equally explicit state transition.
+ベンダー実行環境は、`/data` 配下のローカル一時保管領域へ 1 分単位の MP4 分割ファイルを
+作成して完成させることができます。未完成ファイルと転送待ちの完成ファイルには、
+別々のパスまたは同等に明確な状態遷移を使用します。
 
-Use the smallest confirmed completion hook. `atomcam_tools` intercepts the
-vendor move of a finished recording from `/tmp` into `/media/mmc/record`; that
-behavior is useful evidence, but its combined CIFS, webhook, scheduling, and
-path-rewrite scripts are not adopted.
+確認済みの最小の完成処理を使用します。`atomcam_tools` は、完成した録画を `/tmp` から
+`/media/mmc/record` へ移動するベンダー処理を差し替えます。この動作は有用な根拠ですが、
+CIFS、webhook、予定管理、path 書き換えを組み合わせたスクリプトは採用しません。
 
-The physical runtime confirms that no additional hook is needed. The vendor
-application writes the active minute under private `/tmp` and moves each
-finalized MP4 into `/media/mmc/record`, which is already the `/data` spool.
+実機の実行環境では、追加の処理が不要であることを確認しました。ベンダーアプリケーションは
+書き込み中の 1 分分を専用 `/tmp` に保存し、完成した各 MP4 を `/media/mmc/record` へ
+移動します。このパスはすでに `/data` の一時保管領域へ対応付けられています。
 
-The vendor runtime must not mount or write to the NAS directly.
+ベンダー実行環境が NAS を直接マウントまたは書き込みしてはなりません。
 
-### NAS export and retention
+### NAS 転送と保存期間
 
-A separate Nerves-supervised exporter owns NAS delivery. It must:
+Nerves が監視する独立した転送処理が NAS への配信を管理します。次を満たす必要があります。
 
-- consume only completed local segments;
-- retry after network and NAS outages;
-- copy to a temporary destination name and rename atomically after completion;
-- make repeated attempts idempotent;
-- keep the local spool near a configured target without deleting unexported
-  recordings; and
-- remove NAS recordings older than the configured retention period.
+- 完成したローカル分割ファイルだけを処理する
+- ネットワークまたは NAS の停止後に再試行する
+- 一時的な書き込み先名称へコピーし、完了後に原子的に名称を変更する
+- 再試行を冪等にする
+- 未転送の録画を削除せず、ローカル一時保管領域を設定した目標容量付近に維持する
+- 設定した保存期間より古い NAS 上の録画を削除する
 
-NFS was evaluated first. The protected v0.2.0 kernel registers neither NFS nor
-CIFS, and the shipped kernel is intentionally fixed and verified. Do not
-replace it or import vendor SMB code for NAS recording.
+最初に NFS を検討しました。保護対象の v0.2.0 カーネルは NFS と CIFS のいずれも
+登録しておらず、配布済みカーネルは意図的に固定し検証されています。NAS 録画のために
+カーネルを置き換えたり、ベンダー SMB コードを取り込んだりしてはなりません。
 
-Use OTP SFTP as the first supported transport. It is already present in the
-firmware, needs no additional daemon or filesystem client, and keeps NAS
-failures outside the camera runtime. Require key authentication and a
-pre-provisioned `known_hosts` entry; do not accept unknown host keys or store a
-NAS password in the configuration.
+最初に対応する転送方式として OTP SFTP を使用します。ファームウェアにすでに含まれ、
+追加 daemon またはファイルシステム client が不要で、NAS の障害をカメラ実行環境の外側に
+保てます。鍵認証と、事前に準備した `known_hosts` 項目を必須にします。不明な host key を
+受け入れたり、NAS password を設定へ保存したりしてはなりません。
 
-Reuse one supervised SFTP session while export remains enabled and its
-destination is unchanged. Close it when export is disabled, configuration
-becomes invalid, the destination changes, or an operation fails. Reconnect on
-the next poll instead of creating a new SSH session for every two-file batch.
+転送が有効で接続先が変化しない間は、1 つの監視対象 SFTP session を再利用します。
+転送が無効になった場合、設定が無効になった場合、接続先が変化した場合、操作が失敗した
+場合は閉じます。2 ファイル単位の処理ごとに新しい SSH session を作成せず、次回の
+確認時に再接続します。
 
-Mirror the vendor's `YYYYMMDD/HH/MM.mp4` path below one configured remote
-directory. Upload to `MM.mp4.uploading`, verify its size, and rename it to the
-final path. Treat an existing final path as the same upload only when its size
-matches. Otherwise report a conflict and leave the local segment for operator
-review.
+設定した 1 つの remote directory 配下へ、ベンダーの `YYYYMMDD/HH/MM.mp4` path を
+再現します。`MM.mp4.uploading` へ書き込み、容量を検証してから最終 path へ名称変更します。
+既存の最終 path は、容量が一致する場合だけ同じ転送として扱います。一致しない場合は
+競合を報告し、運用担当者が確認できるようローカル分割ファイルを残します。
 
-The configured remote directory may be `.` when the SFTP server starts the
-account inside a dedicated, confined recording directory. Reject `/`, parent
-traversal, and embedded current-directory components.
+SFTP server が専用の制限された録画ディレクトリ内から account を開始する場合、
+設定する remote directory に `.` を使用できます。`/`、親ディレクトリへの移動、
+途中に含まれる現在ディレクトリ要素は拒否します。
 
-Keep successfully exported files in the local spool for recent mobile-app
-playback. Record export completion outside the vendor-visible spool and remove
-the oldest successfully exported local segments only when the configured spool
-limit is exceeded. An outage may temporarily grow the spool past that target;
-never enforce it by deleting an unexported segment. Retention may delete only
-recognized recording names below date directories older than the configured
-period.
+標準モバイルアプリケーションで最近の録画を再生できるよう、転送成功後もファイルを
+ローカル一時保管領域へ残します。転送完了状態はベンダーから見える一時保管領域の外側へ
+記録し、設定した容量上限を超えた場合だけ、転送成功済みの最古のローカル分割ファイルを
+削除します。停止中は一時的に上限を超えても構いません。未転送の分割ファイルを削除して
+上限を強制してはなりません。保存期間処理が削除できるのは、設定期間より古い日付
+ディレクトリ配下の、認識可能な録画名だけです。
 
-Do not rely solely on OTP SSH/SFTP's internal operation timeouts. Bound each
-blocking operation independently. The process that owns the channel and
-connection must unwind through explicit cleanup after an error or timeout; do
-not impose a whole-transfer kill that can bypass cleanup. A timeout must write
-no completion marker and must never make a local segment eligible for removal.
-A final file published immediately before a timeout remains safe: the next
-attempt verifies its size and treats it as already present. A partial temporary
-file is removed and retried.
+OTP SSH/SFTP 内部の操作期限だけに依存しません。各 blocking operation を独立して
+制限します。channel と connection を管理する処理は、error または timeout 後に明示的な
+後始末を通って終了しなければなりません。後始末を回避する可能性がある、転送全体への
+強制終了を行いません。timeout 時は完了印を書き込まず、ローカル分割ファイルを削除対象に
+してはなりません。timeout の直前に最終ファイルを公開していても安全です。次回の試行で
+容量を検証し、すでに存在するものとして扱います。不完全な一時ファイルは削除して
+再試行します。
 
-### Boot, failure, and recovery behavior
+### 起動、障害、復旧の動作
 
-Automatic startup may be enabled only by
-`/data/atomcam2-vendor-camera/auto-start.conf` containing exactly
-`enabled=true`. Missing, disabled, or malformed configuration must never start
-the vendor runtime. Startup waits for:
+`/data/atomcam2-vendor-camera/auto-start.conf` に正確に `enabled=true` が含まれる場合だけ、
+自動起動を有効にできます。設定がない、無効、不正な場合は、ベンダー実行環境を起動しては
+なりません。起動時は次を待ちます。
 
-- `/data` mounted read-write;
-- Nerves networking healthy;
-- synchronized or otherwise trustworthy system time; and
-- a successful compatibility precheck.
+- `/data` が読み書き可能でマウントされている
+- Nerves のネットワークが正常である
+- システム時刻が同期済みまたは信頼可能である
+- 互換性の事前検査に成功する
 
-Firmware must also be validated before automatic camera startup so the
-compatibility runtime cannot interfere with rollback confirmation.
+互換実行環境がロールバック確認を妨げないよう、自動カメラ起動前にファームウェアも
+検証済みでなければなりません。
 
-The supervisor makes at most one automatic start attempt per boot and keeps
-visible failure state. It does not automatically stop or restart a degraded
-runtime because the selected modules are permanent in the protected kernel and
-a clean stop requires a deliberate reboot before another start. It must not
-create a reboot loop or restart Nerves networking. Manual stop still terminates
-only the vendor processes and removes only compatibility mounts and IPC.
+supervisor は起動ごとに自動起動を最大 1 回だけ試み、失敗状態を確認可能なまま残します。
+選択した module は保護対象カーネル内で恒久的に残り、正常停止後の再起動には意図的な
+機器再起動が必要なため、状態が悪化した実行環境を自動停止または自動再起動しません。
+再起動反復を作成したり、Nerves のネットワークを再起動したりしてはなりません。
+手動停止では引き続き、ベンダー処理だけを終了し、互換用マウントと IPC だけを除去します。
 
-A vendor runtime failure must leave Nerves, SSH, OTA, rollback, and recovery
-usable. A NAS outage must affect only export and local spool pressure, never
-camera boot or firmware health.
+ベンダー実行環境に障害が発生しても、Nerves、SSH、OTA、ロールバック、復旧を利用可能な
+まま維持する必要があります。NAS の停止が影響してよいのは転送とローカル一時保管領域の
+容量だけであり、カメラ起動またはファームウェア健全性に影響してはなりません。
 
-All persistent compatibility state remains in `/data` across OTA update and
-rollback. Firmware must ignore state versions it does not understand rather
-than migrating them irreversibly during boot.
+永続的な互換状態はすべて、OTA 更新およびロールバック後も `/data` に維持します。
+ファームウェアは理解できない版の状態を無視し、起動中に不可逆な移行を行ってはなりません。
 
-## Implementation status
+## 実装状況
 
-The read-only probe establishes a conditional go:
+読み取り専用の調査により、条件付きで実施可能と判断しました。
 
-- vendor files, modules, libraries, storage, reserved memory, and IPC support
-  are present;
-- a chroot compatibility layout is technically viable; and
-- protected flash can remain read-only by using a private configuration copy.
+- ベンダーファイル、module、ライブラリ、記憶領域、予約記憶領域、IPC 対応が存在する
+- chroot による互換構成を技術的に実現できる
+- 非公開の configuration 複製を使用することで、保護対象 flash を読み取り専用に
+  維持できる
 
-It does not authorize starting the stock runtime. The Phase 2 implementation
-instead provides an explicit minimal runtime:
+この結果は、標準実行環境の起動を許可するものではありません。Phase 2 の実装では、
+代わりに明示的で最小限の実行環境を提供します。
 
 ```sh
 atomcam2-vendor-camera precheck
@@ -332,128 +314,120 @@ atomcam2-vendor-camera status
 atomcam2-vendor-camera stop
 ```
 
-`prepare` creates the private configuration and spool state. `start` uses an
-explicit module list and launches `assis`, `hl_client`, and `iCamera_app` in
-stock order. The compatibility environment omits the real watchdog and real SD
-block device, hides or replaces commands that can alter networking, flash,
-mounts, modules, or power state, and removes the corresponding capability
-classes from the vendor processes.
+`prepare` は非公開 configuration と一時保管領域の状態を作成します。`start` は
+明示的な module 一覧を使用し、標準の順序で `assis`、`hl_client`、`iCamera_app` を
+起動します。互換環境では実際の watchdog と実際の SD block device を除外し、
+ネットワーク、flash、mount、module、電源状態を変更可能なコマンドを隠すか置き換え、
+対応する権限区分をベンダー処理から除去します。
 
-The corrected physical trial resolved the watchdog conflict, vendor networking
-crash, SD-card error, process cleanup, memory measurement, private
-configuration behavior, and reboot recovery. Vendor initialization reaches
-network-connected, cloud-initialized, SD-health-success, and SD-mount-success
-state. Mobile live view, playback, storage status, and one-minute local
-recording passed on July 27. The runtime remains disabled by default.
+修正後の実機試験で、watchdog の競合、ベンダーネットワーク処理の停止、SD card error、
+処理の後始末、記憶領域使用量の測定、非公開 configuration の動作、再起動後の復旧を
+解決しました。ベンダー初期化は、ネットワーク接続、クラウド初期化、SD 健全性成功、
+SD マウント成功の状態へ到達します。7 月 27 日に、モバイルのライブ表示、再生、
+記憶領域状態、1 分単位のローカル録画へ合格しました。実行環境は既定で無効のままです。
 
-The Phase 4 application implementation adds a supervised exporter that remains
-inert unless `/data/atomcam2-vendor-camera/nas-export.conf` explicitly enables
-it. The configuration is strict, contains no password, and points OTP SSH at a
-device-private key and `known_hosts` directory. Each run handles at most two
-new segments, then waits at least 60 seconds before retrying. One slot matches
-the recording cadence and one drains the backlog, while leaving CPU time for
-the camera and core Nerves services. Completion markers are specific to the
-configured endpoint and must be rotated when that endpoint changes. Host tests
-cover config validation, completed-file filtering, symlink rejection, bounded
-spool eviction of successfully exported files, preservation of unexported
-files, persistent completion markers, compact-date retention decisions, and a
-transport call that never returns.
-Firmware `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` additionally passed a physical
-device-to-SFTP trial. A 3,556,322-byte MP4 published without a leftover
-temporary file and matched SHA-256 at both ends; a repeated attempt was
-idempotent. Retention removed only recognized old recording names, and a
-refused connection preserved the local file before successful recovery. The
-production NAS later accepted 20 files while preserving every local source.
-After an inconclusive reachability loss, firmware
-`174c476f-9489-50c2-548c-4b62df277f9f` reduced the batch to two files per
-minute. A later clean production run reproduced the reachability loss without
-the earlier console-output confounder. Persisted diagnostics showed stable
-Erlang memory but an exporter process permanently waiting in `gen:do_call`;
-the workstation accepted 12 complete SFTP sessions and saw no thirteenth
-connection. Firmware `8b3465d1-b8b8-5914-aa36-6c3e8e1c0cdd` therefore adds
-an independent 30-second transport deadline. Follow-up review found that
-killing the whole transport owner could bypass its SFTP cleanup, so firmware
-`eafb221d-e366-5cd1-4f2c-42ee129d9c10` (`trigger-yard`) instead bounds each
-OTP operation and explicitly stops the channel and connection. A
-connection-refused trial returned promptly without a leaked client. Two
-enabled production cycles then published four files atomically while camera
-reachability remained stable; disabling the exporter left `:sshc_sup` empty,
-and the server had no remaining per-session `sshd` process. Final firmware
-`efc08024-9abe-5a5d-6d68-be70ce82b5bc` (`uncover-skill`) removed the
-whole-transfer deadline, validated in slot A, and repeated a two-file
-production cycle. It passed 87 of 87 pings, retained all unexported recordings,
-and again left no client or server SSH session. A subsequent ten-minute
-production run completed 11 SFTP sessions with 11 matching server-side closes
-and 614 of 614 ping replies. Target diagnostics remained bounded and showed no
-persistent SSH client.
+Phase 4 のアプリケーション実装では、
+`/data/atomcam2-vendor-camera/nas-export.conf` で明示的に有効にしない限り動作しない、
+監視対象の転送処理を追加します。設定は厳格で password を含まず、OTP SSH が機器固有の
+非公開鍵と `known_hosts` directory を使用するよう指定します。1 回の処理で新しい分割
+ファイルを最大 2 つ扱い、その後は再試行まで少なくとも 60 秒待ちます。1 つ分は録画の
+生成頻度に追従し、もう 1 つ分は滞留を減らしながら、カメラと Nerves の主要サービスへ
+CPU 時間を残します。完了印は設定した接続先に固有であり、接続先変更時に切り替える
+必要があります。host test では、設定検証、完成ファイルの選別、symbolic link の拒否、
+転送成功済みファイルに限定した容量制御、未転送ファイルの維持、永続的な完了印、
+短縮日付形式による保存期間判定、終了しない転送呼び出しを網羅します。
 
-That run also exposed two completion-marker entries damaged by the preceding
-forced power cycle. Remote files had been published, both local MP4s remained,
-and marker writes failed closed with `:eio`; no unmarked source became eligible
-for deletion. Offline `e2fsck` repaired the two entries and related metadata,
-and a second full check returned clean. ADR 0005 now checks ext2 offline before
-the first read-write mount because mount success alone does not detect this
-class of directory damage. Firmware
-`b9aa5131-115a-592a-3437-b4495ac8d513` (`pig-oil`) physically validates the
-clean-filesystem path: preen completed in approximately 132 milliseconds,
-`/data` remounted read-write, and the candidate validated with the vendor
-runtime, Nerves watchdog, and local recording healthy. A physical power
-interruption then exercised the unclean path: preen returned status 1 after
-repairing the filesystem, `/data` remounted without a kernel filesystem error,
-and the operator confirmed ping, SSH, and mobile live view on that first boot.
+Firmware `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` はさらに、実機から SFTP への試験へ
+合格しました。3,556,322 byte の MP4 が一時ファイルを残さず公開され、両端の SHA-256 が
+一致しました。再試行は冪等でした。保存期間処理は認識可能な古い録画名だけを削除し、
+接続拒否時には復旧成功までローカルファイルを維持しました。その後、本番 NAS は
+すべてのローカル元ファイルを維持しながら 20 ファイルを受信しました。
 
-Repeated target trials then isolated another single-core failure to
-connect/disconnect churn rather than spool scanning, heap growth, or leaked
-server sessions. Firmware `85383715-9eba-5d8d-a716-9f81a504d7cb`
-(`laptop-east`) keeps one supervised SFTP channel open while export is enabled.
-During the final 15-minute production run, the completion-marker count rose
-from 44 to 72 across 14 two-file cycles while OpenSSH recorded exactly one
-camera authentication. All 900 pings succeeded, management SSH remained
-responsive, Erlang memory and resource counts remained bounded, firmware was
-validated, Nerves heart remained active, and all three vendor processes and
-both isolation shims remained healthy. The 4 GiB spool target stayed above the
-approximately 3.34 GB backlog, so no local recording was deleted. Disabling
-export returned the SFTP state to disconnected, left `:sshc_sup` empty, and
-removed the server login session.
+到達性を失った原因を断定できなかったため、firmware
+`174c476f-9489-50c2-548c-4b62df277f9f` は 1 分ごとの処理量を 2 ファイルへ減らしました。
+その後、表示出力による影響がない本番試験でも同じ到達性喪失を再現しました。永続診断では
+Erlang の記憶領域は安定していましたが、転送処理が `gen:do_call` 内で恒久的に待機して
+いました。workstation は 12 個の完全な SFTP session を受け入れ、13 個目の接続は
+確認されませんでした。このため firmware `8b3465d1-b8b8-5914-aa36-6c3e8e1c0cdd` は、
+独立した 30 秒の転送期限を追加しました。
 
-The Phase 5 application implementation adds
-`Atomcam2NervesApp.VendorCamera`. Missing configuration leaves it dormant.
-When enabled, it polls the existing runtime status and readiness gates, invokes
-only `precheck` and `start`, verifies `result=running`, and consumes its single
-attempt for the boot. Host tests cover strict configuration, readiness waiting,
-successful startup, the one-attempt limit, and missing-config dormancy.
-Firmware `1d0ce1ad-c228-5764-2327-c7d7d2536017` passed both candidate and
-ordinary-reboot acceptance. The worker waited without consuming its attempt,
-started all three vendor processes after readiness, preserved Nerves watchdog
-ownership and network health, and finalized new recordings after both starts.
-Prior-boot transient runtime markers now normalize to `prepared`, while
-same-boot degradation remains visible. Exact final firmware
-`ba2a02ba-e525-5f86-cf35-40343d3f1ff5` repeated candidate validation,
-one-attempt startup, process/isolation health, clean updater state, stable
-networking, and recording finalization. The operator then confirmed that the
-standard Atom mobile application connected and worked normally.
+続く確認で、転送管理処理全体を終了すると SFTP の後始末を回避する可能性があることが
+判明しました。そのため firmware `eafb221d-e366-5cd1-4f2c-42ee129d9c10`
+(`trigger-yard`) は、各 OTP 操作を個別に制限し、channel と connection を明示的に
+停止します。接続拒否試験では client を残さず速やかに戻りました。その後の本番環境で
+有効にした 2 回の処理では、カメラの到達性を維持しながら 4 ファイルを原子的に公開しました。
+転送を無効にすると `:sshc_sup` は空になり、server 側にも session ごとの `sshd` 処理が
+残りませんでした。
 
-## Consequences
+最終 firmware `efc08024-9abe-5a5d-6d68-be70ce82b5bc` (`uncover-skill`) は転送全体の
+期限を削除し、slot A で検証後、2 ファイルの本番転送を再実行しました。ping は 87 回中
+87 回成功、未転送録画をすべて維持し、client または server の SSH session を残しませんでした。
+その後の 10 分間の本番試験では、server 側の終了回数と一致する 11 個の SFTP session を
+完了し、ping は 614 回中 614 回成功しました。対象機器の診断値は制限内で、永続的な
+SSH client は確認されませんでした。
 
-The design keeps the ordinary Nerves boot and operational model intact and
-reuses only the irreplaceable vendor camera components.
+この試験では、直前の強制電源断によって完了印の 2 項目が破損していることも判明しました。
+remote file は公開済みで、両方のローカル MP4 は残り、完了印の書き込みは `:eio` で
+安全側に失敗しました。印のない元ファイルが削除対象になることはありませんでした。
+オフラインの `e2fsck` で 2 項目と関連メタデータを修復し、2 回目の完全検査は正常でした。
+マウント成功だけではこの種類の directory damage を検出できないため、ADR 0005 は最初の
+読み書き可能なマウント前に ext2 をオフライン検査するようになりました。
 
-It adds a second userspace ABI and privileged camera drivers, so physical
-testing is mandatory and the compatibility service can never be treated like a
-normal portable Nerves application.
+Firmware `b9aa5131-115a-592a-3437-b4495ac8d513` (`pig-oil`) は、正常な
+ファイルシステム経路を実機検証しました。事前修復は約 132 millisecond で完了し、
+`/data` は読み書き可能で再マウントされ、更新候補はベンダー実行環境、Nerves watchdog、
+ローカル録画が正常な状態で検証済みになりました。続く実機停電で未正常終了経路を
+試験したところ、ファイルシステム修復後の事前修復は状態 1 を返し、`/data` はカーネルの
+ファイルシステムエラーなしで再マウントされました。運用担当者は、その最初の起動で
+ping、SSH、モバイルのライブ表示を確認しました。
 
-The stock vendor startup path cannot be reused. A small amount of Atom Cam
-2-specific module, process, watchdog, network-status, and storage-check
-compatibility code is unavoidable.
+実機試験の反復により、別の単一 core 障害が、一時保管領域の走査、heap 増加、server
+session の残留ではなく、接続と切断の反復に起因することを特定しました。Firmware
+`85383715-9eba-5d8d-a716-9f81a504d7cb` (`laptop-east`) は、転送有効中に 1 つの
+監視対象 SFTP channel を維持します。最終的な 15 分間の本番試験で、完了印の件数は
+14 回の 2 ファイル処理により 44 から 72 へ増加し、OpenSSH が記録したカメラ認証は
+正確に 1 回でした。900 回の ping はすべて成功し、管理用 SSH は応答を維持し、Erlang の
+記憶領域と資源数は制限内、ファームウェアは検証済み、Nerves heart は稼働、3 つの
+ベンダー処理と 2 つの分離 shim はすべて正常でした。4 GiB の一時保管目標は約 3.34 GB の
+滞留量より大きかったため、ローカル録画は削除されませんでした。転送を無効にすると
+SFTP 状態は切断へ戻り、`:sshc_sup` は空になり、server の login session は消えました。
 
-NAS support does not require an in-kernel mount. Reusing OTP SFTP preserves the
-protected-kernel verification contract and avoids adding a second network
-daemon or a broad vendor compatibility layer. The tradeoff is that the target
-NAS must provide a restricted SFTP account.
+Phase 5 のアプリケーション実装では `Atomcam2NervesApp.VendorCamera` を追加します。
+設定がない場合は動作しません。有効な場合は、既存の実行時状態と準備条件を定期確認し、
+`precheck` と `start` だけを呼び出し、`result=running` を検証して、その起動で許される
+1 回の試行を消費します。host test では、厳格な設定、準備完了待ち、起動成功、1 回の
+試行制限、設定なしでの休止を網羅します。
 
-## References
+Firmware `1d0ce1ad-c228-5764-2327-c7d7d2536017` は、更新候補起動と通常再起動の
+両方の受け入れに合格しました。処理は準備完了前に試行を消費せず待機し、準備完了後に
+3 つのベンダー処理をすべて起動し、Nerves の watchdog 管理とネットワーク健全性を維持し、
+両方の起動後に新しい録画を完成させました。以前の起動で残った一時的な実行時印は
+`prepared` へ正規化し、同一起動内の状態悪化は確認可能なまま残します。
+
+最終 firmware `ba2a02ba-e525-5f86-cf35-40343d3f1ff5` は、更新候補の検証、1 回だけの
+起動試行、処理および分離状態の健全性、正常な更新処理状態、安定したネットワーク、録画の
+完成を再確認しました。その後、運用担当者は標準 Atom モバイルアプリケーションが接続し、
+正常に動作することを確認しました。
+
+## 影響
+
+この設計は通常の Nerves の起動および運用模型を維持し、置き換えられないベンダーカメラ
+要素だけを再利用します。
+
+第 2 の利用者空間 ABI と特権的な camera driver を追加するため、実機試験は必須です。
+この互換サービスを、通常の移植可能な Nerves アプリケーションと同じように扱うことは
+できません。
+
+標準のベンダー起動経路は再利用できません。Atom Cam 2 固有の module、処理、watchdog、
+ネットワーク状態、記憶領域検査に関する少量の互換コードは避けられません。
+
+NAS 対応にカーネル内のマウントは不要です。OTP SFTP の再利用により、保護対象カーネルの
+検証契約を維持し、第 2 の network daemon または広範囲なベンダー互換層の追加を避けます。
+その代わり、接続先 NAS は制限された SFTP account を提供する必要があります。
+
+## 参考資料
 
 - [`mnakada/atomcam_tools`](https://github.com/mnakada/atomcam_tools)
-- [`atomcam_tools` runtime architecture](https://github.com/mnakada/atomcam_tools/blob/main/build.md)
-- [`atomcam_tools` camera startup](https://github.com/mnakada/atomcam_tools/blob/main/overlay_rootfs/atom_patch/system_bin/atom_init.sh)
-- [`atomcam_tools` completed-recording hook](https://github.com/mnakada/atomcam_tools/blob/main/overlay_rootfs/atom_patch/bin/mv)
+- [`atomcam_tools` の実行時構成](https://github.com/mnakada/atomcam_tools/blob/main/build.md)
+- [`atomcam_tools` のカメラ起動処理](https://github.com/mnakada/atomcam_tools/blob/main/overlay_rootfs/atom_patch/system_bin/atom_init.sh)
+- [`atomcam_tools` の録画完成処理](https://github.com/mnakada/atomcam_tools/blob/main/overlay_rootfs/atom_patch/bin/mv)

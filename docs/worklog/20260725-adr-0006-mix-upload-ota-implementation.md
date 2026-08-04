@@ -1,16 +1,14 @@
-# ADR 0006: `mix upload` OTA implementation
+# ADR 0006: `mix upload` OTA 実装
 
-## Date
+## 日付
 
 2026-07-25
 
-## Goal
+## 目的
 
-Connect the standard Nerves `mix upload` transport to the Atom Cam 2 A/B boot
-and rollback foundation without allowing callers to select or overwrite an
-application slot directly.
+呼び出し側がアプリケーション用スロットを直接選択・上書きできないまま、標準 Nerves の `mix upload` 通信経路を Atom Cam 2 の A/B 起動・巻き戻し基盤へ接続する。
 
-## Implemented path
+## 実装した経路
 
 ```text
 MIX_TARGET=atomcam2 mix upload nerves.local
@@ -58,13 +56,13 @@ v
 reboot through the normal SSH upload success callback
 ```
 
-The public device-side command is:
+対象側の公開命令は次である。
 
 ```text
 /usr/bin/atomcam2-firmware-update
 ```
 
-Supported operations:
+対応する操作は次のとおりである。
 
 ```text
 precheck
@@ -77,51 +75,34 @@ reject-pending
 factory-reset
 ```
 
+## SSH 部分処理の契約
 
-## SSH subsystem process contract
+SSH 通路を開くときに更新前検査を実行する。受信した断片は `/data/atomcam2-firmware-update` 配下の排他的ファイルへ書き、SSH EOF を受けた時点で閉じる。その後、導入処理を連結した別処理で実行し、導入中も通路が応答できるようにする。
 
-The subsystem runs the updater precheck when the SSH channel opens. It writes
-incoming chunks to an exclusive file under `/data/atomcam2-firmware-update`,
-closes that file when the client sends SSH EOF, and invokes the updater in a
-linked process so the channel remains responsive while installation runs.
+更新処理の出力と終了状態を SSH 利用者へ返す。終了状態が 0 の場合だけ成功として通路を閉じ、再起動を予定する。失敗または中断した送信では一時ファイルを削除し、再起動しない。
 
-Updater output and exit status are returned to the SSH client. Only a zero exit
-status closes the channel as successful and schedules a reboot. Failed or
-interrupted transfers remove the staged file and do not reboot the device.
+候補ファームウェア全体をいったん保存して閉じてから検証する必要があるため、独自の部分処理が必要となった。一般的な `ssh_subsystem_fwup` のポート連携は fwup 自身が入力終端を検出する前提であり、SSH EOF 時に外側処理の標準入力を閉じない。
 
-The custom subsystem is required because the firmware must be fully staged and
-closed before validation. The generic `ssh_subsystem_fwup` port integration
-expects fwup itself to detect the end of a firmware stream and does not close a
-wrapper process's stdin on SSH EOF.
+## 安全性
 
-## Safety properties
+- 呼び出し側はスロット A/B を選べない。
+- 導入前に、稼働中スロットと確定済みスロットの一致を要求する。
+- ほかの保留中スロットがある場合は新しい導入を拒否する。
+- 内部 fwup 作業へ渡すのは非稼働の生アプリケーション用パーティションだけである。
+- 情報を有効化する前に、書き込み先候補を抽出した rootfs の SHA-256 と照合する。
+- 候補は SquashFS として読み取り専用でマウントでき、実行可能な `/sbin/init`、アンマウント命令、起動管理処理が必要とするマウント先を持たなければならない。
+- 候補 UUID は、受信 fwup の `meta-uuid` から検証・保存する。
+- 候補検証成功後にだけ保留中情報を書く。
+- 再起動後に候補の健全性が確認されるまで、既存の確定済みスロットは変更しない。
+- 情報更新には二重化した世代方式を使い続ける。
+- 候補書き込み中断時も以前の確定済みファームウェアを選ぶ。
+- 情報書き込み中断時も以前の有効な記録を利用できる。
+- ファームウェア操作は一つの機器鍵で直列化する。
+- 保留中スロットが起動管理処理の構造検査に失敗した場合は、同じ起動中に原子的に不良と記録し、確定済みスロットを選ぶ。
 
-- The caller cannot select Slot A or Slot B.
-- The running and confirmed slot must agree before installation.
-- A new installation is rejected while another pending slot exists.
-- Only the inactive raw application partition is passed to the internal fwup
-  task.
-- The candidate partition is verified against the extracted rootfs SHA-256
-  before metadata activation.
-- The written candidate must mount as SquashFS and contain executable
-  `/sbin/init`, an unmount command, and all boot-manager handoff mountpoints.
-- The candidate UUID is validated and copied from the incoming fwup
-  `meta-uuid`.
-- Pending metadata is written only after the candidate verifies successfully.
-- The existing confirmed slot remains unchanged until the candidate is healthy
-  after reboot.
-- Metadata changes continue to use the redundant generation-based record
-  protocol.
-- Interrupted candidate writes leave the previous confirmed firmware selected.
-- Interrupted metadata writes leave the previous valid metadata record usable.
-- Firmware operations use one device lock to prevent concurrent mutation.
-- If a pending slot still fails the boot manager's structural checks, the boot
-  manager atomically marks it bad and boots the confirmed slot in the same
-  boot.
+## Nerves Runtime 連携
 
-## Nerves Runtime integration
-
-`Nerves.Runtime` continues to provide the application-facing API:
+アプリケーション向けには引き続き標準 API を提供する。
 
 ```elixir
 Nerves.Runtime.firmware_slots()
@@ -131,8 +112,7 @@ Nerves.Runtime.FwupOps.prevent_revert()
 Nerves.Runtime.FwupOps.factory_reset()
 ```
 
-A custom KV backend maps the physically running slot from the boot report and
-the current redundant metadata into standard Nerves keys:
+独自 KV 処理が、起動報告上の物理稼働スロットと現在の二重化情報を、標準 Nerves 鍵へ写す。
 
 ```text
 nerves_fw_active
@@ -142,110 +122,82 @@ b.nerves_fw_uuid
 b.nerves_fw_validated
 ```
 
-It reads live redundant metadata when KV reloads because the boot report is a
-boot-time snapshot and remains stale after successful confirmation.
-NervesMOTD uses its standard target runtime, so it displays the active slot,
-validation state, and fwup nickname/UUID without an Atom Cam-specific firmware
-override.
+起動報告は起動時点の写しであり、確定後は古くなるため、KV 再読み込み時に現在の二重化情報を読む。NervesMOTD は標準の対象側実装を使い、Atom Cam 2 専用の表示上書きなしで稼働スロット、検証状態、fwup の愛称と UUID を表示する。
 
-A restricted fwup-compatible adapter maps only the standard operations to the
-Atom Cam 2 command. It does not execute arbitrary commands from `ops.fw`.
-It emits fwup's length-prefixed `WN`, `OK`, and `ER` frames so
-`Nerves.Runtime.FwupOps` can decode status and errors normally.
+制限した fwup 互換処理は、標準操作だけを Atom Cam 2 命令へ対応付ける。`ops.fw` から任意命令を実行しない。fwup 形式の長さ付き `WN`、`OK`、`ER` 枠を出力し、`Nerves.Runtime.FwupOps` が通常どおり状態と誤りを解釈できるようにする。
 
-## Candidate confirmation
+## 候補の確定
 
-The example application starts a temporary firmware-health worker. On a pending
-boot it waits for the stabilization period and verifies:
+見本アプリケーションは一時的なファームウェア健全性処理を起動する。保留中の起動では安定待機時間を経て、次を検査する。
 
-- the required Nerves applications are started;
-- `/data` is writable;
-- the boot report identifies a valid running pending slot;
-- the runtime active slot, firmware UUID, product, platform, and architecture
-  match that slot's metadata;
-- firmware validation state is still `:unvalidated`;
-- `wlan0` is present and configured, without requiring Internet reachability;
-- Nerves heart is supervising the hardware watchdog.
+- 必須 Nerves アプリケーションが起動している。
+- `/data` が書き込み可能である。
+- 起動報告が有効な稼働中保留スロットを示す。
+- 実行時の稼働スロット、UUID、製品、基盤、命令体系が、そのスロット情報と一致する。
+- 検証状態がまだ `:unvalidated` である。
+- 外部到達性は要求せず、`wlan0` が存在して設定済みである。
+- Nerves heart が機器の監視タイマーを監督している。
 
-The worker then calls `Nerves.Runtime.validate_firmware/0`, which confirms the
-slot through the same metadata protocol.
+その後 `Nerves.Runtime.validate_firmware/0` を呼び、同じ二重化情報手順でスロットを確定する。
 
-If the local checks or confirmation fail, the device reboots so the pending
-attempt policy can retry and eventually fall back. A confirmed application also
-clears an exhausted pending state by marking that candidate bad.
+局所検査または確定に失敗した場合は再起動し、保留中試行方針による再試行と最終的な巻き戻しを可能にする。確定済みアプリケーションは、試行回数を使い切った保留候補を不良として消去する。
 
-## Validation completed in development
+## 開発時に完了した検証
 
-The shell test covers:
+シェル試験は次を対象とする。
 
-- update precheck;
-- inactive Slot B installation from confirmed Slot A;
-- active-slot preservation;
-- candidate checksum verification;
-- pending activation;
-- confirmation;
-- manual revert;
-- prevent-revert;
-- exhausted pending-candidate rejection;
-- incompatible platform rejection;
-- malformed or missing firmware UUID rejection;
-- candidate SquashFS mount and boot-structure validation before metadata
-  activation;
-- persistence of the incoming fwup UUID in candidate slot metadata;
-- atomic rejection of a structurally invalid pending slot in the metadata
-  codec;
-- direct application-health tests proving that local health failures and
-  metadata-confirmation failures reboot without confirming the candidate;
-- SSH upload subsystem integration on physical hardware;
-- framed Nerves Runtime operations status and errors.
+- 更新前検査
+- 確定済み A から非稼働 B への導入
+- 稼働スロットの保持
+- 候補検査値の確認
+- 保留中有効化
+- 確定
+- 手動巻き戻し
+- `prevent-revert`
+- 試行回数を使い切った候補の拒否
+- 非互換基盤の拒否
+- 不正または欠落 UUID の拒否
+- 情報有効化前の SquashFS マウントと起動構造検査
+- 受信 fwup UUID の候補情報への保存
+- 構造不正な保留スロットの原子的拒否
+- 局所健全性失敗や情報確定失敗時に、確定せず再起動すること
+- 実機 SSH 送信部分処理
+- Nerves Runtime 操作の枠付き状態・誤り
 
-## Physical validation completed
+## 完了した実機検証
 
-Validation on an Atom Cam 2 on 2026-07-25 covered:
+2026-07-25 の Atom Cam 2 実機では次を確認した。
 
-- target-side fwup and unzip availability;
-- complete standard `mix upload nerves.local` cycles from confirmed Slot B to
-  inactive Slot A and from confirmed Slot A to inactive Slot B;
-- full candidate SHA-256 verification before metadata activation;
-- upload success propagation and automatic reboot;
-- health-based candidate confirmation;
-- direct `Nerves.Runtime.FwupOps.status/0` and
-  `Nerves.Runtime.firmware_slots/0` results for both slots;
-- framed adapter errors through `Nerves.Runtime.FwupOps`;
-- `Nerves.Runtime.revert/0` in both slot directions, including reboot and
-  health-based confirmation.
+- 対象側 fwup と unzip の利用可能性
+- 確定済み B から非稼働 A、および確定済み A から非稼働 B への完全な `mix upload nerves.local`
+- 情報有効化前の候補 SHA-256 完全検証
+- 送信成功の伝播と自動再起動
+- 健全性に基づく候補確定
+- 両スロットでの `Nerves.Runtime.FwupOps.status/0` と `Nerves.Runtime.firmware_slots/0`
+- `Nerves.Runtime.FwupOps` を通じた枠付き誤り
+- 両方向の `Nerves.Runtime.revert/0`、再起動、健全性に基づく確定
 
-UUID and MOTD validation on the same camera additionally covered:
+同じ機器で UUID と MOTD について次も確認した。
 
-- `:unvalidated` and `Not validated (A)` while an uploaded slot was pending;
-- automatic transition to `:validated` and `Valid (A)` without another reboot;
-- active UUID and MOTD identity matching the uploaded fwup `meta-uuid`;
-- a manual revert to Slot B with Slot B's UUID and a revert back to Slot A.
+- 送信したスロットが保留中の間は `:unvalidated` と `Not validated (A)`
+- 追加再起動なしで `:validated` と `Valid (A)` へ自動移行
+- 稼働 UUID と MOTD が受信 fwup の `meta-uuid` と一致
+- B への手動巻き戻しと、A への再巻き戻し
 
-Final implementation validation additionally covered:
+最終実装ではさらに次を確認した。
 
-- installation of firmware version `0.1.1`, UUID `dynamic-trip`
-  (`4fe22452-c5cd-507f-3474-2dffd129bd11`) through `mix upload`;
-- automatic confirmation only after firmware metadata, `wlan0`, `/data`, and
-  Nerves heart health checks passed;
-- `nerves_heart` 2.5.0 supervising the `jz Watchdog` with a 5-second hardware
-  timeout;
-- a blocked heart callback causing a full kernel reboot, with boot ID changing
-  from `60c6bcf3-3360-4439-affe-22afc68dd7ca` to
-  `51c56f45-ac72-4430-892e-9f0b1e53ff6c`;
-- preservation of the confirmed Slot B and firmware UUID after watchdog
-  recovery;
-- a standard `Nerves.Runtime.revert/0` round trip from Slot B to Slot A and back
-  to Slot B;
-- interactive NervesMOTD output showing `dynamic-trip`, its UUID, `Valid (B)`,
-  and `atomcam2 mipsel`.
+- 版 `0.1.1`、愛称 `dynamic-trip`、UUID `4fe22452-c5cd-507f-3474-2dffd129bd11` の `mix upload`
+- ファームウェア情報、`wlan0`、`/data`、Nerves heart の検査後だけの自動確定
+- `nerves_heart` 2.5.0 が 5 秒設定の `jz Watchdog` を監督
+- heart 呼び戻しを停止させた際の完全なカーネル再起動
+- 起動 ID が `60c6bcf3-3360-4439-affe-22afc68dd7ca` から `51c56f45-ac72-4430-892e-9f0b1e53ff6c` へ変化
+- 監視タイマー復旧後も確定済み B と UUID を保持
+- B から A、再び B への標準 `Nerves.Runtime.revert/0`
+- NervesMOTD が `dynamic-trip`、UUID、`Valid (B)`、`atomcam2 mipsel` を表示
 
-The JZ watchdog driver reports `wdt_last_boot: :power_on` after watchdog reset,
-so the changed kernel boot ID and reset uptime are the physical reset evidence.
+JZ 監視タイマーは再起動後も `wdt_last_boot: :power_on` を報告するため、変化したカーネル起動 ID と稼働時間を物理再起動の証拠とした。
 
-The final tested firmware was Slot B version `0.1.1`, UUID `dynamic-trip`
-(`4fe22452-c5cd-507f-3474-2dffd129bd11`).
-The final metadata state was:
+最終検証状態はスロット B、版 `0.1.1`、UUID `dynamic-trip` である。
 
 ```text
 generation=00000000000000000046
@@ -260,17 +212,11 @@ slot_b_firmware_id=4fe22452-c5cd-507f-3474-2dffd129bd11
 slot_b_sha256=102697efa2a490ad4596daf5be42b4a1bbec67748e67bb5166413e5badf2a325
 ```
 
-## Physical validation still required
+## 製品対応前に残る実機検証
 
-Before publishing this as a production-supported OTA path, validate on a real
-Atom Cam 2:
-
-- `Nerves.Runtime.FwupOps.prevent_revert/0`;
-- a host-side complete install of the final boot manager followed by physical
-  malformed-pending-slot same-boot fallback validation;
-- power interruption during transfer, slot writing, verification, metadata
-  commit, pending boot, and confirmation;
-- recovery from an application that repeatedly crashes;
-- factory reset with both slots present and the complete `/data`, provisioning,
-  and protected-kernel preservation matrix;
-- ADR 0007 firmware-signature enforcement.
+- `Nerves.Runtime.FwupOps.prevent_revert/0`
+- 最終起動管理画像をホスト側 `complete` で導入した後の、構造不正な保留スロットに対する同一起動内巻き戻し
+- 送信、スロット書き込み、検証、情報確定、保留起動、確定中の電源断
+- 繰り返し異常終了するアプリケーションからの復旧
+- 両スロット存在時の工場出荷状態への初期化、および `/data`、機器設定、保護対象カーネルの保持一覧
+- ADR 0007 のファームウェア署名強制

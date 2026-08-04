@@ -1,6 +1,6 @@
-# Changelog
+# 変更履歴
 
-## Unreleased
+## 未公開
 
 - Add dashboard operations (Phase 2): `POST /announce` plays the boot
   announcement and `POST /reboot` reboots the device, each behind a
@@ -64,206 +64,84 @@
   `logo off` after start, so the logo never flashes at startup.
   `logo on` via `/tmp/camd.ctl` still shows it.
 
-- Keep the /data filesystem check off the boot critical path. After an
-  unclean power-off the full e2fsck of the ext2 data partition takes
-  minutes and used to block everything (announcement, LEDs,
-  networking, SSH, camera) because it ran synchronously as the
-  nerves_runtime init module. Measured on a power-cut boot, the network
-  now answers at 29 s and RTSP publishes at 48 s while the check
-  finishes in the background. (The intermittent silent-boot issue this
-  surfaced was later root-caused to audio.ko's DMA allocation and fixed
-  by loading the modules in pre-run; see above.) The check runs in the
-  background:
-  SSH host keys and the nerves_time file move to the FAT boot partition
-  (`/media/mmc`) so sshd comes up with a stable host key and the clock
-  restores early, and the boot announcement, status LEDs, and camera
-  never touch /data at startup. A clean shutdown still passes the
-  `e2fsck -p` preen in about two seconds.
-- Ship the native camera daemon in the rootfs as `atomcam2-camd`
-  (package `atomcam2-camera`), replacing the `/data/camd` prebuilt. Its
-  runtime control file moves from `/data/camd.ctl` to `/tmp/camd.ctl` so
-  the camera is fully /data-independent and starts while the filesystem
-  check is still running.
+- `/data` のファイルシステム検査を起動の重要経路から外す。異常電源断後、ext2 データ用パーティションの完全 `e2fsck` には数分かかり、以前は `nerves_runtime` の初期化処理として同期実行されるため、案内音、表示灯、ネットワーク、SSH、カメラのすべてを妨げていた。電源断後の測定では、現在は 29 秒でネットワークが応答し、48 秒で RTSP が公開される一方、検査は裏で継続する。既知の問題として、冷間起動では音声駆動処理が不完全なため、正しいモジュール順でも `/dev/dsp` がなく `IMP_AO_Enable -1` となり、音声案内が失敗する。ソフト再起動では安定して案内できる。検査を裏で動かせるよう、SSH ホスト鍵と `nerves_time` ファイルを FAT 起動用パーティション `/media/mmc` へ移し、sshd が安定したホスト鍵で早く起動し、時刻も早期に復元できるようにした。起動案内、状態表示灯、カメラは開始時に `/data` へ触れない。正常終了後の `e2fsck -p` 事前検査は約二秒で完了する。
+- 生のカメラ常駐処理を `atomcam2-camd` としてルートファイルシステムへ含める。`atomcam2-camera` 小包が、以前の `/data/camd` 構築済みファイルを置き換える。実行時制御ファイルは `/data/camd.ctl` から `/tmp/camd.ctl` へ移し、カメラを `/data` から完全に独立させ、ファイルシステム検査中でも開始できるようにした。
 
-- Signal state on the status LEDs. While booting, the yellow LED
-  double-blinks once a second (100 ms on / 200 ms off / 100 ms on /
-  600 ms off) with the blue LED dark; once RTSP is publishing, the
-  yellow LED goes dark and the blue LED stays lit, dipping dark twice
-  every five seconds (100 ms off / 200 ms on / 100 ms off / 4600 ms on).
-  Both LEDs are wired active-low; sysfs `active_low` normalizes the
-  polarity, and `atomcam2-pre-run` turns both LEDs off seconds after
-  power-on. Timing runs in the new `StatusLed` GenServer because busybox
-  sleep cannot do sub-second delays.
-- Hide the OSD logo at startup: `CameraNative` sends `logo off` to
-  `/data/camd.ctl` every time it starts camd (camd shows the logo by
-  default; the clock overlay stays).
+- 状態表示灯で機器状態を示す。起動中は青を消灯し、黄を一秒ごとに二回点滅させる（100 ms 点灯、200 ms 消灯、100 ms 点灯、600 ms 消灯）。RTSP 公開後は黄を消灯し、青を点灯状態にして五秒ごとに二回だけ暗くする（100 ms 消灯、200 ms 点灯、100 ms 消灯、4600 ms 点灯）。両表示灯は負論理配線であり、sysfs の `active_low` が極性を揃える。`atomcam2-pre-run` は電源投入数秒後に両方を消灯する。BusyBox の `sleep` は一秒未満を扱えないため、新しい `StatusLed` GenServer が時間制御を担う。
+- 起動時に OSD の印を隠す。`CameraNative` は camd 起動ごとに `/data/camd.ctl` へ `logo off` を送り、既定で表示される印だけを消す。時計表示は残る。
 
-- Start the native camera stack automatically at boot. The new
-  `CameraNative` GenServer loads the camera kernel modules, then runs
-  `camd` (libimp capture + H.264 encode into v4l2loopback) and
-  `v4l2rtspserver` under MuonTrap supervision with restart on exit. The
-  stream is published at `rtsp://<ip>:8554/video0_unicast`. `camd` still
-  lives on `/data` until it is packaged into the system; startup waits
-  for it. Opt out with `enabled=false` in
-  `/data/atomcam2-native-camera/auto-start.conf` (a missing file means
-  enabled — native is the only camera mode in this deployment).
+- 生のカメラ群を起動時に自動開始する。新しい `CameraNative` GenServer はカメラ用カーネルモジュールを読み込み、`camd`（libimp 取り込みと H.264 符号化を v4l2loopback へ出力）と `v4l2rtspserver` を MuonTrap 監督下で動かし、終了時に再開する。映像は `rtsp://<ip>:8554/video0_unicast` で公開する。システム小包化まで `camd` は `/data` にあり、開始時に存在を待つ。`/data/atomcam2-native-camera/auto-start.conf` に `enabled=false` を書けば無効化できる。ファイル欠落は有効を意味する。この配備では生方式が唯一のカメラ方式である。
 
-- Announce readiness at boot. When the application starts, the camera says
-  「起動しました。」 through the speaker and blinks the blue status LED
-  three times, leaving it lit. This assumes native-only operation (no
-  `iCamera_app`, which would hold the IMPAudio lock): the
-  `atomcam2-boot-announce` script loads the audio kernel modules itself
-  when nothing loaded them yet. Playback uses a new `atomcam2-aoplay`
-  tool (libimp `IMP_AO`, prebuilt with the vendor uClibc toolchain;
-  source under `package/atomcam2-boot-announce/`). Disable with
-  `ATOMCAM2_BOOT_ANNOUNCE=disabled` or swap the PCM via
-  `ATOMCAM2_BOOT_ANNOUNCE_SOUND` in `atomcam2.env` on the MicroSD.
+- 起動準備完了を音声と表示灯で知らせる。アプリケーション起動時にスピーカーから「起動しました。」と案内し、青表示灯を三回点滅させた後、点灯状態にする。これは生方式だけを前提とし、IMP 音声鍵を保持する `iCamera_app` は動かさない。`atomcam2-boot-announce` は、まだ読み込まれていない場合に音声用カーネルモジュールを自ら読み込む。再生には新しい `atomcam2-aoplay` を使う。これは libimp `IMP_AO` を利用し、製造元 uClibc 道具鎖で構築済みで、原本は `package/atomcam2-boot-announce/` に置く。MicroSD 上の `atomcam2.env` で `ATOMCAM2_BOOT_ANNOUNCE=disabled` とすれば無効化でき、`ATOMCAM2_BOOT_ANNOUNCE_SOUND` で PCM を差し替えられる。
 
 ## 0.4.0 - 2026-08-03
 
-- Support multiple Wi-Fi locations. `nerves-provisioning.conf` now accepts
-  numbered SSID/passphrase pairs (`NERVES_WIFI_SSID_2`, ...) in addition to
-  the unnumbered pair, and VintageNet connects to whichever configured
-  network is in range. The same MicroSD works across locations without a
-  rebuild — edit the FAT partition to add one. An empty passphrase configures
-  an open network.
+- 複数の Wi-Fi 場所に対応する。`nerves-provisioning.conf` は番号なしの組に加え、`NERVES_WIFI_SSID_2` など番号付き SSID・合言葉組を受け付け、VintageNet は範囲内の設定済みネットワークへ接続する。同じ MicroSD を再構築せず複数場所で使え、FAT パーティションを編集して追加できる。空の合言葉は公開ネットワークを表す。
 
-- Support wired-only deployments in the vendor camera integration. Readiness,
-  the precheck network check, and the IPv4 address the runtime reports now
-  accept eth0, not just wlan0, so a camera reached over USB Ethernet with no
-  Wi-Fi association still starts. Time sync likewise triggers on the overall
-  connection rather than wlan0 specifically.
+- 製造元カメラ連携で有線だけの配備に対応する。準備判定、事前検査のネットワーク確認、実行環境が報告する IPv4 は `wlan0` だけでなく `eth0` も受け付ける。Wi-Fi 接続がなく USB 有線 LAN だけで到達するカメラも開始できる。時刻同期も `wlan0` 固有ではなく、全体の接続状態を契機にする。
 
-- Add optional RTSP publishing of the vendor camera's already-encoded video.
-  A preloaded frame hook mirrors the encoder output into a v4l2loopback
-  device, which `v4l2rtspserver` publishes without re-encoding. Enable it by
-  writing `enabled=true` to `/data/atomcam2-rtsp/auto-start.conf`; the
-  server follows the vendor camera runtime and stops when it does.
-- Load `v4l2loopback` from `atomcam2-pre-run` so the devices exist before the
-  vendor runtime starts. `ATOMCAM2_VIDEO_LOOPBACK_DEVICES` and
-  `ATOMCAM2_VIDEO_LOOPBACK_VIDEO_NR` select how many nodes are created and
-  which numbers they take.
-- Patch v4l2loopback to honour a caller-supplied `sizeimage` for compressed
-  formats. It previously derived the buffer from raw geometry, reserving
-  7.91 MiB per buffer at 1080p for a stream whose frames are a fraction of
-  that, and `v4l2rtspserver` propagates that size into live555's
-  `OutPacketBuffer::maxSize`. On an 87 MiB board this exhausted memory as
-  soon as a server attached. Verified on hardware: 1920x1080 H.264 at
-  ~18 fps and ~950 kbps alongside the vendor runtime.
-- Report loopback device availability from `atomcam2-vendor-camera precheck`.
-- Make an RTSP frame stall observable. The frame hook rewrites a heartbeat
-  file each forwarded frame, and `RtspServer` warns through the log and its
-  `status` when the heartbeat stops advancing while everything still reports
-  "running" — the stall that self-recovers on HD contention and the one that
-  needs a reboot are otherwise indistinguishable from the process list. This
-  observes rather than recovers: restarting the server reconnects to a
-  frameless loopback, the vendor runtime cannot restart without a reboot, and
-  a reboot on frame-absence would evict a mobile app legitimately viewing HD.
+- 製造元カメラの符号化済み映像を任意で RTSP 公開する。事前読み込みした映像枠処理が符号化器出力を v4l2loopback へ複製し、`v4l2rtspserver` が再符号化なしで公開する。`/data/atomcam2-rtsp/auto-start.conf` に `enabled=true` を書くと有効になる。サーバーは製造元カメラ実行環境に追従し、停止時に共に停止する。
+- `atomcam2-pre-run` から `v4l2loopback` を読み込み、製造元実行環境開始前にデバイスを用意する。`ATOMCAM2_VIDEO_LOOPBACK_DEVICES` と `ATOMCAM2_VIDEO_LOOPBACK_VIDEO_NR` で、作成数と番号を指定する。
+- 圧縮形式で呼び出し側が指定した `sizeimage` を v4l2loopback が尊重するよう修正する。以前は生画像の形状から緩衝領域を計算し、実際の枠がはるかに小さい 1080p 映像に対して一緩衝領域あたり 7.91 MiB を確保し、`v4l2rtspserver` がその値を live555 の `OutPacketBuffer::maxSize` へ伝えていた。87 MiB の基板ではサーバー接続直後にメモリを使い切った。製造元実行環境と同時に、1920x1080 H.264、約 18 fps、約 950 kbps を実機確認した。
+- `atomcam2-vendor-camera precheck` で loopback デバイス利用可能性を報告する。
+- RTSP 映像枠の停止を観測可能にする。枠処理は転送ごとに生存確認ファイルを書き換え、`RtspServer` は、すべてが「running」と報告しているのに生存確認が進まない場合、記録と `status` へ警告する。HD 競合後に自然復旧する停止と、再起動が必要な停止は、処理一覧だけでは区別できない。これは観測だけを行い、自動復旧はしない。サーバー再開では映像枠のない loopback へ再接続するだけで、製造元実行環境は再起動なしに再開できず、映像枠欠落を理由に機器を再起動すると携帯アプリで正当に HD 閲覧中の利用者を追い出すためである。
 
-- Add wired LAN support through USB Ethernet adapters. The control kernel now
-  builds the `r8152`, `usbnet`, `asix`, `ax88179_178a`, `cdc_ether`, and
-  `rndis_host` modules, matching the driver set proven by atomcam_tools.
-- Add `atomcam2-eth-driver`, invoked from `atomcam2-pre-run` before the Wi-Fi
-  driver, which probes the class and vendor drivers in order and reports
-  progress to `atomcam2-eth-driver.env` on the FAT partition. Disable it with
-  `ATOMCAM2_PRE_RUN_ETH_DRIVER=0`.
-- Report `eth0` presence and address in the pre-run and network-check
-  breadcrumb files.
-- Configure `eth0` with DHCP in the example application through
-  `vintage_net_ethernet`. VintageNet prefers the wired route and falls back to
-  Wi-Fi when the cable or adapter is absent.
-- Keep shipping the verified vendor-compatible control kernel unchanged. The
-  Buildroot kernel build exists to produce loadable modules whose vermagic
-  matches it, so `mix upload` alone enables wired networking. Verified on
-  hardware with a Realtek RTL8152 adapter (`0bda:8152`).
+- USB 有線 LAN 変換器による有線 LAN に対応する。制御カーネルで `r8152`、`usbnet`、`asix`、`ax88179_178a`、`cdc_ether`、`rndis_host` モジュールを構築し、atomcam_tools で確認済みの駆動処理群に合わせる。
+- `atomcam2-pre-run` から Wi-Fi 駆動処理より前に呼ぶ `atomcam2-eth-driver` を追加する。種類別・製造元別の駆動処理を順に試し、進行を FAT 上の `atomcam2-eth-driver.env` へ報告する。`ATOMCAM2_PRE_RUN_ETH_DRIVER=0` で無効化できる。
+- 事前実行とネットワーク確認の段階印へ、`eth0` の存在とアドレスを記録する。
+- 見本アプリケーションで `vintage_net_ethernet` を使い、`eth0` を DHCP 設定する。VintageNet は有線経路を優先し、ケーブルや変換器がない場合は Wi-Fi へ戻る。
+- 検証済みの製造元互換制御カーネルを変更せず出荷し続ける。Buildroot のカーネル構築は、vermagic が一致する読み込み可能モジュールを作るために存在するため、`mix upload` だけで有線ネットワークを有効にできる。Realtek RTL8152 変換器 `0bda:8152` で実機確認した。
 
 ## 0.3.0 - 2026-07-28
 
-- Add ADR 0008 and a read-only `atomcam2-vendor-camera precheck` for the
-  optional vendor camera compatibility investigation.
-- Enable the minimal BusyBox `chroot` applet required to run the vendor uClibc
-  runtime without replacing the Nerves musl userspace.
-- Record the protected-filesystem, module ABI, memory, watchdog, and NAS
-  filesystem findings from the physical v0.2.0 feasibility probe.
-- Add explicit `prepare`, `start`, `status`, and `stop` commands for a manual,
-  disabled-by-default vendor camera compatibility runtime.
-- Keep protected vendor filesystems read-only, place private configuration and
-  spool state under `/data`, expose only selected devices, and drop vendor
-  process capabilities for networking, mounting, module loading, reboot, and
-  device-node creation.
-- Add a narrow freestanding compatibility shim so required vendor assistant,
-  network-status, and SD-card checks succeed without exposing the real
-  watchdog, Wi-Fi control, or MicroSD block device.
-- Verify vendor network, cloud, SD health, and SD mount initialization, bounded
-  memory use, descendant/process/mount/IPC shutdown, permanent-module reboot
-  recovery, stable Nerves Wi-Fi and watchdog ownership, and firmware validation
-  on physical hardware.
-- Verify the standard Atom mobile application, HD live view, recorded playback,
-  healthy storage reporting, and finalized one-minute continuous recordings
-  under the `/data` spool.
-- Add an opt-in OTP SFTP exporter for finalized recordings after confirming
-  that the protected control kernel cannot mount NFS or CIFS.
-- Require key authentication and a provisioned NAS host key, publish through a
-  temporary name and atomic rename, retry idempotently, preserve a bounded
-  local playback spool, and remove dated NAS recordings after the configured
-  retention period.
-- Add explicit `/data` opt-in for camera startup after firmware validation,
-  Internet connectivity, synchronized time, and the existing compatibility
-  precheck.
-- Limit automatic camera startup to one attempt per boot and report later
-  degradation without rebooting or entering an automatic restart loop.
-- Normalize stale vendor runtime markers after reboot and verify opt-in camera
-  startup, firmware validation, watchdog ownership, Wi-Fi/SSH stability, and
-  recording finalization across candidate and ordinary reboots.
-- Preserve unexported local recordings above the spool target and evict only
-  files with size-matching persistent completion markers.
-- Confine the SFTP account root, limit each normal export cycle to two files,
-  bound individual OTP SSH/SFTP operations, and reuse one supervised session
-  across polls.
-- Check an existing ext2 `/data` filesystem offline before mounting it
-  read-write so an unclean power cycle is repaired before application access.
-- Validate atomic NAS publication, idempotent retry, outage recovery,
-  selective 20-day retention, spool safety, persistent-session cleanup, and
-  sustained camera reachability against a confined LMDE 7 endpoint.
+- ADR 0008 と、任意の製造元カメラ互換調査用の読み取り専用 `atomcam2-vendor-camera precheck` を追加した。
+- Nerves の musl 利用者空間を置き換えず、製造元 uClibc 実行環境を動かすために必要な最小 BusyBox `chroot` を有効にした。
+- 物理 v0.2.0 実現可能性調査で確認した、保護ファイルシステム、モジュール ABI、メモリ、監視タイマー、NAS ファイルシステムの結果を記録した。
+- 既定無効の手動製造元カメラ互換実行環境に、明示的な `prepare`、`start`、`status`、`stop` を追加した。
+- 製造元ファイルシステムを読み取り専用で維持し、私有設定と一時保管を `/data` 配下へ置き、選別デバイスだけを公開し、ネットワーク、マウント、モジュール読み込み、再起動、デバイス項目作成に関する製造元処理の権限を落とした。
+- 必須の製造元補助処理、ネットワーク状態、SD カード検査が、実物監視タイマー、Wi-Fi 制御、MicroSD ブロックデバイスを見ずに成功する、限定した独立互換補助処理を追加した。
+- 製造元ネットワーク、クラウド、SD 健全性、SD マウント初期化、上限内メモリ、子孫処理・マウント・IPC の停止、恒久モジュールの再起動復旧、Nerves Wi-Fi と監視タイマー所有の安定、ファームウェア検証を実機確認した。
+- 標準 Atom 携帯アプリ、HD 生映像、録画再生、健全な記憶領域表示、`/data` 一時保管下の一分連続録画確定を確認した。
+- 保護対象制御カーネルが NFS・CIFS をマウントできないことを確認し、完了録画用の任意 OTP SFTP 搬出処理を追加した。
+- 鍵認証と登録済み NAS ホスト鍵を要求し、一時名と原子的名前変更で公開し、繰り返し可能に再試行し、局所再生用一時保管を上限付きで維持し、設定保持期間後に日付付き NAS 録画を削除する。
+- ファームウェア検証、インターネット接続、時刻同期、既存互換事前検査後にカメラを開始する、明示的 `/data` 任意有効化を追加した。
+- 自動カメラ開始を一起動一回に制限し、後の劣化を再起動や自動再開循環なしで報告する。
+- 再起動後の古い製造元実行状態印を正規化し、候補起動と通常再起動の双方で、任意カメラ開始、ファームウェア検証、監視タイマー所有、Wi-Fi・SSH 安定、録画確定を確認した。
+- 一時保管目標を超えても未搬出局所録画を保持し、大きさ一致の永続完了印を持つファイルだけを削除する。
+- SFTP 利用者ルートを閉じ込め、通常一周期を二件に制限し、個々の OTP SSH/SFTP 操作へ期限を設け、一つの監督接続を周期間で再利用する。
+- 既存 ext2 `/data` を読み書き可能でマウントする前にオフライン検査し、異常電源断をアプリケーション利用前に修復する。
+- 閉じ込めた LMDE 7 接続先で、NAS への原子的公開、繰り返し可能な再試行、障害復旧、選択的 20 日保持、一時保管安全性、持続接続の後始末、カメラ到達性の維持を確認した。
 
 ## 0.2.0 - 2026-07-26
 
-- Adopt standard fwup media creation and `mix burn` workflows while preserving
-  the verified Atom Cam 2 control kernel and flat-SD boot contract.
-- Add a persistent `/data` partition with format-if-missing initialization,
-  repair checks, and factory-reset support.
-- Add an immutable boot manager, redundant firmware metadata, A/B application
-  slots, health-based confirmation, watchdog recovery, and rollback.
-- Integrate standard Nerves firmware status, validation, revert,
-  `prevent-revert`, and factory-reset APIs.
-- Support standard SSH `mix upload` through the checked Atom Cam 2 A/B updater,
-  including interrupted-transfer cleanup and progress reporting.
-- Align firmware authentication with the ordinary Nerves baseline: SSH
-  authorizes update access, fwup and target checks validate the candidate, and
-  publisher signatures remain optional.
-- Require a complete removable-media installation when moving from v0.1.0 to
-  the new A/B layout.
+- 検証済み Atom Cam 2 制御カーネルと Flat SD 起動契約を維持しつつ、標準 fwup 媒体作成と `mix burn` 手順を採用した。
+- 必要時作成、修復検査、工場出荷状態への初期化に対応する永続 `/data` パーティションを追加した。
+- 不変の起動管理処理、二重化ファームウェア情報、A/B アプリケーション用スロット、健全性に基づく確定、監視タイマー復旧、巻き戻しを追加した。
+- 標準 Nerves の状態、検証、巻き戻し、`prevent-revert`、工場出荷状態への初期化 API を連携した。
+- 中断送信の後始末と進行報告を含む、検査済み Atom Cam 2 A/B 更新処理を通じた標準 SSH `mix upload` に対応した。
+- ファームウェア認証を通常の Nerves 基準へ合わせた。SSH が更新権限を管理し、fwup と対象側検査が候補を検証し、公開者署名は任意とする。
+- v0.1.0 から新 A/B 構成への移行では、取り外し可能媒体の完全導入を必須とした。
 
 ## 0.1.0 - 2026-07-18
 
-- Add publishable system and Atom Cam 2 custom toolchain artifact metadata.
-- Move the Linux 3.10 VintageNet compatibility definition into system staging headers.
-- Make the example application use released artifacts by default with an explicit local-system override.
-- Add a release script for artifact creation, publication, and isolated application verification.
-- Reject unverified remote fwup updates and retain `mix atomcam2.install` as the supported update path.
-- Create minimal AtomCam2 Nerves system source snapshot.
-- Focus first milestone on `ping nerves.local` and `ssh nerves.local`.
-- Add flat SD-card packaging scripts.
-- Add minimal example Nerves app for Wi-Fi, mDNS, and SSH.
-- Keep first-SSH shell helpers in `rootfs_overlay` instead of duplicating them through a Buildroot package.
-- Harden SD payload script option parsing and hostname validation.
-- Harden SD install/report scripts so missing option values fail clearly.
-- Fall back to `nerves` when the target-side hostname file is missing or invalid.
-- Treat a missing Wi-Fi passphrase as an open-network configuration instead of `nil`.
-- Remove hidden target-side dependencies on BusyBox `head`, `sort`, and `tr`.
-- Let SD packaging reuse an existing generated `nerves-provisioning.conf` when present.
-- Tighten hostname validation and refuse dangerous SD packaging/install directory combinations.
-- Resolve host-side directory paths physically before comparing safety-sensitive source, output, and mount directories.
-- Create the host `opt/ext-toolchain/bin` directory expected by `nerves-config` when using the current internal Buildroot toolchain.
-- Remove the stale `atomcam2-first-ssh` Buildroot package directory now that helper scripts are installed through `rootfs_overlay`.
-- Defer camera, RTSP, WebUI, Samba, and vendor runtime integration.
+- 公開可能なシステムと Atom Cam 2 独自道具鎖の成果物情報を追加した。
+- Linux 3.10 向け VintageNet 互換定義をシステムの準備用ヘッダーへ移した。
+- 見本アプリケーションが既定で公開済み成果物を使用し、明示的な局所システム上書きを持つようにした。
+- 成果物作成、公開、隔離アプリケーション検証用の公開手順を追加した。
+- 未検証の遠隔 fwup を拒否し、対応する更新経路として `mix atomcam2.install` を維持した。
+- 最小 AtomCam2 Nerves システム原本の写しを作成した。
+- 最初の節目を `ping nerves.local` と `ssh nerves.local` に絞った。
+- Flat SD カード梱包手順を追加した。
+- Wi-Fi、mDNS、SSH 用の最小見本 Nerves アプリケーションを追加した。
+- 最初の SSH 用シェル補助処理は、Buildroot 小包で重複させず `rootfs_overlay` に置いた。
+- SD 内容作成手順の選択肢解析と機器名検証を強化した。
+- SD 導入・報告手順で選択肢値欠落を明確に失敗させた。
+- 対象側の機器名ファイルが欠落・不正なら `nerves` を使用する。
+- Wi-Fi 合言葉欠落を `nil` ではなく公開ネットワーク設定として扱う。
+- BusyBox `head`、`sort`、`tr` への隠れた対象側依存を削除した。
+- 既存の生成済み `nerves-provisioning.conf` があれば SD 梱包で再利用できるようにした。
+- 機器名検証を厳しくし、危険な SD 梱包・導入ディレクトリ組み合わせを拒否した。
+- 安全性に関わる元・出力・マウントディレクトリ比較前に、ホスト側パスを物理的に解決する。
+- 現在の内部 Buildroot 道具鎖を使う際、`nerves-config` が期待するホスト側 `opt/ext-toolchain/bin` を作成する。
+- 補助処理を `rootfs_overlay` から導入するため、古い `atomcam2-first-ssh` Buildroot 小包ディレクトリを削除した。
+- カメラ、RTSP、WebUI、Samba、製造元実行環境の連携を後回しにした。

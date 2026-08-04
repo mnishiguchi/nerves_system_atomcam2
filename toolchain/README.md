@@ -1,34 +1,29 @@
-# Atom Cam 2 Nerves toolchain package
+# Atom Cam 2 Nerves 道具鎖小包
 
-This package describes the prebuilt MIPS32R2 soft-float toolchain used by
-`nerves_system_atomcam2`.
+この小包は、`nerves_system_atomcam2` が使用する構築済み MIPS32R2 ソフトウェア浮動小数点道具鎖を定義する。
 
-The Ingenic T31 requires a plain MIPS32 Release 2 compiler without DSP ASE
-instructions. Application developers consume the published toolchain artifact
-automatically through the system dependency.
+Ingenic T31 には、DSP ASE 命令を含まない純粋な MIPS32 Release 2 コンパイラーが必要である。アプリケーション開発者は、システム依存を通じて公開済み道具鎖成果物を自動的に利用する。
 
-## Build inputs
+## 構築入力
 
-The compiler is derived from the official Nerves toolchains repository.
+コンパイラーは公式 Nerves 道具鎖リポジトリを元にする。
 
-- Repository: `https://github.com/nerves-project/toolchains.git`
-- Revision: `fa8f8ba3fd3927b2b4fcc23f3d71918e53fec5ba`
-- Base package: `nerves_toolchain_mipsel_nerves_linux_musl`
-- Custom architecture: `mips32r2`
-- Endianness: little-endian
+- リポジトリ: `https://github.com/nerves-project/toolchains.git`
+- リビジョン: `fa8f8ba3fd3927b2b4fcc23f3d71918e53fec5ba`
+- 基礎小包: `nerves_toolchain_mipsel_nerves_linux_musl`
+- 独自命令体系: `mips32r2`
+- バイト順: リトルエンディアン
 - ABI: MIPS o32
-- Floating point: software
-- DSP ASE: disabled
+- 浮動小数点: ソフトウェア
+- DSP ASE: 無効
 
-The exact upstream source and package name are recorded in `UPSTREAM`. The
-custom Crosstool-NG configuration is recorded in `defconfig`.
+正確な上流原本と小包名は `UPSTREAM` に記録する。独自 Crosstool-NG 設定は `defconfig` に記録する。
 
-These files are the checksum inputs for the published toolchain artifact.
+これらのファイルを、公開道具鎖成果物の検査値入力とする。
 
-## Reproducing the compiler
+## コンパイラーの再現
 
-Create a clean temporary checkout rather than relying on a modified developer
-checkout:
+変更済みの開発用作業場所に依存せず、清潔な一時複製を作る。
 
 ```sh
 atomcam2_root="$(git rev-parse --show-toplevel)"
@@ -60,11 +55,10 @@ cp \
 )
 ```
 
-The resulting compiler directory is:
+生成されるコンパイラーディレクトリは次である。
 
 ```text
 o/nerves_toolchain_mipsel_nerves_linux_musl/x-tools/mipsel-nerves-linux-musl
 ```
 
-Before using it, verify that GCC defaults to `mips32r2` and software floating
-point and that both DSP instruction-set options are disabled.
+使用前に、GCC の既定値が `mips32r2` とソフトウェア浮動小数点であり、二つの DSP 命令集合選択肢がいずれも無効であることを確認する。

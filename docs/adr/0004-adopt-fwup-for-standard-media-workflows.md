@@ -1,84 +1,80 @@
-# ADR 0004: Adopt fwup for standard media workflows
+# ADR 0004: 標準的な記録媒体の操作に fwup を採用する
 
-## Status
+## 状態
 
-Accepted
+承認済み
 
-## Context
+## 背景
 
-The Atom Cam 2 firmware build produces a Nerves `.fw` bundle, but installation
-currently uses the custom `mix atomcam2.install` task to copy files into a
-mounted MicroSD filesystem.
+Atom Cam 2 のファームウェアビルドは Nerves の `.fw` 書庫を生成しますが、現在の
+インストールでは、マウント済み MicroSD のファイルシステムへファイルをコピーする
+独自タスク `mix atomcam2.install` を使用しています。
 
-That workflow protects the known boot contract, but it differs from the standard
-Nerves host workflow:
+この手順は既知の起動契約を保護しますが、標準的な Nerves のホスト側手順とは異なります。
 
-- `mix firmware.burn` is not the primary installation command.
-- `mix burn` cannot author the supported MicroSD layout directly.
-- `mix firmware.image` cannot produce the complete manufacturing image.
-- The media layout is described across shell scripts and installer code rather
-  than by `fwup.conf`.
-- A future on-device upgrade cannot share the same authoritative update tasks.
+- `mix firmware.burn` が主要なインストールコマンドではない
+- `mix burn` で対応する MicroSD 構成を直接作成できない
+- `mix firmware.image` で完全な製造用イメージを生成できない
+- 記録媒体の構成が `fwup.conf` ではなく、複数のシェルスクリプトとインストーラーの
+  コードに分散している
+- 将来の機器上更新で、同じ正式な更新タスクを共有できない
 
-Nerves conventionally uses fwup tasks named `complete` and `upgrade`.
-`complete` writes the full media layout, while `upgrade` changes only the
-software resources that must be replaced and preserves application data.
+Nerves では通常、`complete` と `upgrade` という名前の fwup タスクを使用します。
+`complete` は記録媒体全体の構成を書き込み、`upgrade` は置き換える必要がある
+ソフトウェア資源だけを変更してアプリケーションデータを維持します。
 
-## Decision
+## 決定
 
-Make `fwup.conf` the authoritative description of the Atom Cam 2 MicroSD
-installation and upgrade workflow.
+`fwup.conf` を、Atom Cam 2 の MicroSD インストールおよび更新手順の正式な定義とします。
 
-Provide at least these tasks:
+少なくとも次のタスクを提供します。
 
 ### `complete`
 
-The `complete` task must initialize supported media and write every resource
-required to boot a newly prepared device:
+`complete` タスクは、対応する記録媒体を初期化し、新しく準備した機器の起動に必要な
+すべての資源を書き込まなければなりません。
 
-- The verified Atom Cam 2 control kernel
-- The SquashFS root filesystem
-- Hostname and authorized-key provisioning
-- Wi-Fi provisioning
-- The partition and filesystem layout required by the current platform design
+- 検証済みの Atom Cam 2 制御カーネル
+- SquashFS ルートファイルシステム
+- ホスト名と認証済み公開鍵のプロビジョニング
+- Wi-Fi のプロビジョニング
+- 現在の基盤設計に必要なパーティションおよびファイルシステム構成
 
-The task may initialize or clear application data, consistent with standard
-Nerves complete-install semantics.
+標準的な Nerves の完全インストールの意味に従い、アプリケーションデータを初期化または
+消去できます。
 
-The generated `.fw` bundle is authoritative for the exact firmware identity,
-including its fwup metadata UUID.
+生成した `.fw` 書庫は、fwup メタデータの UUID を含む、正確なファームウェア識別情報の
+正式な情報源です。
 
-At runtime, product, version, platform, and architecture are derived from the
-compiled application configuration and exposed through an in-memory
-`Nerves.Runtime.KV` backend. The runtime must not read or trust
-`nerves-firmware-metadata.conf` from the FAT filesystem because an upgrade
-preserves non-firmware files and may therefore retain stale metadata from an
-older installation.
+実行時には、製品名、版、基盤、アーキテクチャーをコンパイル済みのアプリケーション設定
+から取得し、メモリ上の `Nerves.Runtime.KV` backend を介して公開します。更新では
+ファームウェア以外のファイルが維持され、古いインストールのメタデータが残る可能性が
+あるため、実行時に FAT ファイルシステム上の `nerves-firmware-metadata.conf` を
+読み取ったり信頼したりしてはなりません。
 
-The flat-SD runtime cannot safely recover the exact bundle UUID after
-installation. The MOTD therefore reports `UUID unavailable` and identifies the
-active layout as `Flat SD` rather than implying an A/B partition state.
+平坦な MicroSD の実行環境では、インストール後に書庫の正確な UUID を安全に復元できません。
+そのため MOTD は `UUID unavailable` と表示し、A/B パーティション状態を暗示せずに
+稼働中の構成を `Flat SD` として示します。
 
-The FAT-side metadata file remains optional and is not part of the safe fwup
-media contract. Fwup calculates `meta-uuid` from the completed archive metadata,
-while ordinary file-resource contents are fixed when the archive is created.
-The implementation must not require unsafe commands or post-write mutation
-solely to synthesize that compatibility file.
+FAT 側のメタデータファイルは任意の互換用ファイルとして残し、安全な fwup の記録媒体契約には
+含めません。fwup は完成した書庫のメタデータから `meta-uuid` を算出します。一方、通常の
+ファイル資源の内容は書庫作成時に確定します。この互換用ファイルを生成するだけのために、
+危険なコマンドや書き込み後の変更を必須にしてはなりません。
 
 ### `upgrade`
 
-The `upgrade` task must update only firmware-owned resources and preserve:
+`upgrade` タスクはファームウェア所有の資源だけを更新し、次の要素を維持しなければなりません。
 
-- Device provisioning
-- Authorized access configuration
-- Persistent application data
-- Device identity
-- Any update state required by later rollback support
+- 機器のプロビジョニング
+- 認証済み接続の設定
+- 永続的なアプリケーションデータ
+- 機器識別情報
+- 後のロールバック対応に必要な更新状態
 
-The initial implementation may update the existing single firmware location.
-ADR 0006 will extend this task to target an inactive firmware slot.
+初期実装では、既存の単一ファームウェア領域を更新しても構いません。ADR 0006 で、
+非稼働中のファームウェアスロットを対象とするよう拡張します。
 
-Support the standard host commands:
+次の標準的なホスト側コマンドに対応します。
 
 ```text
 mix firmware.burn
@@ -86,96 +82,95 @@ mix burn
 mix firmware.image
 ```
 
-`mix firmware.image` must create a raw image that can be written byte-for-byte
-to compatible media.
+`mix firmware.image` は、対応する記録媒体へバイト単位でそのまま書き込める生イメージを
+生成しなければなりません。
 
-Retain `mix atomcam2.install` temporarily as a compatibility wrapper. After
-hardware parity is proven, it must delegate to fwup rather than maintain a
-second media-writing implementation. It may then be deprecated in a separate,
-small change.
+互換用の呼び出し口として `mix atomcam2.install` を一時的に維持します。実機で同等性を
+確認した後は、2 つ目の記録媒体書き込み実装を維持するのではなく、fwup へ委譲しなければ
+なりません。その後、独立した小さな変更で非推奨にできます。
 
-Keep remote firmware upload rejected during this ADR. Standard host-side media
-writing does not by itself prove that an on-device update is safe.
+この ADR の段階では、リモートでのファームウェア書き込みを引き続き拒否します。
+標準的なホスト側の記録媒体書き込みに対応しても、機器上更新の安全性を証明したことには
+なりません。
 
-## Consequences
+## 影響
 
-### Positive
+### 利点
 
-- Nerves-standard host commands become available.
-- `fwup.conf` becomes the single source of truth for media writing.
-- Manufacturing images can be created without mounting and copying files.
-- The same firmware bundle can later support safe device-side upgrades.
-- Device and media validation can be centralized in fwup tasks.
+- Nerves 標準のホスト側コマンドを利用できる
+- `fwup.conf` が記録媒体書き込みの唯一の正式な定義になる
+- マウントとファイルコピーを行わずに製造用イメージを作成できる
+- 同じファームウェア書庫を、将来の安全な機器上更新にも利用できる
+- 機器と記録媒体の検証を fwup タスクへ集約できる
 
-### Negative
+### 欠点
 
-- The current copying workflow must be represented accurately in fwup syntax.
-- Media-layout mistakes can prevent the device from booting.
-- A compatibility period will temporarily retain `mix atomcam2.install`.
-- The complete and upgrade paths require separate destructive and
-  preservation-focused hardware tests.
+- 現在のコピー方式を fwup の構文で正確に表現する必要がある
+- 記録媒体構成の誤りによって機器が起動不能になる可能性がある
+- 互換期間中は `mix atomcam2.install` が一時的に残る
+- `complete` と `upgrade` の経路について、破壊的試験と維持確認試験をそれぞれ
+  実機で行う必要がある
 
-## Safety requirements
+## 安全要件
 
-The implementation must:
+実装では次の要件を満たす必要があります。
 
-- Verify the protected kernel SHA-256 before packaging or writing it.
-- Reject media smaller than the supported minimum.
-- Refuse obviously unsafe targets such as the host root device.
-- Require explicit confirmation unless a supported noninteractive flag is used.
-- Keep firmware resources and provisioning resources clearly separated.
-- Avoid copying secrets into build logs.
-- Verify the generated image before writing physical media.
-- Preserve the current known-good custom installer until fwup parity is proven.
+- 梱包または書き込みの前に、保護対象カーネルの SHA-256 を検証する
+- 対応する最小容量より小さい記録媒体を拒否する
+- ホストの root device など、明らかに危険な書き込み先を拒否する
+- 対応する非対話オプションを指定しない限り、明示的な確認を要求する
+- ファームウェア資源とプロビジョニング資源を明確に分離する
+- 秘密情報をビルドログへコピーしない
+- 物理記録媒体へ書き込む前に、生成したイメージを検証する
+- fwup との同等性を確認するまで、現在の既知で正常な独自インストーラーを維持する
 
-## Verification strategy
+## 検証方針
 
-Test the following independently:
+次の項目を個別に試験します。
 
-### Image construction
+### イメージ作成
 
-- Build the `.fw` bundle.
-- Create a raw image with `mix firmware.image`.
-- Inspect the image partition table and required files.
-- Write the image using a standard block-copying tool.
-- Boot the device.
+- `.fw` 書庫を構築する
+- `mix firmware.image` で生イメージを作成する
+- イメージのパーティションテーブルと必要ファイルを確認する
+- 一般的なブロックコピー用ツールでイメージを書き込む
+- 機器を起動する
 
-### Complete installation
+### 完全インストール
 
-- Run `mix firmware.burn` against blank or disposable media.
-- Confirm every required boot and provisioning resource.
-- Boot and verify Wi-Fi, SSH, discovery, and time.
-- Verify firmware identity directly from the generated `.fw` bundle.
+- 空または使い捨て可能な記録媒体に対して `mix firmware.burn` を実行する
+- 必要な起動資源とプロビジョニング資源をすべて確認する
+- 起動後、Wi-Fi、SSH、探索、および時刻を確認する
+- 生成した `.fw` 書庫からファームウェア識別情報を直接確認する
 
-### Upgrade installation
+### 更新インストール
 
-- Create persistent test data.
-- Apply `mix burn --task upgrade`.
-- Confirm the new firmware boots.
-- Confirm provisioning and persistent test data remain unchanged.
+- 永続化を確認するためのデータを作成する
+- `mix burn --task upgrade` を適用する
+- 新しいファームウェアが起動することを確認する
+- プロビジョニングと永続試験データが変更されていないことを確認する
 
-### Compatibility wrapper
+### 互換用の呼び出し口
 
-- Run `mix atomcam2.install`.
-- Confirm it delegates to the same fwup task and produces an equivalent result.
-- Confirm there is no separate file-copying implementation after migration.
+- `mix atomcam2.install` を実行する
+- 同じ fwup タスクへ委譲され、同等の結果になることを確認する
+- 移行後に独立したファイルコピー実装が残っていないことを確認する
 
-## Acceptance criteria
+## 受け入れ条件
 
-- `fwup.conf` fully describes the supported media layout.
-- `mix firmware.burn` prepares bootable Atom Cam 2 media.
-- `mix burn --task upgrade` preserves non-firmware state.
-- `mix firmware.image` creates a bootable raw image.
-- Firmware identity remains queryable from the generated `.fw` bundle.
-- The FAT-side metadata compatibility file is not required for media parity.
-- The protected kernel verification remains enforced.
-- The custom installer delegates to fwup or is removed after a documented
-  deprecation period.
-- Remote upload remains disabled until ADR 0006 is implemented and verified.
+- `fwup.conf` が対応する記録媒体構成を完全に定義している
+- `mix firmware.burn` で起動可能な Atom Cam 2 用記録媒体を準備できる
+- `mix burn --task upgrade` がファームウェア以外の状態を維持する
+- `mix firmware.image` が起動可能な生イメージを作成する
+- 生成した `.fw` 書庫からファームウェア識別情報を引き続き取得できる
+- FAT 側のメタデータ互換ファイルが、記録媒体との同等性に必須ではない
+- 保護対象カーネルの検証が引き続き実施される
+- 文書化した非推奨期間の後、独自インストーラーが fwup へ委譲されるか削除される
+- ADR 0006 の実装と検証が完了するまで、リモート書き込みを無効のままとする
 
-## References
+## 参考資料
 
 - [`mix firmware.burn`](https://hexdocs.pm/nerves/Mix.Tasks.Firmware.Burn.html)
 - [`mix burn`](https://hexdocs.pm/nerves/Mix.Tasks.Burn.html)
 - [`mix firmware.image`](https://hexdocs.pm/nerves/Mix.Tasks.Firmware.Image.html)
-- [Nerves advanced fwup configuration](https://hexdocs.pm/nerves/advanced-configuration.html)
+- [Nerves の高度な fwup 設定](https://hexdocs.pm/nerves/advanced-configuration.html)

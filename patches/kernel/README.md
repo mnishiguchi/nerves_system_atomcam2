@@ -1,5 +1,5 @@
-# Kernel patches
+# カーネル修正差分
 
-Keep this directory small. The first milestone is boot, Wi-Fi, mDNS, and SSH only.
+このディレクトリは小さく保つ。最初の節目は、起動、Wi-Fi、mDNS、SSH だけである。
 
-Do not add camera, RTSP, WebUI, or vendor runtime patches for the first SSH milestone.
+最初の SSH 節目では、カメラ、RTSP、WebUI、製造元実行環境の修正差分を追加しない。

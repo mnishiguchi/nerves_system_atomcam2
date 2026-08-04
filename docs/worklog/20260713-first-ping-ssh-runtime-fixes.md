@@ -1,32 +1,36 @@
-# 20260713 runtime prerequisites for the first network test
+# 20260713 最初のネットワーク試験に必要な実行時前提
 
-## Status
+## 状態
 
-This is an intermediate checklist of changes that moved the system from a build artifact toward a bootable Nerves userspace. It is not the final root-cause report for ping and SSH.
+この文書は、system をビルド成果物から起動可能な Nerves 利用者空間へ近づけた変更の
+中間確認表です。ping と SSH の最終的な根本原因記録ではありません。
 
-Later confirmed blockers are documented in:
+後に確認した阻害要因は次に記載しています。
 
 - [`20260713-atomcam2-toolchain-dsp-ase-investigation.md`](20260713-atomcam2-toolchain-dsp-ase-investigation.md)
 - [`20260714-sdio-wifi-driver-bring-up.md`](20260714-sdio-wifi-driver-bring-up.md)
 - [`20260715-atomcam2-ping-ssh-bringup.md`](20260715-atomcam2-ping-ssh-bringup.md)
 
-## Changes introduced during this stage
+## この段階で導入した変更
 
-- Added the musl loader required by initramfs executables.
-- Enabled the T31 MMC1 SDIO controller used by the Wi-Fi device.
-- Enabled gzip-compatible SquashFS support for the generated root filesystem.
-- Restored the known-good Atom Cam 2 kernel command line.
-- Mounted vendor system and configuration partitions read-only for hardware bootstrap data.
-- Reused the vendor SDIO preparation and Wi-Fi module-loading sequence.
-- Restored the factory Wi-Fi MAC address before network configuration.
-- Added a bounded wait for `wlan0`.
-- Kept the known-good vendor kernel as a temporary override so userspace could be tested independently from the custom-kernel work.
+- initramfs の実行ファイルに必要な musl loader を追加した
+- Wi-Fi device が使用する T31 MMC1 SDIO controller を有効にした
+- 生成する root filesystem で gzip 互換の SquashFS 対応を有効にした
+- 正常動作する既知の Atom Cam 2 kernel command line を復元した
+- hardware の初期準備情報を取得するため、ベンダー system および configuration
+  partition を読み取り専用でマウントした
+- ベンダーの SDIO 準備と Wi-Fi module 読み込み順序を再利用した
+- ネットワーク設定前に工場設定の Wi-Fi MAC address を復元した
+- `wlan0` を待つ時間に上限を設けた
+- 独自 kernel の作業から利用者空間を分離して試験するため、正常動作する既知の
+  ベンダー kernel を一時的な上書きとして維持した
 
-## What this stage established
+## この段階で確立したこと
 
-These changes created a testable boot path, but the absence of `nerves.local` still did not identify the failing layer.
+これらの変更により試験可能な起動経路を作りましたが、`nerves.local` が存在しないこと
+だけでは失敗層を識別できませんでした。
 
-The subsequent investigation separately proved:
+その後の調査で、次を個別に証明しました。
 
 ```text
 boot and rootfs
@@ -38,15 +42,15 @@ boot and rootfs
 -> DHCP, mDNS, and SSH
 ```
 
-## Test order retained
+## 維持した試験順序
 
-The useful verification order remains:
+有効な確認順序は次のとおりです。
 
-1. Confirm the active root filesystem and `/sbin/init`.
-2. Confirm the Erlang release under `/srv/erlang`.
-3. Confirm SDIO preparation and vendor module loading.
-4. Confirm `wlan0` through `/sys/class/net/wlan0` or `ip`.
-5. Confirm VintageNet configuration.
-6. Confirm Wi-Fi association and DHCP by direct IP.
-7. Confirm `nerves.local`.
-8. Confirm SSH public-key access.
+1. 稼働中の root filesystem と `/sbin/init` を確認する
+2. `/srv/erlang` 配下の Erlang release を確認する
+3. SDIO 準備とベンダー module の読み込みを確認する
+4. `/sys/class/net/wlan0` または `ip` で `wlan0` を確認する
+5. VintageNet 設定を確認する
+6. IP address を直接指定し、Wi-Fi 接続と DHCP を確認する
+7. `nerves.local` を確認する
+8. SSH 公開鍵接続を確認する

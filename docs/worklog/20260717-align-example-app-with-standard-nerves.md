@@ -1,183 +1,172 @@
-# Align the example application with standard Nerves conventions
+# サンプルアプリケーションを標準的な Nerves の慣例へ合わせる
 
-## Overview
+## 概要
 
-Most of this work was completed on July 17, 2026. Final verification and the
-automatic NTP recovery fix were completed on July 18, 2026.
+この作業の大部分は 2026 年 7 月 17 日に完了しました。最終検証と NTP 自動復旧の修正は
+2026 年 7 月 18 日に完了しました。
 
-Related decision record:
+関連する決定記録:
 
 - `docs/adr/0002-align-sample-app-with-standard-nerves-incrementally.md`
 
-Branch:
+ブランチ:
 
 - `feat/align-example-app-adr-0002`
 
-The goal was to replace project-specific application behavior with standard
-Nerves services without changing the proven Atom Cam 2 boot and MicroSD
-installation workflow.
+目標は、検証済みの Atom Cam 2 の起動および MicroSD インストール手順を変更せず、
+プロジェクト固有のアプリケーション動作を標準的な Nerves サービスへ置き換えることでした。
 
-This worklog keeps the findings, solutions, and hardware evidence that remain
-useful after the implementation. It is not a command transcript.
+この作業記録は、実装後も有用な判明事項、解決策、実機の根拠を残すものです。コマンドの
+実行記録ではありません。
 
-## Platform constraints
+## 基盤の制約
 
-The example application runs on a nonstandard Nerves platform boundary:
+サンプルアプリケーションは、標準とは異なる Nerves の基盤境界上で動作します。
 
-- The device boots a flat MicroSD payload.
-- The protected kernel file is `factory_t31_ZMC6tiIDQN`.
-- The verified kernel SHA-256 is
-  `b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc`.
-- The root filesystem is SquashFS.
-- The writable MicroSD mount on the device is `/media/mmc`.
-- Firmware installation uses `mix atomcam2.install`.
-- Ordinary `mix burn` and `mix upload` are not supported for this workflow.
-- Wi-Fi provisioning is read from
-  `/media/mmc/nerves-provisioning.conf`.
-- Remote firmware updates remain deliberately rejected.
+- 機器は平坦な MicroSD 書き込み内容から起動する
+- 保護対象 kernel file は `factory_t31_ZMC6tiIDQN`
+- 検証済み kernel SHA-256 は
+  `b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc`
+- root filesystem は SquashFS
+- 機器上の書き込み可能な MicroSD mount は `/media/mmc`
+- ファームウェアのインストールには `mix atomcam2.install` を使用する
+- この手順では通常の `mix burn` と `mix upload` に対応しない
+- Wi-Fi のプロビジョニングは `/media/mmc/nerves-provisioning.conf` から読み取る
+- リモートファームウェア更新は意図的に拒否したままとする
 
-These constraints were treated as platform behavior rather than application
-problems to remove.
+これらの制約は、除去すべきアプリケーション問題ではなく、基盤の動作として扱いました。
 
-## Final result
+## 最終結果
 
-The example application now uses:
+サンプルアプリケーションは現在、次を使用します。
 
-- NervesMOTD with a generated Atom Cam 2 ANSI logo
-- Toolshed in remote IEx sessions
+- Atom Cam 2 用に生成した ANSI ロゴを持つ NervesMOTD
+- リモート IEx セッション内の Toolshed
 - RingLogger
 - NervesSSH
-- SSH and SFTP mDNS advertisements
-- Nerves device discovery metadata
-- VintageNet runtime Wi-Fi configuration
-- Nerves Runtime KV firmware metadata
-- NervesTime with persistent approximate time
-- Persistent SSH host keys
-- Automatic NTP restart when Internet connectivity becomes available
+- SSH と SFTP の mDNS 通知
+- Nerves デバイス探索用メタデータ
+- VintageNet の実行時 Wi-Fi 設定
+- Nerves Runtime KV のファームウェアメタデータ
+- 概算時刻を永続化する NervesTime
+- 永続的な SSH ホスト鍵
+- インターネット接続時の NTP 自動再起動
 
-The custom network worker was removed after VintageNet behavior was verified on
-hardware.
+VintageNet の動作を実機で検証後、独自のネットワーク処理を削除しました。
 
-## Implementation findings and solutions
+## 実装上の判明事項と解決策
 
-### NervesMOTD and IEx startup
+### NervesMOTD と IEx 起動
 
-`/etc/iex.exs` now has two responsibilities:
+`/etc/iex.exs` は現在、2 つの責務を持ちます。
 
-- Print `NervesMOTD`.
-- Import Toolshed.
+- `NervesMOTD` を表示する
+- Toolshed を読み込む
 
-The Atom Cam 2 logo is implemented in
-`Atomcam2NervesApp.MOTDLogo` and supplied through NervesMOTD configuration.
-Keeping rendering out of `iex.exs` makes the shell startup file conventional and
-keeps the logo independently testable.
+Atom Cam 2 の logo は `Atomcam2NervesApp.MOTDLogo` に実装し、NervesMOTD の設定を通じて
+指定します。表示処理を `iex.exs` から分離することで、shell 起動 file を標準的に保ち、
+logo を独立して試験できます。
 
-NervesMOTD correctly displays product, version, firmware UUID, platform, and
-architecture after runtime metadata is provided.
+実行時メタデータの提供後、NervesMOTD は製品、版、ファームウェア UUID、基盤、
+アーキテクチャーを正しく表示します。
 
-Two displayed fields remain unavailable:
+2 つの表示項目は引き続き利用できません。
 
-- `Part usage`: the platform has no conventional Nerves application partition.
-- `Temperature`: the kernel exposes no standard thermal zone or hardware
-  monitoring input.
+- `Part usage`: 基盤に一般的な Nerves アプリケーションパーティションがない
+- `Temperature`: カーネルが標準的な thermal zone またはハードウェア監視入力を
+  公開していない
 
-Copying or forking the NervesMOTD renderer only to hide these honest values was
-not justified.
+これらの正直な値を隠すためだけに NervesMOTD の表示処理をコピーまたは分岐する根拠は
+ありませんでした。
 
 ### RingLogger
 
-RingLogger was activated as the target logger backend.
+対象機器の logger backend として RingLogger を有効にしました。
 
-Hardware verification confirmed:
+実機検証で次を確認しました。
 
-- The application started `:ring_logger`.
-- Recent boot logs were retained.
-- Newly emitted Logger messages appeared in the ring buffer.
+- アプリケーションが `:ring_logger` を起動した
+- 直近の起動 log が保持された
+- 新しく出力した Logger message が ring buffer に現れた
 
-This became useful while checking VintageNet, SSH, and time behavior during
-subsequent milestones.
+その後の到達点で VintageNet、SSH、時刻の動作を確認する際に有用でした。
 
-### SSH and SFTP discovery
+### SSH と SFTP の探索
 
-The device advertises these services through MdnsLite:
+機器は MdnsLite を通じて次のサービスを通知します。
 
-- `_ssh._tcp` on port 22
-- `_sftp-ssh._tcp` on port 22
+- ポート 22 の `_ssh._tcp`
+- ポート 22 の `_sftp-ssh._tcp`
 
-Both services include PTR, SRV, and TXT records and were discoverable from the
-development machine.
+両サービスは PTR、SRV、TXT レコードを含み、開発機から探索できました。
 
-### Nerves device discovery metadata
+### Nerves デバイス探索用メタデータ
 
-The application registers `_nerves-device._tcp` with:
+アプリケーションは `_nerves-device._tcp` を次の情報とともに登録します。
 
-- Serial number
-- Application version
-- Product
-- Description
-- Platform
-- Architecture
+- シリアル番号
+- アプリケーションのバージョン
+- 製品
+- 説明
+- プラットフォーム
+- アーキテクチャ
 
-The SRV record uses port 0 because the service describes the device rather than
-a network endpoint.
+このサービスはネットワークエンドポイントではなくデバイスを説明するため、SRV レコードのポートは
+0 を使用します。
 
-Both `avahi-browse` and `mix nerves.discover` found the device.
+`avahi-browse` と `mix nerves.discover` の両方で機器を発見できました。
 
-### mDNS DNS bridge
+### mDNS DNS ブリッジ
 
-Direct MdnsLite resolution worked:
+MdnsLite による直接解決は動作しました。
 
 ```elixir
 MdnsLite.gethostbyname("thinkpad.local")
 ```
 
-The ordinary Erlang resolver did not resolve the same `.local` host:
+通常の Erlang resolver は同じ `.local` host を解決しませんでした。
 
 ```elixir
 :inet.gethostbyname(~c"thinkpad.local")
 :inet.getaddr(~c"thinkpad.local", :inet)
 ```
 
-The application has no current feature that opens outbound connections to
-`.local` hosts. Enabling a local DNS listener and changing resolver
-configuration would add complexity without a consumer.
+現在のアプリケーションには `.local` host へ外向き接続する機能がありません。
+ローカル DNS listener を有効にして resolver 設定を変更すると、利用側がないまま複雑さだけが
+増えます。
 
-The bridge was therefore deferred. Use direct MdnsLite resolution for explicit
-cases and reconsider the bridge when generic outbound `.local` resolution is
-required.
+そのため bridge を保留しました。明示的な場合は MdnsLite の直接解決を使用し、一般的な
+外向き `.local` 解決が必要になった時点で bridge を再検討します。
 
-### Runtime Wi-Fi configuration
+### 実行時 Wi-Fi 設定
 
-`config/runtime.exs` converts the MicroSD provisioning data into VintageNet's
-default `wlan0` configuration.
+`config/runtime.exs` は、MicroSD のプロビジョニング情報を VintageNet の既定 `wlan0`
+設定へ変換します。
 
-The verified configuration uses:
+検証済み設定は次を使用します。
 
 - `VintageNetWiFi`
 - DHCP
 - WPA-PSK
 - `wps: false`
 
-The original custom network worker was initially retained as a migration
-fallback. Verification showed that it recognized the existing VintageNet
-configuration and did not reconfigure `wlan0`.
+移行中の切り替え先として、当初は独自ネットワーク処理を残しました。検証により、既存の
+VintageNet 設定を認識し、`wlan0` を再設定しないことを確認しました。
 
-The worker was then removed. The application supervisor no longer owns Wi-Fi
-configuration, and VintageNet connects successfully without it.
+その後、処理を削除しました。アプリケーション supervisor は Wi-Fi 設定を管理せず、
+その処理なしで VintageNet が正常に接続します。
 
-The remaining Wi-Fi diagnostic helper returns redacted structural information
-and does not expose credentials.
+残した Wi-Fi 診断用補助処理は、認証情報を隠した構造情報を返し、秘密情報を公開しません。
 
-### Runtime firmware metadata
+### 実行時ファームウェアメタデータ
 
-The flat MicroSD workflow does not provide the usual writable U-Boot environment
-used by standard Nerves firmware metadata.
+平坦な MicroSD 手順には、標準的な Nerves ファームウェアメタデータで使用する通常の
+書き込み可能な U-Boot environment がありません。
 
-The solution is to generate
-`nerves-firmware-metadata.conf` from the actual `.fw` artifact during
-`mix atomcam2.install`.
+解決策として、`mix atomcam2.install` 中に実際の `.fw` 成果物から
+`nerves-firmware-metadata.conf` を生成します。
 
-The file contains:
+file の内容:
 
 ```text
 nerves_fw_active=a
@@ -188,81 +177,74 @@ a.nerves_fw_platform=atomcam2
 a.nerves_fw_architecture=mipsel
 ```
 
-At runtime, `Nerves.Runtime.KVBackend.InMemory` loads this file from
-`/media/mmc`.
+実行時に `Nerves.Runtime.KVBackend.InMemory` が `/media/mmc` からこの file を読み込みます。
 
-Generating the file from the firmware artifact prevents stale or hard-coded UUID
-values.
+ファームウェア成果物から生成するため、古い UUID または固定 UUID を防げます。
 
-### Persistent time and NTP synchronization
+### 永続時刻と NTP 同期
 
-The device has no battery-backed real-time clock.
+機器には battery-backed real-time clock がありません。
 
-NervesTime stores an approximate timestamp in:
+NervesTime は概算時刻を次へ保存します。
 
 ```text
 /media/mmc/.nerves_time
 ```
 
-This prevents the clock from starting at 1970 while the device is offline or
-waiting for network connectivity.
+これにより、機器が offline またはネットワーク接続待ちの間、時刻が 1970 年から始まることを
+防ぎます。
 
-A final full-boot verification exposed a startup race:
+最終的な完全起動検証で、起動時の競合が判明しました。
 
-- NervesTime started before Wi-Fi had Internet access.
-- The clock remained unsynchronized after the interface reached `:internet`.
-- Calling `NervesTime.restart_ntpd/0` immediately led to successful
-  synchronization.
+- Wi-Fi がインターネット接続を得る前に NervesTime が起動した
+- interface が `:internet` に到達しても時刻が未同期のままだった
+- 直ちに `NervesTime.restart_ntpd/0` を呼ぶと同期に成功した
 
-The durable fix is `Atomcam2NervesApp.TimeSync`:
+恒久的な修正は `Atomcam2NervesApp.TimeSync` です。
 
-- Subscribe to
-  `["interface", "wlan0", "connection"]`.
-- Check the current connection during initialization.
-- When the connection reaches `:internet`, restart `ntpd` only when NervesTime
-  is not already synchronized.
-- Do not configure or own the interface.
+- `["interface", "wlan0", "connection"]` を購読する
+- 初期化時に現在の接続を確認する
+- 接続が `:internet` へ到達したら、NervesTime が未同期の場合だけ `ntpd` を再起動する
+- interface の設定または管理を行わない
 
-Final hardware verification confirmed automatic synchronization at stratum 3
-without an operator calling `NervesTime.restart_ntpd/0`.
+最終的な実機検証で、運用担当者が `NervesTime.restart_ntpd/0` を呼ばなくても、stratum 3 で
+自動同期することを確認しました。
 
-### Persistent SSH host keys
+### 永続的な SSH ホスト鍵
 
-NervesSSH defaults to paths under `/data`, but `/data` is read-only on this
-platform.
+NervesSSH は既定で `/data` 配下の path を使用しますが、この基盤の `/data` は読み取り専用です。
 
-Before the fix, NervesSSH logged filesystem errors and fell back to paths under
-`/tmp/nerves_ssh`. The host key was therefore regenerated on every reboot,
-causing SSH known-host warnings.
+修正前は NervesSSH がファイルシステム error を記録し、`/tmp/nerves_ssh` 配下の path へ
+切り替わりました。そのため、再起動ごとにホスト鍵が再生成され、SSH の既知ホスト警告が
+発生しました。
 
-NervesSSH now uses:
+NervesSSH は現在次を使用します。
 
 ```text
 system_dir: /media/mmc/nerves_ssh
 user_dir: /media/mmc/nerves_ssh/default_user
 ```
 
-The writable MicroSD partition preserves:
+書き込み可能な MicroSD partition は次を維持します。
 
-- The SSH host key
-- The authorized-key state
+- SSH ホスト鍵
+- 認証済み公開鍵の状態
 
-The ED25519 fingerprint remained identical across reboot:
+ED25519 fingerprint は再起動後も同一でした。
 
 ```text
 SHA256:FV/R0bGaCv9BMqCaBTTk3QYi+fMxXsZP5dv/sFXdMuc
 ```
 
-### Explicit dependencies instead of nerves_pack
+### nerves_pack ではなく明示的な依存関係
 
-`nerves_pack` was evaluated but not adopted.
+`nerves_pack` を検討しましたが、採用しませんでした。
 
-The example application directly configures several runtime services and does
-not need direct-link networking or a DHCP server. Explicit dependencies make
-the runtime contract easier to understand and avoid bringing in unneeded
-services.
+サンプルアプリケーションは複数の実行時サービスを直接設定し、直接接続用ネットワークまたは
+DHCP server を必要としません。明示的な依存関係により実行時契約を理解しやすくし、
+不要なサービスの導入を避けます。
 
-The following direct dependencies remain justified:
+次の直接依存関係は引き続き妥当です。
 
 - `shoehorn`
 - `ring_logger`
@@ -275,11 +257,11 @@ The following direct dependencies remain justified:
 - `vintage_net`
 - `vintage_net_wifi`
 
-No dependency became redundant when the custom network worker was removed.
+独自ネットワーク処理を削除しても、不要になる依存関係はありませんでした。
 
-### VM arguments
+### VM 引数
 
-The release keeps distributed Erlang on loopback:
+release は分散 Erlang を loopback に限定します。
 
 ```text
 -name <release-name>@127.0.0.1
@@ -287,39 +269,36 @@ The release keeps distributed Erlang on loopback:
 -noshell
 ```
 
-Remote administration is provided through NervesSSH rather than raw EPMD and
-distributed Erlang.
+raw EPMD と分散 Erlang ではなく、NervesSSH でリモート管理を提供します。
 
-The existing configuration was retained because it is hardware-verified and
-there is no concrete requirement to expose or redesign distribution.
+既存設定は実機検証済みで、分散機能を公開または再設計する具体的要件がないため維持しました。
 
-## Final hardware evidence
+## 最終的な実機の根拠
 
-Final firmware:
+最終ファームウェア:
 
-- Firmware name: `labor-fossil`
-- Firmware UUID: `7a673074-5e8d-5605-6d3c-5b61c9c4934d`
-- Product: `atomcam2_nerves_app`
-- Version: `0.1.0`
-- Platform: `atomcam2`
-- Architecture: `mipsel`
+- ファームウェア名: `labor-fossil`
+- ファームウェア UUID: `7a673074-5e8d-5605-6d3c-5b61c9c4934d`
+- 製品: `atomcam2_nerves_app`
+- バージョン: `0.1.0`
+- プラットフォーム: `atomcam2`
+- アーキテクチャ: `mipsel`
 
-Runtime verification:
+実行時検証:
 
-- The application started successfully.
-- `wlan0` received `192.168.10.117/24` through DHCP.
-- Wi-Fi used WPA-PSK with WPS disabled.
-- `_ssh._tcp`, `_sftp-ssh._tcp`, and `_nerves-device._tcp` were advertised.
-- `/media/mmc/nerves_ssh` contained
-  `ssh_host_ed25519_key` and the `default_user` directory.
-- The TimeSync process was running.
-- VintageNet reported `:internet`.
-- NervesTime synchronized automatically at stratum 3.
-- The final measured offset was approximately -2.8 milliseconds.
+- アプリケーションが正常に起動した
+- `wlan0` が DHCP で `192.168.10.117/24` を取得した
+- Wi-Fi は WPS 無効の WPA-PSK を使用した
+- `_ssh._tcp`、`_sftp-ssh._tcp`、`_nerves-device._tcp` を通知した
+- `/media/mmc/nerves_ssh` に `ssh_host_ed25519_key` と `default_user` directory があった
+- TimeSync process が動作中だった
+- VintageNet が `:internet` を報告した
+- NervesTime が stratum 3 で自動同期した
+- 最終測定 offset は約 -2.8 millisecond だった
 
-## Repository verification
+## リポジトリ検証
 
-The completed implementation passed:
+完成した実装は次へ合格しました。
 
 ```text
 git diff --check main...HEAD
@@ -331,16 +310,15 @@ mix atomcam2.install --dry-run
 mix atomcam2.install
 ```
 
-The final build and dry-run left the repository working tree clean.
+最終ビルドと dry-run 後、リポジトリの working tree は clean でした。
 
-The firmware build attempted to download a prebuilt system artifact for version
-`0.1.0`, received a 404, and correctly fell back to building the local system.
-This is expected until a matching release artifact is published.
+ファームウェアビルドは version `0.1.0` の事前構築済み system 成果物を取得しようとして
+404 を受け取り、正常にローカル system build へ切り替わりました。一致する release 成果物が
+公開されるまでは想定どおりです。
 
-## Generated files that must not be committed
+## コミットしてはならない生成ファイル
 
-Standard Nerves tooling may generate these paths in the example application
-directory:
+標準的な Nerves tooling は、サンプルアプリケーション directory に次を生成する場合があります。
 
 ```text
 atomcam2_nerves_app
@@ -348,16 +326,16 @@ nerves
 upload.sh
 ```
 
-In this workflow they are not used for installation and must not be committed.
-The supported installation command remains:
+この手順ではインストールに使用せず、コミットしてはなりません。対応するインストールコマンドは
+引き続き次です。
 
 ```text
 mix atomcam2.install
 ```
 
-## Commit sequence
+## コミットの順序
 
-The implementation was completed through small commits:
+実装は小さな commit に分けて完了しました。
 
 ```text
 6f545e2 docs(adr): add ADR 0002 implementation checklist
@@ -379,9 +357,9 @@ de82b00 refactor(example): remove custom network worker
 7b0e970 docs(adr): complete example application alignment
 ```
 
-## Outcome
+## 到達結果
 
-ADR 0002 is implemented.
+ADR 0002 は実装済みです。
 
-The application now follows standard Nerves runtime conventions where they fit,
-while the custom Atom Cam 2 platform boundary remains explicit and unchanged.
+独自の Atom Cam 2 基盤境界を明示して変更せずに維持しながら、適用可能な部分では
+標準的な Nerves の実行時慣例に従うアプリケーションになりました。

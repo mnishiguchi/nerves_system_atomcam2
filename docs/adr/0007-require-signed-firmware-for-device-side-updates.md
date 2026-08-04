@@ -1,82 +1,78 @@
-# ADR 0007: Require signed firmware for device-side updates
+# ADR 0007: 機器上更新で署名済みファームウェアを必須にする
 
-## Status
+## 状態
 
-Rejected on July 26, 2026
+2026 年 7 月 26 日に不採用
 
-## Context
+## 背景
 
-ADR 0006 introduces A/B firmware installation through fwup and the SSH
-firmware subsystem. This ADR proposed making Ed25519 signatures mandatory for
-every device-side update, with separate development and release keys, embedded
-trust roots, release-key custody, key rotation, and an on-device fwup policy
-wrapper.
+ADR 0006 は、fwup と SSH ファームウェアサブシステムを使用する A/B
+ファームウェアインストールを導入します。この ADR では、すべての機器上更新で
+Ed25519 署名を必須とし、開発用鍵とリリース用鍵の分離、組み込みの信頼起点、
+リリース鍵の管理、鍵の更新、および機器上の fwup 方針用呼び出し処理を導入することを
+提案しました。
 
-That proposal is stricter and more operationally complex than the official
-Nerves systems baseline:
+この提案は、公式 Nerves system の基準より厳格で、運用も複雑です。
 
-- `mix firmware` normally produces an unsigned fwup archive.
-- `nerves_ssh` normally exposes `ssh_subsystem_fwup`, which applies that archive
-  with fwup.
-- fwup signing and trusted public-key options are available when a product's
-  threat model requires them, but they are not required by a standard Nerves
-  system.
+- `mix firmware` は通常、署名されていない fwup 書庫を生成する
+- `nerves_ssh` は通常 `ssh_subsystem_fwup` を公開し、その書庫を fwup で適用する
+- 製品の脅威模型で必要な場合は fwup の署名と信頼済み公開鍵の設定を利用できるが、
+  標準的な Nerves system では必須ではない
 
-This project currently needs the behavior expected from an official Nerves
-system, plus the minimum Atom Cam 2-specific work needed to update its A/B
-application partitions safely.
+このプロジェクトで現在必要なのは、公式 Nerves system に期待される動作と、
+Atom Cam 2 の A/B アプリケーションパーティションを安全に更新するための最小限の
+固有対応です。
 
-## Decision
+## 決定
 
-Do not require firmware signatures at this stage.
+現段階ではファームウェア署名を必須にしません。
 
-Use the ordinary Nerves workflow:
+通常の Nerves 手順を使用します。
 
 ```sh
 mix firmware
 mix upload nerves.local
 ```
 
-SSH public-key authentication controls access to the update endpoint. The
-device uses fwup's archive and resource integrity checks, validates the firmware
-platform and architecture, writes only the inactive application slot, verifies
-the written root filesystem, and records the candidate as pending.
+SSH 公開鍵認証によって更新接続口への接続を制御します。機器は fwup の書庫および
+資源の完全性検査を使用し、ファームウェアの基盤とアーキテクチャーを検証し、
+非稼働中のアプリケーションスロットだけへ書き込み、書き込んだ root filesystem を
+検証して、更新候補を保留中として記録します。
 
-Keep the Atom Cam 2 A/B updater, health confirmation, and rollback behavior from
-ADR 0006. Do not add a custom fwup wrapper, build alias, embedded signing trust
-store, development/release key ceremony, or release signing manifest.
+ADR 0006 の Atom Cam 2 A/B 更新処理、健全性確認、ロールバック動作を維持します。
+独自の fwup 呼び出し処理、ビルド用別名、組み込み署名信頼領域、開発用・リリース用鍵の
+管理手順、リリース署名一覧は追加しません。
 
-For Issue #12, this means:
+Issue #12 では、次の意味になります。
 
-- NervesSSH provides the authenticated transport.
-- The custom SSH subsystem stages complete uploads under `/data` and cleans up
-  interrupted transfers.
-- Fwup and the Atom Cam 2 updater validate archive integrity, firmware metadata,
-  the inactive-slot write, and the resulting root filesystem.
-- The upload reports receiving, byte-count, installation, write-progress, and
-  final success or failure information.
+- NervesSSH が認証済みの転送経路を提供する
+- 独自の SSH サブシステムが完全な書き込み内容を `/data` に一時保存し、
+  中断された転送を消去する
+- fwup と Atom Cam 2 更新処理が、書庫の完全性、ファームウェアメタデータ、
+  非稼働中スロットへの書き込み、および生成された root filesystem を検証する
+- 書き込み処理が、受信中、バイト数、インストール、書き込み進捗、最終的な成功または
+  失敗の情報を報告する
 
-## Consequences
+## 影響
 
-The system remains close to the official Nerves workflow and has fewer keys,
-policies, wrappers, and recovery cases to operate.
+システムは公式の Nerves 手順に近い状態を維持し、運用対象となる鍵、方針、
+呼び出し処理、復旧事例を減らせます。
 
-SSH credentials must be protected because an administrator with update access
-can install a well-formed firmware archive. Fwup integrity checks detect archive
-or resource corruption, but they do not authenticate who produced an unsigned
-archive.
+更新権限を持つ管理者は、正しい形式のファームウェア書庫をインストールできるため、
+SSH 認証情報を保護する必要があります。fwup の完全性検査は書庫または資源の破損を
+検出しますが、署名されていない書庫の作成者を認証しません。
 
-Mandatory signing can be proposed again if the deployment threat model changes,
-for example for a remotely managed fleet, untrusted artifact distribution, or a
-requirement to authenticate releases independently of SSH access.
+遠隔管理する機器群、信頼できない成果物流通、または SSH 接続とは独立してリリースを
+認証する要件など、導入環境の脅威模型が変化した場合は、署名の必須化を再提案できます。
 
-## Implementation evidence
+## 実装の根拠
 
-The final repository and physical-device validation are recorded in
-[`../worklog/20260726-adr-0007-standard-nerves-update-alignment.md`](../worklog/20260726-adr-0007-standard-nerves-update-alignment.md).
+最終的なリポジトリと実機での検証は、
+[`../worklog/20260726-adr-0007-standard-nerves-update-alignment.md`](../worklog/20260726-adr-0007-standard-nerves-update-alignment.md)
+に記録しています。
 
-## References
+## 参考資料
 
-- [`ssh_subsystem_fwup` update options](https://hexdocs.pm/ssh_subsystem_fwup/readme.html)
+- [`ssh_subsystem_fwup` の更新設定](https://hexdocs.pm/ssh_subsystem_fwup/readme.html)
 - [Nerves Runtime](https://hexdocs.pm/nerves_runtime/)
-- [Issue #12: production firmware update delivery workflow](https://github.com/mnishiguchi/nerves_system_atomcam2/issues/12)
+- [Issue #12: 本番用ファームウェア更新配布手順](https://github.com/mnishiguchi/nerves_system_atomcam2/issues/12)

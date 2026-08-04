@@ -1,28 +1,18 @@
-# 20260726 ADR 0008 vendor camera manual runtime
+# 20260726 ADR 0008 製造元カメラ手動実行環境
 
-> Historical note: the later mobile test disproved the assumption that
-> `assis` could be omitted. The corrected process and storage behavior is
-> recorded in
-> [`20260726-adr-0008-mobile-and-storage-compatibility.md`](20260726-adr-0008-mobile-and-storage-compatibility.md).
+> 歴史的な記録: 後の携帯アプリ試験により、`assis` を省略できるとの前提は誤りと判明した。修正後の処理構成と記憶領域の挙動は [`20260726-adr-0008-mobile-and-storage-compatibility.md`](20260726-adr-0008-mobile-and-storage-compatibility.md) に記録している。
 
-## Result
+## 結果
 
-The console-visible portion of the ADR 0008 Phase 2 manual runtime is complete
-on physical Atom Cam 2 hardware.
+ADR 0008 第 2 段階の手動実行環境について、操作端末から観測できる部分の実機検証を完了した。
 
-The implementation can prepare private vendor state, load the minimal camera
-driver set, run `hl_client` and `iCamera_app` without `assis`, report health,
-and cleanly stop its processes, mounts, and System V IPC. Nerves retained
-control of Wi-Fi, SSH, firmware validation, and the hardware watchdog throughout
-the trial.
+私有の製造元状態を準備し、最小のカメラ用駆動処理群を読み込み、`assis` なしで `hl_client` と `iCamera_app` を起動し、健全性を報告し、処理・マウント・System V IPC を正常に停止できた。試験中、Nerves は Wi-Fi、SSH、ファームウェア検証、実機監視タイマーを保持した。
 
-Standard Atom mobile-application live viewing was not observable from the
-device console and remains an operator acceptance check. No recording hook,
-automatic boot integration, or NAS exporter is implemented.
+標準 Atom 携帯アプリからの生映像閲覧は機器端末だけでは確認できず、操作担当者による受入確認として残った。録画完了処理、自動起動連携、NAS 搬出処理は未実装である。
 
-## Commands
+## 命令
 
-The target exposes one deliberately small command surface:
+対象側が公開する操作面は意図的に小さくした。
 
 ```sh
 atomcam2-vendor-camera precheck
@@ -32,28 +22,25 @@ atomcam2-vendor-camera status
 atomcam2-vendor-camera stop
 ```
 
-The runtime does not start during boot. `prepare` is idempotent. After `stop`,
-the protected kernel requires a reboot before the next `start` because its
-camera modules are permanent.
+起動時には自動開始しない。`prepare` は繰り返し実行しても安全である。`stop` 後は、保護対象カーネルでカメラ用モジュールが恒久扱いとなるため、次の `start` 前に再起動が必要である。
 
-## Private state
+## 私有状態
 
-`prepare` copies the protected `/atom/configs` tree to:
+`prepare` は保護された `/atom/configs` を次へ複製する。
 
 ```text
 /data/atomcam2-vendor-camera/configs
 ```
 
-The command:
+この命令は次を行う。
 
-- requires `/atom/configs` to remain the expected read-only JFFS2 mount;
-- uses a temporary sibling directory and an atomic rename;
-- applies owner-only permissions;
-- records a schema marker only after the copy succeeds; and
-- never prints protected configuration contents.
+- `/atom/configs` が期待する読み取り専用 JFFS2 マウントのままであることを要求する。
+- 一時的な隣接ディレクトリを使い、原子的に名前変更する。
+- 所有者だけに許可する。
+- 複製成功後だけ構成版の印を記録する。
+- 保護設定の内容を出力しない。
 
-Logs, runtime state, and the future local spool live below the same mode-private
-root:
+記録、実行時状態、将来の局所一時保管は、同じ私有ルート配下に置く。
 
 ```text
 /data/atomcam2-vendor-camera/logs
@@ -61,12 +48,11 @@ root:
 /data/atomcam2-vendor-camera/spool
 ```
 
-The private configuration survived the tested A/B firmware upload, as expected
-for `/data`.
+私有設定は、試験した A/B ファームウェア送信後も `/data` の一部として保持された。
 
-## Compatibility boundary
+## 互換境界
 
-The command does not run the stock `app_init.sh`. It loads only:
+標準の `app_init.sh` は実行しない。読み込むモジュールは次だけである。
 
 ```text
 tx_isp_t31
@@ -79,48 +65,38 @@ sample_pwm_hal
 speaker_ctl
 ```
 
-The GC2053 module is loaded with `data_interface=1`. An initial probe used the
-module object's static default, but the running vendor SDK log showed its
-authoritative request:
+GC2053 は `data_interface=1` で読み込む。最初の調査ではモジュール物体の静的既定値を使ったが、稼働中の製造元 SDK 記録が次を要求していた。
 
 ```text
 insmod /system/driver/sensor_gc2053_t31.ko data_interface=1
 ```
 
-The corrected trial therefore uses interface 1 from the start.
+そのため、修正試験では初めから接続方式 1 を使用した。
 
-The vendor processes run in the protected uClibc root through `chroot`. Private
-tmpfs mounts cover transient `/tmp`, `/run`, `/dev`, `/media`, and `/sbin`
-paths. The compatibility view receives only selected camera devices, the
-private configuration copy, the local spool, and read-only procfs and sysfs.
-The real `/dev/watchdog*` nodes are absent.
+製造元処理は chroot を通じて、保護された uClibc ルート内で動かす。私有 tmpfs で一時的な `/tmp`、`/run`、`/dev`、`/media`、`/sbin` を覆う。互換環境へ見せるのは、選別したカメラ用デバイス、私有設定複製、局所一時保管、読み取り専用 procfs・sysfs だけである。実物 `/dev/watchdog*` は見せない。
 
-Only these vendor processes are started:
+起動する製造元処理は次だけである。
 
 ```text
 hl_client
 iCamera_app
 ```
 
-The watchdog-owning `assis` and the stock Wi-Fi, factory, USB, update, and
-storage helpers are omitted.
+監視タイマーを所有する `assis` と、標準の Wi-Fi、工場試験、USB、更新、記憶領域補助処理は省略した。
 
-The process capability bounding mask observed during the trial was:
+試験中に観測した機能上限は次である。
 
 ```text
 CapBnd: 0000001ff79eefff
 ```
 
-The runtime explicitly drops `CAP_SYS_ADMIN`, `CAP_SYS_BOOT`,
-`CAP_NET_ADMIN`, `CAP_SYS_MODULE`, and `CAP_MKNOD`, and sets `no_new_privs`.
-Commands for networking, flash, mounting, module management, power control, and
-broad process termination are hidden or replaced in the private command path.
-The vendor processes remain root and retain the narrow hardware access needed
-by the camera; the chroot is a compatibility boundary, not a security sandbox.
+`CAP_SYS_ADMIN`、`CAP_SYS_BOOT`、`CAP_NET_ADMIN`、`CAP_SYS_MODULE`、`CAP_MKNOD` を明示的に落とし、`no_new_privs` を設定する。ネットワーク、フラッシュ、マウント、モジュール、電源、広範な処理終了の命令は、私有命令経路から隠すか置き換える。
 
-## Physical trial
+製造元処理は root のままで、カメラに必要な限定的な機器アクセスを持つ。chroot は経路・ライブラリ互換の境界であり、安全隔離環境ではない。
 
-The corrected test firmware was:
+## 実機試験
+
+修正試験用ファームウェアは次である。
 
 ```text
 Firmware UUID: 4beff2b6-daa1-58fb-12fd-7ca0a2dff7ac
@@ -128,10 +104,9 @@ Nerves MOTD name: era-uncover
 candidate slot: B
 ```
 
-It was installed through the standard target fwup SSH subsystem. After boot,
-the system automatically validated Slot B.
+標準の対象側 fwup SSH 部分処理で導入し、起動後にスロット B を自動検証した。
 
-The corrected pre-start check found:
+開始前検査は次を報告した。
 
 ```text
 failures=0
@@ -139,12 +114,9 @@ gates=2
 warnings=1
 ```
 
-The remaining gates were the deliberately omitted `assis` behavior and
-mobile-application viewing. The NFS warning is expected because the protected
-v0.2.0 kernel does not expose an NFS client.
+残る条件は、意図的に省略した `assis` の挙動と携帯アプリ閲覧である。NFS 警告は、保護対象 v0.2.0 カーネルに NFS 利用者側機能がないため予期したものである。
 
-No camera module or vendor camera process was present before `start`. `start`
-then reported:
+`start` 前にはカメラ用モジュールも製造元処理も存在しなかった。`start` は次を報告した。
 
 ```text
 PASS Nerves heart owns the hardware watchdog before start
@@ -154,7 +126,7 @@ PASS manual vendor camera processes are running without assis
 PASS manual vendor camera runtime started
 ```
 
-After the stability interval, `status` reported:
+安定待機後の `status` は次である。
 
 ```text
 state=running
@@ -166,43 +138,31 @@ memory_reclaimable_kb=46560
 result=running
 ```
 
-The process RSS was about 3.7 MiB combined. Reclaimable memory decreased from
-about 50 MiB before start to about 45.5 MiB while running and remained stable
-during the bounded trial. SSH stayed connected, `wlan0` retained its address,
-and Nerves `heart` remained the sole `/dev/watchdog0` owner.
+二処理の RSS 合計は約 3.7 MiB であった。回収可能メモリは開始前約 50 MiB から稼働中約 45.5 MiB へ減少し、上限付き試験中は安定した。SSH 接続は維持され、`wlan0` のアドレスも変わらず、Nerves `heart` が唯一の `/dev/watchdog0` 所有者であり続けた。
 
-## Stop and recovery
+## 停止と復旧
 
-Every selected vendor camera module reports `[permanent]` in `/proc/modules`.
-Attempting to unload them is therefore neither useful nor part of the stop
-contract.
+選別したカメラ用モジュールは、すべて `/proc/modules` で `[permanent]` と報告される。取り外しは有用でなく、停止契約にも含めない。
 
-`stop` returned success after:
+`stop` は次を行って成功した。
 
-- terminating only the two recorded process IDs;
-- removing only System V IPC created after the pre-start snapshot;
-- unmounting only the recorded compatibility mounts in reverse order; and
-- revealing the original read-only `/atom/system` and `/atom/configs` mounts.
+- 記録した二つの処理 ID だけを終了する。
+- 開始前の写し以後に作られた System V IPC だけを削除する。
+- 記録した互換マウントだけを逆順で外す。
+- 元の読み取り専用 `/atom/system` と `/atom/configs` を再び見えるようにする。
 
-It then reported:
+結果は次である。
 
 ```text
 state=stopped-reboot-required
 result=stopped_reboot_required
 ```
 
-No vendor camera process or private compatibility mount remained. All selected
-camera modules remained loaded, as required by the protected kernel.
+製造元カメラ処理や私有互換マウントは残らなかった。選別したカメラ用モジュールは、保護対象カーネルの性質どおり読み込まれたままである。
 
-A deliberate `Nerves.Runtime.reboot/0` returned the device to the same validated
-Slot B with Wi-Fi and SSH healthy. No vendor camera process or selected camera
-module was present after reboot. `status` treats a reboot-required marker from
-an earlier boot as `prepared`, while the next `start` also clears stale
-transient state.
+`Nerves.Runtime.reboot/0` で意図的に再起動すると、同じ検証済みスロット B に戻り、Wi-Fi と SSH は健全であった。再起動後は製造元カメラ処理も選別モジュールも存在しなかった。`status` は以前の起動で残った再起動必須印を `prepared` と扱い、次の `start` も古い一時状態を消す。
 
-The final status correction was packaged as firmware
-`f08a534a-20b2-59f3-7d22-03db801101ee` (`two-lonely`) and validated in Slot A.
-With the earlier reboot marker still present under `/data`, it reported:
+最終状態修正は、ファームウェア `f08a534a-20b2-59f3-7d22-03db801101ee`、愛称 `two-lonely` として梱包し、スロット A で検証した。以前の再起動印が `/data` に残る状態でも次を報告した。
 
 ```text
 state=prepared
@@ -212,16 +172,10 @@ watchdog_isolation=assis_omitted
 result=stopped
 ```
 
-No selected camera module or vendor process was present.
+選別したカメラ用モジュールや製造元処理は存在しなかった。
 
-## Remaining Phase 2 acceptance
+## 第 2 段階で残る受入確認
 
-While the manual runtime is running, an operator must confirm live viewing from
-the already-paired standard Atom mobile application. The ADR intentionally does
-not infer this from process liveness or vendor logs.
+手動実行環境の稼働中に、すでに組み合わせ済みの標準 Atom 携帯アプリから生映像を確認する必要がある。処理が生きていることや製造元記録だけから成功とは判断しない。
 
-If live viewing succeeds, the next implementation boundary is Phase 3:
-observing how the vendor finalizes a local recording segment and adding only the
-minimum completion/path hook. If it fails, investigate the smallest missing
-mobile-protocol dependency before starting recording work; do not import the
-stock startup stack.
+生映像が成功すれば、第 3 段階として、製造元が局所録画区切りを確定する方法を観察し、最小の完了・経路処理だけを追加する。失敗した場合は、録画作業へ進む前に不足する最小の携帯通信依存を調査し、標準起動処理群を取り込まない。

@@ -1,22 +1,18 @@
-# 20260720 ADR 0006 boot architecture investigation
+# 20260720 ADR 0006 起動構成調査
 
-## Purpose
+## 目的
 
-Inspect the current Atom Cam 2 boot and firmware-update paths before
-implementing ADR 0006, and determine which rollback architecture is technically
-plausible without modifying the protected control kernel.
+ADR 0006 を実装する前に、現在の Atom Cam 2 の起動経路とファームウェア更新経路を調査し、保護対象制御カーネルを変更せずに実現可能な巻き戻し構成を判断する。
 
-- Branch: `feat/support-safe-firmware-update-and-rollback`
-- ADR revision commit: `e16e4b6`
-- Starting `main` commit: `b01df5d`
+- ブランチ: `feat/support-safe-firmware-update-and-rollback`
+- ADR 改訂コミット: `e16e4b6`
+- 開始時点の `main`: `b01df5d`
 
-This worklog records repository findings and design reasoning. It does not
-record a completed implementation or physical verification of the proposed
-boot-manager handoff.
+この記録は、リポジトリ調査と設計判断をまとめる。提案した起動管理処理の完成や、当初時点での実機検証を示すものではない。
 
-## Confirmed current boot chain
+## 確認済みの現在の起動経路
 
-The supported device boots through:
+対応対象の機器は、次の経路で起動する。
 
 ```text
 U-Boot
@@ -29,111 +25,78 @@ U-Boot
   -> Nerves release
 ```
 
-The protected control-kernel SHA-256 remains:
+保護対象制御カーネルの SHA-256 は次である。
 
 ```text
 b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc
 ```
 
-`scripts/post-image.sh` requires the kernel image explicitly and rejects any
-image whose SHA-256 does not match this value.
+`scripts/post-image.sh` はカーネル画像の明示指定を要求し、この値と一致しない画像を拒否する。
 
-## Active initramfs boundary
+## 実際に使われる initramfs の境界
 
-`board/atomcam2/initramfs/init` reproduces the expected first-stage handoff for
-possible future custom-kernel work. It is not the initramfs embedded in the
-protected kernel used by the supported system.
+`board/atomcam2/initramfs/init` は、将来独自カーネルを扱う場合に備え、必要な第一段階の引き渡しを再現したものである。しかし、現在の対応対象である保護対象カーネルに埋め込まれた initramfs ではない。
 
-The active vendor initramfs selects the fixed FAT-side file:
+実際の製造元 initramfs は、FAT 上の固定ファイルを選ぶ。
 
 ```text
 rootfs_hack.squashfs
 ```
 
-Therefore, changing the repository-owned initramfs source does not change the
-supported physical boot path. Direct slot selection in that source would have
-no effect unless the protected kernel were replaced.
+したがって、リポジトリ内の initramfs を変更しても、保護対象カーネルを置き換えない限り物理的な起動経路には影響しない。ADR 0006 の一部として、保護対象カーネルを置換、再構築、修正したり、検証を弱めたりしてはならない。
 
-The protected kernel must not be replaced, rebuilt, patched, or verified less
-strictly as part of ADR 0006.
+## 現在の媒体と更新契約
 
-## Current media and update contract
-
-The current `fwup.conf` defines:
+現在の `fwup.conf` は、次の構成を定義する。
 
 ```text
 partition 1: FAT boot, firmware, and provisioning files
 partition 2: ext2 application data mounted at /data
 ```
 
-Partition 1 contains the protected kernel and the active application
-`rootfs_hack.squashfs`. The current `upgrade` task writes those two files on the
-FAT filesystem while preserving partition 2.
+パーティション 1 には保護対象カーネルと、現在のアプリケーション `rootfs_hack.squashfs` がある。現在の `upgrade` は、パーティション 2 を保持しながら FAT 上の二ファイルを書き換える。
 
-This path has been physically verified for host-side updates performed while
-the camera is powered down. It is not a safe target-side rollback design
-because:
+この経路は、機器の電源を切った状態でホストから更新する手順として実機確認済みである。しかし、対象機器上で安全な巻き戻しを行う設計にはならない。
 
-- The running system depends on the same FAT filesystem being modified.
-- There is only one application root filesystem.
-- An interrupted write can damage the only bootable application image.
-- A fully written but defective application has no previous slot to select.
+- 稼働中のシステムが、書き換える同じ FAT ファイルシステムへ依存する。
+- アプリケーション用ルートファイルシステムが一つしかない。
+- 書き込み中断で唯一の起動可能画像を壊すおそれがある。
+- 書き込み自体が成功しても不具合のあるアプリケーションから戻る場所がない。
 
-The example application therefore rejects remote fwup uploads and directs the
-operator to use the host-side firmware burn workflow.
+そのため、見本アプリケーションは遠隔 fwup を拒否し、ホスト側の書き込み手順を案内している。
 
-## Components that cannot select a slot
+## スロットを選べない構成要素
 
-`rootfs_overlay/usr/bin/atomcam2-pre-run` runs through `erlinit` after the vendor
-initramfs has already selected and entered `rootfs_hack.squashfs`. It can create
-stable block-device aliases and perform application-root preparation, but it is
-too late to choose which root filesystem becomes the running root.
+`rootfs_overlay/usr/bin/atomcam2-pre-run` は、製造元 initramfs がすでに `rootfs_hack.squashfs` を選び、その内部へ入った後に `erlinit` から実行される。安定したデバイス別名やルート準備には使えるが、どのルートファイルシステムを稼働対象にするかを選ぶには遅すぎる。
 
-`rootfs_overlay/etc/erlinit.config` invokes that pre-run command immediately
-before Erlang starts. It is also too late to provide first-stage slot selection.
+`rootfs_overlay/etc/erlinit.config`、アプリケーション設定、`Nerves.Runtime.KV` の情報も同様に、アプリケーション用ルートが選択された後でしか利用できない。
 
-Application configuration and `Nerves.Runtime.KV` metadata are available only
-after the application root filesystem has already been selected. They cannot
-be the authoritative source for pre-boot slot selection.
+## 既存の実機証拠
 
-## Existing physical evidence
+以前の ADR 作業で次を実機確認している。
 
-Earlier ADR work physically established:
+- 保護対象カーネルは FAT 上の `rootfs_hack.squashfs` を起動する。
+- ホスト側 fwup の `complete` と `upgrade` は MicroSD で動作する。
+- それらの手順でも保護対象カーネルは変化しない。
+- `/data` は独立した ext2 パーティションである。
+- `/data` は通常再起動と fwup `upgrade` を越えて保持される。
+- 既存 ext2 はマウント前に必要に応じて修復され、単なる失敗を理由に作り直されない。
+- 機器設定は FAT 上に残る。
 
-- The protected kernel boots the FAT-side `rootfs_hack.squashfs`.
-- Host-side fwup `complete` and `upgrade` workflows function on MicroSD media.
-- The protected kernel remains unchanged across those workflows.
-- `/data` is a separate ext2 partition.
-- `/data` survives graceful reboot and fwup `upgrade`.
-- Existing ext2 content is repaired before mounting and is never formatted as a
-  fallback.
-- Provisioning remains on the FAT partition.
+これらは、第一段階の製造元契約を維持し、アプリケーションデータをファームウェア有効化から分離する判断を支える。ただし、第二段階のルート切り替えが可能であることはまだ証明しない。
 
-This evidence supports preserving the first-stage vendor contract and keeping
-application data independent of firmware activation. It does not prove that a
-second root-filesystem handoff is possible.
+## 検討した構成
 
-## Architectures evaluated
-
-### FAT-side A/B files
-
-Example:
+### FAT 上の A/B ファイル
 
 ```text
 rootfs-a.squashfs
 rootfs-b.squashfs
 ```
 
-This is not directly usable because the vendor initramfs selects the fixed
-`rootfs_hack.squashfs` filename. Choosing another file would require changing
-the protected initramfs or replacing the fixed file during activation.
+製造元 initramfs は固定名 `rootfs_hack.squashfs` を選ぶため、そのままでは利用できない。別ファイルを選ぶには保護対象 initramfs の変更か、固定ファイルの置換が必要になる。また、対象上でマウント中の FAT へ書き込む問題も残る。
 
-Keeping both application images on FAT would also retain target-side writes to
-the mounted boot filesystem.
-
-### Application A/B partitions selected by the vendor initramfs
-
-Example:
+### 製造元 initramfs が選ぶ A/B パーティション
 
 ```text
 partition 1: boot files
@@ -142,30 +105,19 @@ partition 3: application b
 partition 4: data
 ```
 
-The partition layout is plausible, but direct selection by the vendor
-initramfs is not. The protected initramfs has no repository-controlled logic for
-reading rollback state and mounting either application partition.
+パーティション構成自体は可能だが、保護対象 initramfs に巻き戻し状態を読んで A/B を選ぶリポジトリ管理下の処理はない。
 
-### Rename-based FAT promotion
+### FAT 上の名前変更による昇格
 
-Promoting a candidate by renaming or replacing `rootfs_hack.squashfs` would
-still modify the mounted FAT filesystem and would expose the fixed boot target
-to interrupted activation. It also would not independently provide boot-attempt
-accounting or automatic rollback.
+候補を `rootfs_hack.squashfs` へ名前変更または置換する方法も、マウント中 FAT を変更し、固定起動対象を中断にさらす。起動回数管理や自動巻き戻しも別途必要になる。
 
-### Manual rollback
+### 手動巻き戻し
 
-Retaining a previous image for host-side restoration could improve field
-recovery, but it would not satisfy unattended rollback after a failed remote
-update. It is insufficient as the primary ADR 0006 design.
+以前の画像をホスト側復元用に保持することは現場復旧に役立つが、遠隔更新失敗後の無人巻き戻しにはならない。
 
-### Immutable boot manager with raw application slots
+### 不変の起動管理処理と生のアプリケーション用スロット
 
-The protected vendor handoff can remain unchanged if
-`rootfs_hack.squashfs` becomes a small immutable boot-manager root filesystem.
-The boot manager can then select and enter a raw application SquashFS partition.
-
-Conceptually:
+`rootfs_hack.squashfs` を小さな不変の起動管理用ルートファイルシステムにすれば、保護対象の製造元引き渡しを維持したまま、生の SquashFS アプリケーション用パーティションを選択できる。
 
 ```text
 vendor initramfs
@@ -175,13 +127,16 @@ vendor initramfs
   -> Nerves application
 ```
 
-This is the only evaluated architecture that preserves the protected kernel,
-keeps the vendor filename contract, avoids device-side writes to partition 1,
-and permits the running application slot to remain untouched during an update.
+検討した中で、次を同時に満たす唯一の構成である。
 
-## Recommended conditional architecture
+- 保護対象カーネルを維持する。
+- 製造元の固定ファイル名契約を維持する。
+- 対象側更新でパーティション 1 に書き込まない。
+- 稼働中のスロットを変更せずに候補を書ける。
 
-After a physical prototype succeeds, use:
+## 条件付きで推奨する構成
+
+実機試作が成功した後、次の構成を採用する。
 
 ```text
 MicroSD
@@ -201,143 +156,98 @@ MicroSD
     └── mounted at /data
 ```
 
-Device-side application updates would write only the inactive raw application
-slot and, after destination verification, the rollback-metadata region.
+対象側更新が書き込めるのは、非稼働スロットと、書き込み先検証後の巻き戻し情報領域だけとする。保護対象カーネル、起動管理画像、FAT、機器設定、稼働中スロット、`/data` は変更しない。
 
-The protected kernel, boot manager, FAT filesystem, provisioning files, active
-application slot, and `/data` would remain unchanged.
+現在の二パーティション構成からの移行は、ホスト側 `complete` を必須とする。最初の実装では対象上の再分割を試みない。
 
-The transition from the current two-partition layout should require a host-side
-`complete` installation. The first ADR 0006 implementation should not attempt
-in-place repartitioning.
+## 巻き戻し情報の方針
 
-## Rollback metadata direction
+スロット状態は `/data` のマウント前に読め、FAT 更新から独立していなければならない。そのため専用の生領域を使用する。
 
-Slot state must be readable before `/data` is mounted and independent of FAT
-filesystem updates. A dedicated raw region is therefore preferred.
+最低限、次を保持する。
 
-The minimum state is:
+- 確定済みスロット
+- 任意の保留中スロット
+- 保留中スロットの残り起動回数
+- 単調増加する世代
+- 不一致や古い状態を拒否するためのファームウェア識別子と検査値
+- 記録全体の検査値
 
-- Confirmed slot.
-- Optional pending slot.
-- Remaining pending boot attempts.
-- Monotonically increasing generation.
-- Firmware identifiers and checksums required to reject mismatched state.
-- Record checksum.
+固定長の記録を二つ持ち、現在有効な記録を残したまま、古い側または無効側へ次世代を書き込む。起動時は、有効なうち最大世代を選ぶ。双方が無効なら推測せず、明示的な復旧状態へ入る。
 
-Maintain two fixed-size records. Write the next generation to the older or
-invalid record while preserving the currently valid record. On boot, select the
-valid record with the highest generation.
+## 起動健全性の方針
 
-If neither record is valid, the boot manager must enter an explicit recovery
-state instead of guessing.
+保留中スロットへ制御を渡す前に、その起動回数を永続的に消費する。検証前に再起動すればさらに一回消費し、上限に達した候補は確定済みスロットへ戻す。
 
-## Boot-health direction
+アプリケーションの検証条件は最低でも次とする。
 
-A pending slot must consume an attempt before the boot manager hands control to
-it. A reboot before validation therefore consumes another attempt, and an
-exhausted candidate returns to the confirmed slot.
+- OTP アプリケーションが起動する。
+- `/data` が読み書き可能でマウントされる。
+- 期待するファームウェア情報とスロット情報が整合する。
+- 必須のネットワーク部分が内部失敗なく初期化される。
+- 定めた安定待機時間を健全に経過する。
 
-Application validation should require:
+製品契約が明示しない限り、外部ネットワーク到達性そのものは必須にしない。
 
-- OTP application startup.
-- `/data` mounted read-write.
-- Expected firmware and slot metadata.
-- Required network subsystem initialization without an internal failure.
-- A defined stabilization period.
+再起動する障害は起動回数で扱えるが、無期限に停止する候補には独立した再起動手段が必要である。将来のカーネル設定に `CONFIG_JZ_WDT=y` があっても、保護対象カーネル上で利用可能な監視タイマーや挙動は証明されないため、実機確認が必要である。
 
-External network reachability should not be required unless the product
-contract explicitly depends on it.
+## 永続データ互換性
 
-Boot-attempt accounting covers failures that reboot. A candidate that hangs
-indefinitely requires an independent reset mechanism. The repository's future
-kernel defconfig contains `CONFIG_JZ_WDT=y`, but that does not prove that the
-protected kernel exposes a usable watchdog or that its behavior is suitable.
-Physical verification is required.
+ファームウェアを巻き戻しても `/data` は巻き戻らない。最初の方針では、更新後ファームウェアが既存 `/data` 形式と後方互換であることを要求する。破壊的または不可逆な移行は ADR 0006 の範囲外とし、必要時に別設計を行う。
 
-## Persistent-data compatibility
+`/data` をパーティション 2 から 4 へ移す場合も、ADR 0005 の初期化、修復、永続化、工場出荷状態への初期化の契約を維持する。
 
-Firmware rollback does not roll back `/data`.
+## 試作の通過条件
 
-The initial policy should require firmware updates to remain backward-compatible
-with the existing `/data` format. Destructive or irreversible migrations are
-outside ADR 0006 and require a separate design before use.
+A/B 更新処理を実装する前に、物理 Atom Cam 2 で次を証明する。
 
-Moving `/data` from partition 2 to partition 4 is a media-layout integration
-change. It must preserve ADR 0005 initialization, repair, persistence, and
-factory-reset behavior.
+- 保護対象カーネル SHA-256 が変わらない。
+- 製造元 initramfs が起動管理用 `rootfs_hack.squashfs` へ入る。
+- 起動管理処理が正しい MicroSD とアプリケーション用パーティションを見つける。
+- 保護対象カーネルが生の SquashFS パーティションをマウントできる。
+- 第二段階のルートファイルシステム引き渡しが成功する。
+- 引き渡し後も `/dev`、`/proc`、`/sys`、FAT のマウントが利用できる。
+- アプリケーション用パーティションから `erlinit` と Nerves が起動する。
+- ADR 0005 の方針で `/data` が初期化・修復・マウントされる。
+- 通常再起動と電源断処理が安定する。
+- 監視タイマーなど独立した再起動手段を利用でき、挙動を予測できる。
 
-## Prototype gates
+根本条件のいずれかが失敗した場合は実装を止め、ADR を再検討する。保護対象カーネルの変更を既定の逃げ道にしない。
 
-Before implementing A/B update logic, prove on physical hardware that:
+## 未解決事項
 
-- The protected-kernel SHA-256 remains unchanged.
-- The vendor initramfs enters the boot-manager `rootfs_hack.squashfs`.
-- The boot manager discovers the correct MicroSD block device and application
-  partition.
-- The protected kernel mounts a raw SquashFS application partition.
-- The boot manager performs a second root-filesystem handoff successfully.
-- `/dev`, `/proc`, `/sys`, and the FAT mount remain usable after the handoff.
-- `erlinit` and the Nerves release start from the application partition.
-- `/data` initializes, repairs, and mounts under the ADR 0005 policy.
-- Graceful reboot and poweroff remain reliable.
-- A hardware watchdog or equivalent reboot mechanism is available and behaves
-  predictably.
+- 第二段階の引き渡しで、どのマウントを移動または再結合する必要があるか。
+- 両候補位置から生の SquashFS を安定してマウントできるか。
+- 起動管理処理に必要な最小利用者空間と道具は何か。
+- 両スロットが使えない場合の復旧状態をどう見せるか。
+- 生の情報領域の開始位置、大きさ、境界整列をどうするか。
+- 固定スロット容量と最低 MicroSD 容量をどう定めるか。
+- 保護対象カーネルが利用可能な `/dev/watchdog` を提供するか。
+- 監視時間、閉じ方、再起動の意味は何か。
+- fwup が非稼働先を安全に選べるか、検査済みの外側処理が内部スロット別作業へ振り分けるべきか。
+- アプリケーションが稼働中スロットの確定情報をどう得るか。
 
-Failure of a foundational gate must stop implementation and trigger another ADR
-revision. It must not trigger a protected-kernel change by default.
+## 段階的な作業
 
-## Open questions
+1. 修正した構成を記録・確認する。
+2. 巻き戻し情報を持たない単一スロットの起動管理試作を作る。
+3. 第二段階の引き渡しを実機確認する。
+4. 二重化した生情報と手動スロット選択を追加する。
+5. 非稼働スロット書き込みと書き込み先検証を追加する。
+6. 標準の `status`、`validate`、`revert`、`prevent-revert`、`factory-reset` を追加する。
+7. 起動回数上限、アプリケーション健全性確認、監視タイマー復旧を追加する。
+8. 物理障害試験一式を実行する。
+9. ADR 0006 と ADR 0007 の受入条件を満たした後にだけ遠隔 fwup を有効にする。
 
-- Which exact mounts must be moved or rebound during the second handoff?
-- Can the protected kernel mount raw SquashFS reliably from both candidate
-  partition offsets?
-- What minimal userspace and tools must the boot manager contain?
-- How should the boot manager report recovery when neither application slot is
-  usable?
-- Where should the raw metadata region begin, and what size and alignment are
-  safe?
-- What fixed application-slot size and minimum MicroSD capacity should be
-  supported?
-- Does the protected kernel expose a usable `/dev/watchdog`?
-- What are the watchdog timeout, close, and reboot semantics?
-- Can fwup select the inactive destination safely, or should a checked wrapper
-  dispatch internal slot-specific tasks?
-- How should the application obtain the authoritative running-slot identity?
+## 当初の結論
 
-## Staged work
+現在のリポジトリは、保護対象カーネル内の initramfs を管理できないため、そこで直接スロットを選べない。推奨経路は、不変の `rootfs_hack.squashfs` 起動管理処理から、生の A/B アプリケーション用パーティションへ第二段階の引き渡しを行う方法である。
 
-1. Record and review the corrected architecture.
-2. Build a single-slot boot-manager prototype without rollback metadata.
-3. Verify the second root-filesystem handoff on physical hardware.
-4. Add redundant raw slot metadata and manual slot selection.
-5. Add inactive-slot writing and destination verification.
-6. Add standard status, validate, revert, prevent-revert, and factory-reset
-   operations.
-7. Add bounded boot attempts, application health confirmation, and watchdog
-   recovery.
-8. Run the complete physical failure matrix.
-9. Enable remote fwup only after ADR 0006 and ADR 0007 acceptance requirements
-   pass.
+この構成は、最小実機試作が引き渡しと監視タイマーの前提を証明するまで条件付きとする。試作成功前に A/B 情報、更新、遠隔送信の実装を始めてはならない。
 
-## Conclusion
+## 起動引き渡しとデータ永続化の試作検証
 
-The existing repository does not control the initramfs embedded in the
-protected kernel, so ADR 0006 cannot implement slot selection there.
-
-The recommended path is an immutable `rootfs_hack.squashfs` boot manager that
-performs a second handoff into raw A/B application partitions. This architecture
-remains conditional until a minimal physical prototype proves the handoff and
-watchdog assumptions.
-
-No A/B metadata, update, or remote-upload implementation should begin before
-that prototype succeeds.
-
-## Prototype boot handoff and data persistence verification
-
-The physical handoff prototype was verified on an Atom Cam 2 using the protected vendor control kernel.
-
-Verified boot path:
+保護対象製造元制御カーネルを使用し、物理 Atom Cam 2 で次の経路を確認した。
 
 ```text
 protected vendor kernel
@@ -349,28 +259,20 @@ protected vendor kernel
 -> Nerves release
 ```
 
-The boot manager dynamically discovered the FAT boot mount, moved the required kernel filesystems into the application root, completed `pivot_root`, unmounted the old root, and started `/sbin/init`.
+起動管理処理は FAT の起動用マウントを動的に発見し、必要なカーネルファイルシステムをアプリケーション用ルートへ移し、`pivot_root` を完了し、古いルートを外して `/sbin/init` を起動した。
 
-Early boot progress was captured through FAT reports and raw stage breadcrumbs written to the reserved beginning of prototype partition 3.
+初期進行は FAT 上の報告と、試作用パーティション 3 の予約先頭領域へ書いた段階印で確認した。
 
-### Data partition initialization
+### データ用パーティションの初期化
 
-A complete installation writes the following one-time authorization marker to the FAT partition:
+`complete` は FAT 上に一回限りの許可印を書く。
 
 ```text
 atomcam2-data-init
 format-if-missing
 ```
 
-On first boot, `atomcam2-pre-run`:
-
-- detected that partition 3 did not contain ext2
-- formatted it as ext2 with label `ATOMCAM2_DATA`
-- mounted it read-write at `/data`
-- verified write access
-- removed the initialization marker
-
-The resulting report contained:
+初回起動時の `atomcam2-pre-run` は、パーティション 3 に ext2 がないことを確認し、ラベル `ATOMCAM2_DATA` で ext2 を作成し、`/data` へ読み書き可能でマウントし、書き込みを確認した後に許可印を削除した。
 
 ```text
 stage=pre_run_complete
@@ -379,42 +281,32 @@ data_writable=1
 data_init_requested=0
 ```
 
-### Destructive raw write finding
+### 破壊的な生書き込みの発見
 
-The initial prototype used:
+最初の試作では次を使っていた。
 
 ```text
 raw_memset(${DATA_PART_OFFSET}, 256, 0xff)
 ```
 
-The count was interpreted as 256 sectors rather than 256 bytes. This erased 131072 bytes and destroyed the ext2 superblock at byte 1024.
+個数は 256 バイトではなく 256 セクターと解釈され、131072 バイトを消して、1024 バイト位置の ext2 スーパーブロックを壊した。この操作を削除し、静的検査で `DATA_PART_OFFSET` を対象とする `raw_memset` を拒否するようにした。
 
-The destructive operation was removed. The smoke test now rejects any `raw_memset` targeting `DATA_PART_OFFSET`.
+### 既存ファイルシステムの保持
 
-### Existing filesystem preservation
-
-A preservation probe was written and synchronized:
+次の印を同期して保存した。
 
 ```text
 /data/adr0006-preservation-probe
 preserve across complete
 ```
 
-Its SHA-256 before the corrected complete installation was:
+SHA-256 は次である。
 
 ```text
 6c27f92a01ddbbd369731e1020ab5f268499c30634b1ef126e8251fa76c8f78c
 ```
 
-After installing the corrected firmware with the `complete` task:
-
-- partition 3 remained ext2
-- the `ATOMCAM2_DATA` label remained
-- the partition table remained unchanged
-- the probe remained present
-- the probe SHA-256 remained identical
-
-After reboot, the report contained:
+修正版 `complete` の後も、パーティション 3 は ext2、ラベルは `ATOMCAM2_DATA`、パーティション表は不変、印とその SHA-256 は同一であった。再起動後の報告は次である。
 
 ```text
 stage=pre_run_complete
@@ -423,15 +315,13 @@ data_writable=1
 data_init_requested=0
 ```
 
-The runtime mount was:
+実行時のマウントは次であった。
 
 ```text
 /dev/mmcblk0p3 /data ext2 rw,relatime,errors=continue
 ```
 
-The initialization marker was removed after successful mounting.
-
-### Verified firmware
+検証したファームウェアは次である。
 
 ```text
 Nickname: mimic-lonely
@@ -440,25 +330,11 @@ Version: 0.1.0
 Platform: atomcam2
 ```
 
-### Result
+試作により、不変の起動管理処理からパーティション 2 への引き渡し、古いルートの分離、明示許可後だけの初回作成、`/data` の自動マウント、健全な既存 `/data` の `complete` 越し保持を確認した。
 
-The prototype now proves:
+## 起動情報とスロット方針の引き渡し検証
 
-- reliable handoff from the immutable boot manager to application partition 2
-- detachment of the old boot-manager root
-- explicit first-boot authorization before formatting partition 3
-- automatic read-write mounting of `/data`
-- preservation of an existing healthy `/data` filesystem across complete installation
-
-The prototype now implements redundant rollback metadata and a read-only logical slot-selection policy. It does not yet map slots to physical partitions, confirm successful boots, increment attempts, update metadata during boot, or provide watchdog-driven rollback.
-
-## Boot metadata and slot policy handoff verification
-
-The boot manager was extended incrementally to observe the redundant boot
-metadata and calculate the logical slot-selection policy without allowing that
-policy to control the physical boot partition.
-
-The verified startup flow is currently:
+物理的な起動先へ権限を与えないまま、二重化した起動情報を観測し、論理スロット選択を計算する処理を追加した。
 
 ```text
 read redundant metadata records
@@ -468,31 +344,20 @@ read redundant metadata records
 -> continue booting the fixed prototype partition 2
 ```
 
-### Writable temporary storage
+### 書き込み可能な一時領域
 
-The first physical metadata-reading attempt failed with:
+最初は次の失敗となった。
 
 ```text
 boot_metadata_status=unavailable
 boot_metadata_error=work_directory_creation_failed
 ```
 
-The boot manager runs from a read-only SquashFS image. The metadata codec
-requires a writable directory while extracting the two raw metadata records
-from the storage device.
+起動管理処理は読み取り専用 SquashFS 上で動き、情報処理器が二つの生記録を抽出するために書き込み可能な作業場所を必要とする。必要時に `/tmp` へ `tmpfs` をマウントするようにし、起動管理 SquashFS や永続データを変更せず作業領域を確保した。
 
-The boot manager now mounts `tmpfs` on `/tmp` when necessary before invoking
-the metadata codec. This provides temporary writable storage without modifying
-the boot-manager SquashFS or persistent application data.
+### 二重化情報の観測
 
-### Redundant metadata observation
-
-A complete installation writes identical 4096-byte metadata records at sectors
-2032 and 2040. These records remain outside the partition table and before the
-FAT partition beginning at sector 2048.
-
-A physical boot confirmed that the boot manager can read and select the initial
-record:
+`complete` は、FAT が始まるセクター 2048 より前のセクター 2032 と 2040 に、同一の 4096 バイト記録を書く。実機起動で最初の記録を選べることを確認した。
 
 ```text
 boot_metadata_status=selected
@@ -507,73 +372,41 @@ boot_metadata_slot_a_status=valid
 boot_metadata_slot_b_status=empty
 ```
 
-Metadata failure remains nonfatal during this prototype stage. The boot manager
-continues using the fixed application partition when metadata is unavailable.
+この試作段階では情報取得失敗を致命的にせず、固定のアプリケーション用パーティションを起動する。
 
-### Slot-selection policy
+### スロット選択方針
 
-The metadata codec now implements a pure slot-selection policy:
+情報処理器は次の純粋な選択方針を実装した。
 
-- When no pending slot exists, select the confirmed slot.
-- When the pending attempt count is below the maximum, select the pending slot.
-- When the pending attempt count has reached the maximum, fall back to the
-  confirmed slot.
+- 保留中スロットがなければ確定済みスロットを選ぶ。
+- 保留中の試行回数が上限未満なら保留中スロットを選ぶ。
+- 上限に達していれば確定済みスロットへ戻る。
 
-The policy does not yet increment attempts, update metadata, map slots to
-partitions, or change the physical boot target.
+この段階では、試行回数の増加、情報更新、物理パーティションとの対応、実際の起動先変更は行わない。ホスト試験は、確定済み選択、保留中選択、上限後の戻り、不正情報拒否、一方の記録破損時の他方利用を対象とした。
 
-The host-side tests cover:
+### 出力解析の修正
 
-- confirmed-slot selection
-- pending-slot selection
-- fallback after reaching the attempt limit
-- corrupt metadata rejection
-- policy output after redundant raw-device record selection
-- fallback to the remaining valid metadata copy
-
-### Boot-manager output parser correction
-
-The first physical policy-reporting attempt produced:
-
-```text
-boot_metadata_status=unavailable
-boot_metadata_error=unexpected_codec_output
-boot_metadata_selected_copy=A
-boot_policy_status=unavailable
-boot_policy_error=metadata_unavailable
-```
-
-The metadata codec had correctly added these output fields:
+最初の物理報告では、情報処理器が追加した次の項目を、起動管理側の厳密な解析処理が認識できなかった。
 
 ```text
 selected_slot=A
 selection_reason=confirmed
 ```
 
-However, the boot manager's strict output parser did not yet recognize them and
-rejected the otherwise valid codec output.
+そのため有効な出力を `unexpected_codec_output` として拒否した。解析処理を修正し、読み取った値を検証するようにした。
 
-The parser was corrected to read those fields explicitly. The policy validator
-then validates the parsed values rather than reading the codec output a second
-time.
+### 最終実機証明
 
-### Final physical proof
-
-The corrected firmware was built as:
+修正版は次である。
 
 ```text
 Firmware UUID: ready-ticket
 UUID: ace920f0-0a28-56f8-6813-e5b20e4664e8
 ```
 
-The packaged boot-manager init and metadata codec matched their repository
-sources byte-for-byte by SHA-256.
+梱包された起動管理用 `init` と情報処理器は、リポジトリ上の原本と SHA-256 でバイト単位に一致した。`complete` で書き込み検証付きで媒体へ書き、`nerves.local` から到達できた。
 
-The corrected firmware was written to the MicroSD card using the complete task
-with write verification. The camera booted successfully and became reachable
-through `nerves.local`.
-
-The final boot report contained:
+最終報告は次である。
 
 ```text
 stage=application_root
@@ -597,7 +430,7 @@ boot_policy_selected_slot=A
 boot_policy_selection_reason=confirmed
 ```
 
-This demonstrates the intended safety boundary:
+安全境界は次のとおりである。
 
 ```text
 metadata selects logical slot A
@@ -605,5 +438,4 @@ metadata selects logical slot A
 -> physical boot still uses /dev/mmcblk0p2
 ```
 
-The metadata and slot-selection policy therefore remain observational. They do
-not yet have authority over the application partition.
+この時点では、起動情報と選択方針は観測用に留まり、物理アプリケーション用パーティションを選ぶ権限を持たない。

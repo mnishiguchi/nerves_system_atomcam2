@@ -1,79 +1,59 @@
-# ADR 0008 Phase 4: NAS export foundation
+# ADR 0008 第 4 段階: NAS 搬出基盤
 
-Date: July 27, 2026
+日付: 2026-07-27
 
-## Scope
+## 範囲
 
-Choose and implement the smallest NAS transport that preserves the protected
-control kernel and the corrected vendor-camera/mobile behavior.
+保護対象制御カーネルと、修正済みの製造元カメラ・携帯アプリ挙動を維持できる、最小の NAS 通信手段を選定・実装する。
 
-## Transport finding
+## 通信手段の調査結果
 
-The physical v0.2.0 device reports the fixed verified kernel:
+物理 v0.2.0 機器は、固定・検証済みの次のカーネルを報告する。
 
 ```text
 Linux 3.10.14__isvp_swan_1.0__
 ```
 
-Neither `nfs` nor `cifs` is registered in `/proc/filesystems`, and no matching
-client module exists in the application root filesystem. The repository kernel
-defconfig is not evidence for the shipped control kernel because the packaging
-flow deliberately replaces that build output with the verified vendor image.
+`/proc/filesystems` には `nfs` も `cifs` も登録されず、アプリケーション用ルートに対応する利用者側モジュールもない。梱包処理は生成カーネルを検証済み製造元画像へ意図的に置き換えるため、リポジトリのカーネル設定は出荷済み制御カーネルの証拠にならない。
 
-The running Erlang release does include OTP SSH 6.0.1 and
-`ssh_sftp.beam`. SFTP therefore provides a client path without changing the
-kernel, importing vendor SMB code, adding a FUSE layer, or starting another
-daemon.
+一方、稼働中 Erlang には OTP SSH 6.0.1 と `ssh_sftp.beam` が含まれる。SFTP なら、カーネル変更、製造元 SMB 処理の取り込み、FUSE 層、追加常駐処理なしで利用者側通信を実現できる。
 
-## Implemented boundary
+## 実装した境界
 
-`Atomcam2NervesApp.NasExporter` is supervised on target but remains inert until
-explicit `/data` configuration enables it.
+`Atomcam2NervesApp.NasExporter` は対象側で監督されるが、`/data` の明示設定で有効化されるまで動作しない。
 
-The first transport:
+最初の通信実装は次の性質を持つ。
 
-- uses a dedicated key-based SFTP account;
-- requires a pre-provisioned NAS host key;
-- accepts only finalized `YYYYMMDD/HH/MM.mp4` spool paths;
-- uploads to an `.uploading` name and renames after size verification;
-- treats an equal-size final path as an idempotent retry;
-- reports a different-size final path as a conflict;
-- records completion outside the vendor-visible spool;
-- retains exported MP4 files locally for recent mobile playback;
-- evicts the oldest successfully exported local files only above a configured
-  byte target, preserving unexported files even when an outage exceeds it; and
-- deletes only recognized recordings under remote date directories older than
-  the configured retention period.
+- 鍵認証専用の SFTP 利用者を使用する。
+- 事前登録した NAS ホスト鍵を必須とする。
+- 完了済みの `YYYYMMDD/HH/MM.mp4` だけを扱う。
+- `.uploading` 名へ送信し、大きさ確認後に最終名へ変更する。
+- 同じ大きさの最終ファイルは、繰り返し可能な既存結果として扱う。
+- 大きさが異なる最終ファイルは衝突として報告する。
+- 完了印は製造元から見えない一時保管外へ記録する。
+- 最近の携帯アプリ再生のため、搬出済み MP4 も局所に保持する。
+- 設定したバイト目標を超えた場合だけ、搬出成功済みの古い局所ファイルから削除する。障害で目標を超えても未搬出は削除しない。
+- 遠隔保持期間より古い日付ディレクトリ配下で、認識できる録画名だけを削除する。
 
-The exporter processes at most two new segments per run and naturally retries
-after connection or NAS failures on the next poll. Missing or invalid
-configuration cannot affect camera startup, Wi-Fi, SSH, firmware health, or the
-hardware watchdog.
+一回の処理で新規区切りは最大二件とし、接続・NAS 障害後は次回調査で自然に再試行する。設定の欠落・不正は、カメラ起動、Wi-Fi、SSH、ファームウェア健全性、監視タイマーへ影響しない。
 
-## Host validation
+## ホスト試験
 
-The host suite covers:
+次を検証する。
 
-- strict enabled and disabled configuration;
-- rejection of passwords, unknown keys, duplicate keys, relative key
-  directories, and unsafe remote roots;
-- selection of only finalized regular MP4 paths;
-- rejection of symlinks and unexpected names;
-- oldest-first eviction of successfully exported local files without deletion
-  of unexported files;
-- successful-export markers without immediate local deletion; and
-- compact recording-date retention boundaries.
+- 有効・無効設定の厳密な解析
+- パスワード、未知鍵、重複鍵、相対鍵ディレクトリ、危険な遠隔ルートの拒否
+- 完了済み通常 MP4 だけの選択
+- シンボリックリンクと予期しない名前の拒否
+- 搬出済み局所ファイルだけを古い順で削除し、未搬出を保持
+- 搬出成功印を作成しても直ちに局所削除しないこと
+- 数字日付形式による保持境界
 
-## Physical transport acceptance
+## 物理通信の受入
 
-Firmware `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` was uploaded to the physical
-Atom Cam 2. It validated normally with the exporter supervised and
-`last_result=:not_configured`. The camera runtime then restarted successfully,
-kept Nerves watchdog ownership, remained reachable for 30 of 30 pings, and
-finalized a new local MP4.
+ファームウェア `acb7f0a2-1189-505d-8ea5-7c82b71c03a5` を物理 Atom Cam 2 へ送信した。搬出処理は監督下で `last_result=:not_configured` のまま、ファームウェアは通常どおり検証された。カメラ実行環境は正常に再開し、Nerves が監視タイマーを保持し、30 回中 30 回の ping に応答し、新しい局所 MP4 を確定した。
 
-A disposable OTP SFTP endpoint on the workstation exercised the actual target
-client:
+作業端末上の使い捨て OTP SFTP 接続先で、対象側の実通信を確認した。
 
 ```text
 source=20260727/13/26.mp4
@@ -83,28 +63,21 @@ temporary_files_after_completion=0
 sha256=1a52d96a3de461fd6a1b15daea84bf3480cf54a3c4d8a83d67a651c51e1c04f1
 ```
 
-The source and destination SHA-256 values matched. Repeating the same export
-reported `already_present=1` and did not upload a duplicate.
+元と先の SHA-256 は一致した。同じ搬出を繰り返すと `already_present=1` となり、重複送信しなかった。
 
-For retention, a disposable `20260706/00` directory contained one MP4, one
-`.mp4.uploading` file, and one unrelated text file. With July 27 as the device
-date and a 20-day policy, the exporter removed the two recording-shaped files
-and left the unrelated file.
+保持試験では、使い捨て `20260706/00` ディレクトリに MP4、`.mp4.uploading`、無関係な文書を各一件置いた。機器日付 7 月 27 日、保持 20 日の場合、録画形式二件だけを削除し、無関係な文書を残した。
 
-An export to a closed port returned `connect_failed: econnrefused`, preserved
-the local MP4, and did not affect the camera runtime or validated firmware.
-The next attempt against the live endpoint succeeded as an idempotent retry.
+閉じたポートへの搬出は `connect_failed: econnrefused` を返し、局所 MP4 を保持し、カメラ実行環境や検証済みファームウェアへ影響しなかった。接続先復旧後は繰り返し可能な再試行として成功した。
 
-The disposable SFTP daemon was stopped after the trial. Its test-only private
-key and host-key data were permanently removed from both `/data` and the
-workstation.
+試験用 SFTP 常駐処理を停止し、試験専用秘密鍵とホスト鍵情報は `/data` と作業端末の双方から削除した。
 
-## Production preparation
+## 本番準備
 
-The physical camera accumulated 531 finalized one-minute segments while the
-vendor runtime and standard mobile application remained usable. Before the
-production NAS was identified, a dedicated 3072-bit RSA client key was
-provisioned under `/data/atomcam2-vendor-camera/nas-ssh`:
+本番 NAS 決定前に、物理カメラは製造元実行環境と標準携帯アプリを利用可能なまま、完了済み一分区切りを 531 件蓄積した。専用の 3072 ビット RSA 利用者鍵を次へ用意した。
+
+```text
+/data/atomcam2-vendor-camera/nas-ssh
+```
 
 ```text
 fingerprint=SHA256:kcAlb/2KOdrwaZN+JGSIUIEQc9zXfDmJQDc9ShhRfzI
@@ -112,26 +85,13 @@ key_directory_mode=0700
 private_key_mode=0600
 ```
 
-The temporary workstation copy was securely removed. No
-`nas-export.conf` was created, so the exporter remained disabled and did not
-transfer or delete any local recording.
+作業端末上の一時複製は安全に削除した。`nas-export.conf` は作らず、搬出処理は無効のままとした。
 
-Reviewing the accumulated backlog exposed an unsafe pressure boundary in the
-initial implementation: it could evict the oldest finalized file without
-first proving that file had been published. Spool eviction now accepts only a
-size-matching successful-export marker written after atomic remote
-publication. A missing or stale marker preserves the local recording even
-when the spool remains above its configured target.
+蓄積量の調査で、最初の実装に危険な圧力境界が見つかった。搬出を証明せず、最古の完了ファイルを削除できる状態であった。修正後は、遠隔での原子的公開後に作成した、大きさ一致の成功印があるファイルだけを削除候補にする。印の欠落・古さがある場合は、目標を超えても局所録画を保持する。
 
-Firmware `dfce7521-1ab0-5805-f856-e29774feb386` carried this correction to the
-physical camera. The vendor runtime was stopped cleanly before installation.
-All 536 finalized recordings totaling 1,286,578,243 bytes survived the update,
-and a 537th recording finalized after automatic camera startup. The candidate
-validated in slot B, the private key retained mode `0600`, the exporter
-remained unconfigured, Nerves heart remained active, and networking passed 30
-of 30 pings.
+ファームウェア `dfce7521-1ab0-5805-f856-e29774feb386` で修正を実機へ反映した。導入前に製造元実行環境を正常停止した。536 件、合計 1,286,578,243 バイトの録画はすべて更新を越えて残り、自動開始後に 537 件目が確定した。候補はスロット B で検証され、秘密鍵は 0600、搬出処理は未設定、Nerves heart は稼働し、30 回中 30 回の ping が成功した。
 
-An isolated target fixture under `/tmp` confirmed the production behavior:
+`/tmp` 配下の隔離した対象試験では次を確認した。
 
 ```text
 exported_local_removed=true
@@ -140,30 +100,19 @@ stale_marker_preserved=true
 remaining_bytes=20
 ```
 
-The fixture was removed after the check. No production spool path participated
-in the eviction test.
+試験後に対象を削除し、本番一時保管は削除試験へ使っていない。
 
-## Temporary LMDE SFTP acceptance
+## 一時 LMDE SFTP 受入
 
-Before provisioning the intended NAS, the LMDE 7 workstation hosted a
-temporary OTP SFTP endpoint on `192.168.10.111:10022`. The endpoint used the
-camera's dedicated public key, a temporary ED25519 host key, and OTP's
-application-level `root` option to expose only:
+本来の NAS を設定する前に、LMDE 7 作業端末の `192.168.10.111:10022` で一時 OTP SFTP 接続先を動かした。カメラ専用公開鍵、一時 ED25519 ホスト鍵、OTP の応用側 `root` 設定を使い、次だけを公開した。
 
 ```text
 /tmp/atomcam2-sftp-acceptance-20260727/root
 ```
 
-No system SSH daemon, privileged port, password, or permanent workstation
-account change was required. The camera configuration was first installed with
-`enabled=false`, a 2 GiB spool target above the 1.46 GB backlog, and strict
-host-key verification. A zero-file authenticated preflight passed before
-export was enabled.
+システム SSH 常駐処理、特権ポート、パスワード、恒久利用者変更は不要であった。カメラ設定はまず `enabled=false`、一時保管目標 2 GiB、厳密なホスト鍵確認として導入し、ファイル 0 件の認証事前検査を通過してから有効化した。
 
-The first attempt used a 10-second poll interval to accelerate the backlog. It
-published 52 files, while the nearly continuous SFTP work coincided with
-console and MOTD calls missing their short timeouts and the camera later
-becoming unreachable on the LAN. The temporary endpoint was stopped, leaving:
+最初は滞留処理を速めるため 10 秒間隔を使用し、52 件を公開した。しかし、ほぼ連続した SFTP 作業と同時に、端末・MOTD 呼び出しが短い制限時間を超え、後にカメラが LAN から到達不能となった。一時接続先を停止した時点は次である。
 
 ```text
 remote_finalized=52
@@ -173,16 +122,9 @@ local_source_bytes=1918448
 local_completion_marker=false
 ```
 
-The operator power-cycled the camera. The endpoint remained stopped while the
-configuration was changed back to `enabled=false`. All 570 local recordings
-were present, the 52 final remote files had matching completion markers, and
-the interrupted local source remained intact. Volatile previous-boot evidence
-was unavailable after the physical power cycle, so this trial does not assign
-a definitive cause to the loss of reachability.
+操作担当者が電源を入れ直し、接続先を停止したまま `enabled=false` へ戻した。局所録画 570 件はすべて存在し、52 件の遠隔最終ファイルには対応する完了印があり、中断した元ファイルも保持された。物理電源断後は前回起動の一時証拠が失われたため、到達不能の原因は断定しない。
 
-The retry used the normal 60-second interval. It removed the partial temporary
-file, re-uploaded the intact local source, verified its size, published the
-final name, and only then wrote the marker. Source and destination matched:
+通常の 60 秒間隔で再試行すると、部分一時ファイルを削除し、元ファイルを再送信し、大きさを確認して最終名へ公開した後にだけ印を書いた。
 
 ```text
 path=20260727/08/45.mp4
@@ -190,7 +132,7 @@ sha256=dba1487a52149ddff9cf6cca02731022ce2fbf49f2a33c057bdcc9e4eca91415
 bytes=1918448
 ```
 
-An earlier sample also matched at both ends:
+以前の見本も双方で一致した。
 
 ```text
 path=20260727/07/51.mp4
@@ -198,13 +140,9 @@ sha256=9bc48d0b4205ccf938f74bd0f8966d09d84de71fa8236becfdafd15d2e7f4bb7
 bytes=612004
 ```
 
-Removing only that sample's local marker and rerunning the exporter reported
-`already_present=1`, uploaded nine new files, and recreated the marker without
-duplicating the existing final path.
+見本の局所印だけを削除して再実行すると `already_present=1` を報告し、新規九件を送信し、既存最終ファイルを重複させず印を再作成した。
 
-The 20-day retention pass removed both an expired `.mp4` and an expired
-`.mp4.uploading` fixture below `20260706/00`, while preserving `keep.txt`.
-Sustained normal-cadence export then reached:
+20 日保持では `20260706/00` 配下の期限切れ `.mp4` と `.mp4.uploading` を削除し、`keep.txt` を保持した。通常間隔での継続結果は次である。
 
 ```text
 remote_finalized=131
@@ -216,126 +154,49 @@ local_completion_markers=131
 local_spool_deleted=0
 ```
 
-During the throttled recovery, the camera answered 45 of 45 pings and a later
-30 of 30 pings. After export was disabled and the endpoint stopped, it answered
-another 30 of 30 pings. The vendor runtime remained running, firmware remained
-validated in slot B, Nerves heart remained active, and both firmware updater
-directories remained empty.
+調整後の復旧中に 45/45、後に 30/30、搬出無効化・接続先停止後も 30/30 の ping が成功した。製造元実行環境、検証済みスロット B、Nerves heart は健全で、更新用ディレクトリは空であった。
 
-The temporary archive remains on the workstation for operator inspection.
-The camera profile is left at `enabled=false`.
+搬出処理は 60 秒未満の調査間隔を拒否するようにした。一分の録画間隔より速い調査は定常時の価値がなく、単一中核対象で滞留処理中の負荷を不要に高める。
 
-The exporter now rejects poll intervals below 60 seconds. Polling faster than
-the one-minute recording cadence has no steady-state value and can
-unnecessarily saturate this single-core target during backlog catch-up.
+最終ファームウェア `069c6642-db31-5c6f-be14-c2756e6ee2c9` を、製造元実行環境の正常停止後にスロット A へ導入した。検証・時刻同期・一回の任意起動が成功し、監視タイマー所有を維持し、更新前 590 件と完了印 131 件を保持し、起動後に 591 件目が確定した。秘密鍵、`known_hosts`、設定も 0600 で保持された。59 秒間隔は拒否され、更新ディレクトリは空、30/30 の ping が成功した。後の物理電源断後も、操作担当者が `nerves.local` の SSH と標準 Atom 携帯アプリの正常動作を確認した。
 
-Final firmware `069c6642-db31-5c6f-be14-c2756e6ee2c9` was installed into slot
-A after stopping the vendor runtime cleanly. It validated, synchronized time,
-and started the opt-in vendor runtime once. `heart` retained the physical
-watchdog, the exporter remained disabled, all 590 pre-update recordings and
-131 completion markers survived, and a 591st recording finalized after boot.
-The private key, `known_hosts`, and exporter configuration also persisted with
-mode `0600`. The deployed parser rejected a 59-second interval, the firmware
-upload directory was empty, and the running camera answered 30 of 30 pings.
-After a subsequent physical power cycle, the operator confirmed SSH through
-`nerves.local` and normal operation in the standard Atom mobile application.
+## 本番 LMDE 接続先の事前検査
 
-## Production LMDE endpoint preflight
+予定した接続先は LMDE 7 作業端末 `192.168.10.111:22` であり、専用 `atomcam` OpenSSH `internal-sftp` 利用者を使用する。利用者の接続開始位置を録画ルートとする。作業端末には 394 GB の空きがあった。
 
-The intended endpoint is the LMDE 7 workstation at `192.168.10.111:22`, using
-the dedicated `atomcam` OpenSSH `internal-sftp` account and the account's
-session start as the recording root. The workstation had 394 GB available.
-Its ED25519 host-key fingerprint was verified locally as:
+ED25519 ホスト鍵の確認済み指紋は次である。
 
 ```text
 SHA256:GE1Kt0MHSzYd++6R4Y4vNZzZuyZ2ZCKSaxVtss/t4jU
 ```
 
-The verified host key and disabled production profile were installed
-atomically on the camera. With strict host-key checking and the device-private
-key, the camera authenticated, listed `.`, wrote and statted a 22-byte probe,
-deleted it, and closed the SFTP connection. The exporter remained disabled.
+ホスト鍵と無効状態の本番設定をカメラへ原子的に導入した。厳密なホスト鍵確認と私有鍵により、カメラは認証し、`.` を一覧し、22 バイトの試験ファイルを書き込み・調査・削除し、SFTP を閉じた。搬出処理は無効のままであった。
 
-The first server profile forced `internal-sftp` into the recording directory
-but did not chroot the account. Production enablement was therefore blocked
-until the account was confined. A small ignored workstation script staged a
-root-owned `/srv/atomcam-recordings` chroot, exposed only its writable `data`
-directory as the session start, disabled forwarding and TTY access, checked
-the camera-key fingerprint, validated `sshd`, and reloaded OpenSSH.
+最初のサーバー設定は `internal-sftp` を録画ディレクトリへ固定したが、利用者を chroot していなかったため、本番有効化を停止した。Git 管理外の小さな作業端末用手順で、root 所有 `/srv/atomcam-recordings` chroot を作り、書き込み可能な `data` だけを開始位置として公開し、転送・TTY を無効化し、カメラ鍵指紋を検査し、`sshd` を検証・再読み込みした。
 
-Firmware `09dbb2e2-edf4-5a76-d202-273f245479c2` adds support for exactly `.`
-as a configured remote directory while continuing to reject `/`, parent
-traversal, and embedded current-directory components. It validated in slot B,
-left export disabled with a 2 GiB spool target, started the vendor runtime
-once, and answered 30 of 30 pings.
+ファームウェア `09dbb2e2-edf4-5a76-d202-273f245479c2` は、遠隔ディレクトリとして厳密な `.` を許可しつつ、`/`、親移動、途中の現在ディレクトリ要素を拒否する。スロット B で検証され、搬出無効、目標 2 GiB、製造元実行環境一回起動、30/30 ping を確認した。
 
-The operator then applied the workstation script. The resulting account is
-chrooted to the root-owned `/srv/atomcam-recordings`, starts in its writable
-`data` directory, accepts only the camera key, and has no forwarding, TTY, or
-shell access. From the camera, listing `/etc` failed outside the chroot while a
-write, stat, and delete probe in `.` succeeded.
+作業端末用手順適用後、利用者は root 所有 `/srv/atomcam-recordings` へ閉じ込められ、書き込み可能な `data` から開始し、カメラ鍵だけを受け入れ、転送・TTY・シェルを持たない。カメラから `/etc` の一覧は失敗し、`.` での書き込み・調査・削除は成功した。
 
-Completion markers from the disposable port-10022 endpoint were archived
-before production enablement. Markers represent publication to one specific
-endpoint and must not be reused after changing the destination. The fresh
-production marker directory started empty; no local recording was removed.
+使い捨て 10022 接続先の完了印は本番有効化前に退避した。印は特定接続先への公開を示すため、接続先変更後に再利用してはならない。本番用印ディレクトリは空から開始し、局所録画は削除しなかった。
 
-Two production runs from the ten-file firmware published 20 recordings
-atomically. The first sampled destination matched its local SHA-256 and neither
-run left an `.uploading` file. The 2 GiB spool threshold remained above the
-approximately 1.75 GB backlog, so all 20 marked source recordings remained
-available locally.
+十件処理版で二回実行し、20 件を原子的に公開した。最初の見本は局所 SHA-256 と一致し、`.uploading` は残らなかった。2 GiB 目標は約 1.75 GB の滞留量を上回ったため、印付き元 20 件も局所に保持した。
 
-After the second run, and after an interactive diagnostic accidentally printed
-an entire MP4 into the Nerves console, the camera stopped responding on the
-LAN. The two events are confounded and no definitive cause is assigned.
-OpenSSH was stopped on the workstation before the operator power-cycled the
-camera. Recovery preserved 658 finalized recordings, all 20 production
-markers, and all 20 corresponding local sources. The exporter was immediately
-disabled again.
+二回目の後、対話診断が誤って MP4 全体を Nerves 端末へ出力した後に、カメラが LAN から応答しなくなった。二事象が混在するため原因は断定しない。作業端末の OpenSSH を停止してから電源を入れ直すと、完了録画 658 件、本番印 20 件、対応元 20 件を保持していた。搬出処理は直ちに再び無効化した。
 
-As conservative hardening for the single-core camera, the per-run batch is now
-two files at the normal one-minute interval. This sustains the one-file-per-
-minute recording rate while draining one additional backlog file per minute,
-without continuous SFTP work.
+単一中核カメラの保守的強化として、一回の処理を二件、通常一分間隔とした。毎分一件の録画速度を維持しつつ、毎分一件ずつ滞留を減らし、SFTP を連続稼働させない。
 
-Firmware `174c476f-9489-50c2-548c-4b62df277f9f` (`barrel-gain`) installed and
-validated in slot A with the workstation SFTP service still stopped. The
-exporter remained disabled, the vendor camera runtime started once, `heart`
-retained `/dev/watchdog0`, 665 local recordings and all 20 production markers
-were present, both updater directories were empty, and networking passed 30 of
-30 pings.
+ファームウェア `174c476f-9489-50c2-548c-4b62df277f9f`、愛称 `barrel-gain` は、作業端末 SFTP を停止したままスロット A に導入・検証した。搬出無効、製造元実行環境一回起動、`heart` が `/dev/watchdog0` を保持、局所録画 665 件、本番印 20 件、更新ディレクトリ空、30/30 ping を確認した。
 
-## Clean production reproduction and bounded transport
+## 本番再現と通信の上限化
 
-With the normal 60-second cadence and two-file batch, the first production
-continuation raised the fresh marker count from 20 to 48 across 14 runs. Each
-successful run retained its local sources. The device later became unreachable
-and required a physical power cycle. Recovery with the workstation SSH service
-stopped found 687 local recordings, all 48 production markers, all 131 archived
-disposable markers, and no missing size-matching marked source. The exporter
-was immediately disabled.
+通常 60 秒、二件処理で、最初の継続は 14 回にわたり本番印を 20 から 48 へ増やした。成功した元ファイルはすべて保持された。その後到達不能となり物理電源断が必要になった。作業端末 SSH を停止した復旧後、局所録画 687 件、本番印 48 件、退避済み使い捨て印 131 件があり、大きさ一致の印付き元に欠落はなかった。搬出を直ちに無効化した。
 
-The backlog path was simplified before repeating the trial. Pending-file
-selection now stops after finding two unmarked files, one immutable spool
-snapshot is reused for the run, and spool enforcement performs no marker reads
-while the snapshot is below the configured limit. On target firmware
-`de5c7e2b-9ab7-53cb-ab74-7e2d26ba1566` (`table-focus`), a 693-file snapshot
-took 4,136 milliseconds while below-limit enforcement on that snapshot took
-zero milliseconds. Erlang memory remained about 26 MiB.
+滞留経路を単純化した。未印ファイル二件を見つけた時点で選択を止め、一回の不変な一時保管写しを使い回し、写しが上限未満なら上限適用時に印を読まない。ファームウェア `de5c7e2b-9ab7-53cb-ab74-7e2d26ba1566`、愛称 `table-focus` では 693 件の写しに 4,136 ミリ秒、上限未満の適用には 0 ミリ秒、Erlang メモリは約 26 MiB であった。
 
-A second production run removed the earlier interactive-console confounder.
-The only workstation-side observation was continuous ping plus OpenSSH service
-logging. OpenSSH accepted exactly 12 clean SFTP sessions; each completed and no
-server error or leaked server process appeared. The production marker count
-therefore rose from 48 to 72. No thirteenth connection reached the server.
-Ping was initially stable, then became intermittent, briefly recovered, and
-eventually stopped. The device hardware watchdog did not restore reachability,
-so the workstation SSH service was stopped before another physical power
-cycle.
+二回目の本番試験では、対話端末の混在を除き、連続 ping と OpenSSH 記録だけを観測した。OpenSSH は正常な SFTP 接続を正確に 12 回受け入れ、各接続が完了し、サーバー誤りや残留処理はなかった。印は 48 から 72 へ増えたが、13 回目はサーバーへ到達しなかった。ping は安定後に断続的となり、一時復旧した後に停止した。実機監視タイマーでは到達性を戻せず、作業端末 SSH を停止して物理電源断した。
 
-A temporary device-local diagnostic, persisted under `/data`, distinguished
-the failure from unbounded memory growth:
+`/data` へ残した一時診断により、無制限なメモリ増加ではないことを確認した。
 
 ```text
 baseline_erlang_total_mb=approximately 26
@@ -344,73 +205,29 @@ baseline_exporter_function=gen_server:loop/5
 stalled_exporter_function=gen:do_call/4
 ```
 
-During healthy cycles the exporter returned to its GenServer loop. It later
-remained in `gen:do_call/4`, diagnostic intervals slipped, and process and port
-counts fell while total Erlang memory stayed bounded. Review of the OTP SSH
-implementation found that SFTP client-channel calls wait with an outer
-`infinity` and rely on a timer inside the channel process. The exact SFTP
-subcall was not isolated, but the failure boundary is an unreturned synchronous
-OTP transport call rather than the completed-file scan or a growing Erlang
-heap.
+健全な周期では GenServer 待機へ戻るが、後に `gen:do_call/4` に留まり、診断間隔が遅れ、処理・ポート数が減る一方、Erlang 総メモリは上限内であった。OTP SSH を調べると、SFTP 利用者通路呼び出しは外側が `infinity` で、通路処理内部の時間処理へ依存している。正確な下位呼び出しは特定できなかったが、原因境界は録画一覧やヒープ増大ではなく、戻らない同期 OTP 通信呼び出しである。
 
-The first mitigation invoked the whole transport in an unlinked monitored
-process with a 30-second outer deadline. A target-only probe proved that it
-terminated a blocked call, but follow-up review and server-side session history
-showed an important flaw: killing the transport owner can skip the `after`
-blocks responsible for closing the SFTP channel and SSH connection.
+最初の対策は、通信全体を連結しない監視処理で動かし、30 秒の外側期限で終了させた。対象内試験では停止できたが、通信所有処理を殺すと SFTP 通路と SSH 接続を閉じる `after` を飛ばすおそれがあると判明した。
 
-Firmware `eafb221d-e366-5cd1-4f2c-42ee129d9c10` (`trigger-yard`) replaces that
-whole-transfer kill with a hard deadline around each OTP SSH/SFTP operation.
-The transport owner retains the exact channel and connection handles and
-always unwinds through cleanup. Cleanup itself is bounded; as a final fallback
-it terminates the exact resource process. A connection-refused trial returned
-promptly, left `:sshc_sup` empty, preserved all unexported recordings, and
-passed 30 of 30 pings.
+ファームウェア `eafb221d-e366-5cd1-4f2c-42ee129d9c10`、愛称 `trigger-yard` では、通信全体の強制終了をやめ、各 OTP SSH/SFTP 操作へ硬い期限を設けた。所有処理は正確な通路・接続参照を保持し、必ず後始末を通る。後始末にも期限を設け、最後の手段として正確な資源処理だけを終了する。接続拒否試験は速やかに戻り、`:sshc_sup` は空、未搬出録画を保持し、30/30 ping を通過した。
 
-Two subsequent production cycles against the confined LMDE 7 endpoint
-published four finalized recordings atomically. The spool policy removed only
-local recordings whose remote publication had completed, and it removed their
-completion markers with them. The remaining approximately 2.20 GB consisted
-of unexported recordings and was preserved above the configured 2 GiB target.
-Camera reachability stayed stable throughout. After export was disabled,
-`:sshc_sup` was empty and the server retained only its listener, with no
-per-session `sshd` processes.
+続く二回の本番処理で四件を原子的に公開した。一時保管方針は、遠隔公開済みの局所録画だけを削除し、その完了印も同時に削除した。残り約 2.20 GB は未搬出のため、設定 2 GiB を超えても保持した。到達性は安定し、無効化後は `:sshc_sup` が空、サーバーには待受だけが残った。
 
-Final firmware `efc08024-9abe-5a5d-6d68-be70ce82b5bc` (`uncover-skill`)
-removes the whole-transfer deadline entirely. Its first upload attempt with the
-vendor runtime active lost reachability before committing a candidate; the
-existing validated slot B recovered on power cycle. After the runtime was
-stopped cleanly, the same bundle installed in slot A, rebooted, validated, and
-automatically restarted the opt-in runtime. This establishes a simple
-operational rule: stop the optional compatibility runtime before OTA to leave
-the constrained device maximum memory and flash-I/O headroom.
+最終ファームウェア `efc08024-9abe-5a5d-6d68-be70ce82b5bc`、愛称 `uncover-skill` は通信全体の期限を完全に削除した。製造元実行環境稼働中の最初の送信では候補確定前に到達性を失い、電源断後に既存検証済みスロット B へ戻った。実行環境を正常停止した後、同じ書庫をスロット A へ導入し、再起動・検証・任意実行環境自動再開に成功した。制約の大きい機器でメモリとフラッシュ入出力の余裕を最大化するため、OTA 前に任意互換実行環境を停止する運用規則を定めた。
 
-The exact final image then completed one deliberately limited production
-cycle. It atomically published two recordings and removed only those two local
-files after publication. The remaining 2,818,758,555 bytes were unexported and
-therefore remained local despite exceeding the configured 2 GiB target.
-Networking passed 87 of 87 pings, the vendor runtime and Nerves watchdog stayed
-healthy, and cleanup again left `:sshc_sup` empty and only the NAS listener
-process. Persistent export configuration was returned to `enabled=false`.
-All 42 host tests pass.
+同じ最終画像で限定一回の本番処理を行い、二件を原子的に公開し、その二件だけを局所削除した。残り 2,818,758,555 バイトは未搬出のため、2 GiB を超えても保持した。87/87 ping、製造元実行環境、Nerves 監視タイマーは健全で、後始末後は `:sshc_sup` が空、NAS 待受だけとなった。設定を `enabled=false` へ戻した。ホスト試験 42 件はすべて成功した。
 
-## Production acceptance gate
+## 本番受入条件
 
-The transport and intended confined account were physically proven before the
-final acceptance run. Completion required:
+最終受入前に、通信と閉じ込めた本番利用者を実機で確認した。完了条件は次である。
 
-- production backlog catch-up and oldest-first eviction of exported files;
-- approximately 20-day retention on that NAS; and
-- stable mobile live view, playback, Wi-Fi, SSH, watchdog ownership, and
-  firmware validation during sustained export.
+- 本番滞留の解消と、搬出済みファイルの古い順削除
+- NAS 上で約 20 日の保持
+- 継続搬出中も、携帯生映像、再生、Wi-Fi、SSH、監視タイマー所有、ファームウェア検証が安定すること
 
-## Instrumented ten-minute run and ext2 recovery
+## 計測付き十分間試験と ext2 復旧
 
-The final firmware was run against the confined LMDE 7 endpoint for ten
-minutes with the 4 GiB spool target, normal 60-second cadence, two-file batch,
-and no open target console. It completed 11 SFTP sessions. The workstation
-recorded 11 accepted public-key sessions and 11 matching closes. Continuous
-reachability passed:
+最終ファームウェアを、閉じ込めた LMDE 7 接続先に対し、目標 4 GiB、通常 60 秒、二件処理、対象端末を開かずに十分間動かした。SFTP 接続を 11 回完了し、作業端末は公開鍵接続 11 回と対応する終了 11 回を記録した。
 
 ```text
 614 packets transmitted
@@ -418,8 +235,7 @@ reachability passed:
 0% packet loss
 ```
 
-The persisted ten-second diagnostic covered 209 samples. Its observed ranges
-were:
+十秒間隔診断 209 件の範囲は次である。
 
 ```text
 Erlang total bytes: 24981352..28576640
@@ -430,55 +246,29 @@ SSH clients:        0..1
 TCP rows:           13..15
 ```
 
-The one-client samples occurred during active calls and returned to zero.
-Wi-Fi remained `:internet` and `:configured`; the exporter queue stayed empty.
-This run did not reproduce the earlier unreturned transport call or network
-loss.
+SSH 利用者一件は稼働中呼び出し時だけで、その後 0 へ戻った。Wi-Fi は `:internet`・`:configured`、搬出待ち列は空であった。以前の戻らない通信や到達不能は再現しなかった。
 
-Disabling export after the run surfaced:
+試験後の無効化で次が現れた。
 
 ```text
 {:marker_write_failed, {"20260727/12/30.mp4", :eio}}
 ```
 
-The kernel log identified stale ext2 directory entries for completion markers
-`20260727/12/29.mp4` and `30.mp4`, using deleted inodes 32765 and 32764.
-Those errors were already present 28 seconds into the boot, before this export
-trial, after the preceding forced power cycle. Both source MP4s remained local,
-and the remote endpoint had already published exact-size final files. Missing
-valid local markers therefore continued to preserve the sources.
+カーネル記録は、完了印 `20260727/12/29.mp4` と `30.mp4` に、削除済み inode 32765・32764 を使う古い ext2 ディレクトリ項目があることを示した。これは先行する強制電源断後、今回試験の前から存在した。元 MP4 二件は局所に残り、遠隔には正確な大きさの最終ファイルが公開済みであった。局所有効印がないため、元は引き続き削除対象にならない。
 
-With export disabled, the vendor runtime and application stopped cleanly and
-`/data` unmounted. A read-only full check returned status 4 and found only the
-two stale entries, three inode block-count corrections, and matching bitmap
-differences. The established repair command:
+搬出無効、製造元実行環境とアプリケーション停止後に `/data` を外した。読み取り専用完全検査は状態 4 で、古い二項目、inode ブロック数三件、対応するビット図差分だけを検出した。既定の修復命令は次である。
 
 ```text
 e2fsck -p -f /dev/rootdisk0p4
 ```
 
-returned status 1 and corrected them. A second `e2fsck -f -n` returned status
-0. After a normal reboot, `/data` mounted read-write, the boot log contained no
-ext2 error, both source MP4s retained their original sizes, the damaged markers
-were absent, NAS export remained disabled, and the vendor runtime returned to
-`result=running`.
+状態 1 で修正し、二回目の `e2fsck -f -n` は状態 0 となった。通常再起動後、`/data` は読み書き可能、ext2 誤りなし、元 MP4 二件の大きさは不変、壊れた印は消え、搬出無効、製造元実行環境は `result=running` に戻った。
 
-The incident demonstrates that ext2 can mount successfully despite stale
-directory entries. The ADR 0005 initializer therefore now runs the existing
-offline `e2fsck -p` policy before the first read-write mount of an existing
-filesystem instead of waiting for a mount failure. Preen mode returns
-immediately for a clean filesystem and checks one marked unclean after a power
-interruption; `-f` remains useful for the deliberate offline diagnostic and
-repair procedure.
+この事象により、古いディレクトリ項目があっても ext2 がマウント成功し得ることが分かった。ADR 0005 の初期化処理は、既存ファイルシステムの最初の読み書きマウント前に、標準のオフライン `e2fsck -p` を実行するようにした。clean ならすぐ戻り、電源断後の unclean では検査する。`-f` は意図的なオフライン診断・修復に残す。
 
-The first boot candidate showed that erlinit mounts `/data` before the custom
-Nerves initializer runs. The initializer now unmounts that early boot mount
-before checking it. A forced full check proved the sequence but added
-approximately 27 seconds to every boot, so the normal boot policy uses standard
-preen mode without `-f`.
+最初の起動候補では、独自 Nerves 初期化処理より前に erlinit が `/data` をマウントすることも判明した。検査前にその早期マウントを外すようにした。毎回の強制完全検査は約 27 秒を追加したため、通常起動では `-f` なしの標準事前検査を使う。
 
-Final firmware `b9aa5131-115a-592a-3437-b4495ac8d513` (`pig-oil`) installed,
-validated in slot B, and recorded the clean-filesystem sequence:
+最終ファームウェア `b9aa5131-115a-592a-3437-b4495ac8d513`、愛称 `pig-oil` はスロット B へ導入・検証され、clean ファイルシステムで次を記録した。
 
 ```text
 00:00:16.842 unmounting before filesystem check
@@ -486,13 +276,9 @@ validated in slot B, and recorded the clean-filesystem sequence:
 00:00:16.989 partition mounted after filesystem check
 ```
 
-Wi-Fi returned in the normal boot window. `/data` was ext2 read-write, the
-kernel log contained no ext2 or I/O error, NAS export remained disabled,
-Nerves retained its watchdog, all three vendor processes and both isolation
-shims were healthy, and finalized local recording continued.
+Wi-Fi は通常時間内に復帰し、`/data` は ext2 読み書き可能、ext2・入出力誤りなし、搬出無効、Nerves 監視タイマー、製造元三処理、二つの隔離補助処理、局所録画は健全であった。
 
-The operator then physically interrupted power while the camera was running.
-On the first subsequent boot, preen exercised the unclean-filesystem path:
+稼働中に物理電源断し、次の最初の起動で unclean 経路を確認した。
 
 ```text
 00:00:16.772 unmounting before filesystem check
@@ -500,34 +286,17 @@ On the first subsequent boot, preen exercised the unclean-filesystem path:
 00:00:43.562 partition mounted after filesystem check
 ```
 
-The approximately 27-second check corrected the filesystem before it became
-available to applications. The post-mount kernel log contained no ext2 or I/O
-error. Firmware remained valid in slot B, NAS export remained disabled,
-Nerves retained the watchdog, the vendor runtime and both isolation shims were
-healthy, and new one-minute recordings finalized. The operator confirmed ping,
-SSH, and mobile live view on this first boot without a second power cycle.
+約 27 秒の検査で、アプリケーションへ公開する前に修正した。マウント後のカーネル記録に ext2・入出力誤りはなく、スロット B の検証状態、搬出無効、Nerves 監視タイマー、製造元実行環境、隔離補助処理、新しい一分録画は健全であった。操作担当者は二回目の電源断なしで、最初の起動から ping、SSH、携帯生映像を確認した。
 
-## Persistent-session production acceptance
+## 持続接続による本番受入
 
-Further clean trials reproduced a management-SSH stall after several otherwise
-successful export cycles. Completed server sessions were not leaked, Erlang
-memory remained bounded, a complete spool scan took about seven seconds, and
-the pending recordings read normally. The remaining repeated cost was the full
-OTP SSH and SFTP setup and teardown for every two-file batch.
+さらに正常な試験を重ねると、複数の搬出周期後に管理 SSH が停止する事象を再現した。完了済みサーバー接続の残留はなく、Erlang メモリは上限内、全一時保管走査は約七秒、保留録画も正常に読めた。残る繰り返し費用は、二件処理ごとの OTP SSH/SFTP 接続・切断全体であった。
 
-The transport was therefore reduced to one supervised SFTP session. It reuses
-that session while the destination remains enabled and unchanged, closes it
-after an operation failure, and reconnects on the next poll. Disabling export
-or loading missing or invalid configuration also closes the session. The
-existing hard deadline remains around each OTP operation.
+そこで通信を一つの監督 SFTP 接続へ縮小した。接続先が有効で不変の間は再利用し、操作失敗後は閉じ、次回調査で再接続する。無効化、設定欠落・不正でも閉じる。各 OTP 操作の硬い期限は維持する。
 
-Firmware `85383715-9eba-5d8d-a716-9f81a504d7cb` (`laptop-east`) installed and
-validated in slot A. After a power cycle, the vendor runtime started
-automatically and the operator confirmed device reachability. The final
-production trial used the confined LMDE 7 account, the normal 60-second poll,
-two files per batch, and a 4 GiB spool target above the existing backlog.
+ファームウェア `85383715-9eba-5d8d-a716-9f81a504d7cb`、愛称 `laptop-east` をスロット A へ導入・検証した。電源断後に製造元実行環境が自動開始し、操作担当者が到達性を確認した。最終本番試験は、閉じ込めた LMDE 7 利用者、60 秒調査、二件処理、既存滞留量を上回る 4 GiB 目標で行った。
 
-Across 15 minutes:
+15 分間の結果は次である。
 
 ```text
 ping_transmitted=900
@@ -542,18 +311,8 @@ local_spool_deleted=0
 local_spool_bytes_after=3336990771
 ```
 
-The same SFTP channel remained ready throughout the run. OpenSSH retained one
-camera login rather than creating a session per poll, and management SSH
-worked both beyond the earlier failure threshold and at the end. The final
-target snapshot showed validated firmware, active Nerves heart, approximately
-29 MiB of Erlang memory, 208 processes, 18 ports, and one expected SSH client.
-All three vendor processes, storage and watchdog isolation shims, and local
-recording remained healthy.
+同じ SFTP 通路が試験中ずっと利用可能で、OpenSSH のカメラ認証は一回だけであった。管理 SSH は以前の失敗時点を越えて最後まで動作した。最終対象状態は、検証済みファームウェア、Nerves heart 稼働、Erlang 約 29 MiB、処理 208、ポート 18、予期する SSH 利用者一件であった。製造元三処理、記憶領域・監視タイマー隔離、局所録画も健全である。
 
-Export was then changed atomically back to `enabled=false`. The exporter
-reported `:disabled`, the SFTP state returned to disconnected,
-`:sshc_sup` became empty, and the server login disappeared. No unexported local
-recording was eligible for deletion. Together with the earlier checksum,
-atomic-publication, idempotency, refused-connection recovery, selective
-retention, spool-pressure, reboot, and mobile-application trials, this
-completes the Phase 4 production acceptance gate.
+最後に設定を原子的に `enabled=false` へ戻した。搬出処理は `:disabled`、SFTP は未接続、`:sshc_sup` は空、サーバーの利用者接続も消えた。未搬出の局所録画は削除対象にならなかった。
+
+これまでの検査値一致、原子的公開、繰り返し可能性、接続拒否後の復旧、選択的保持、一時保管圧力、再起動、携帯アプリ試験と合わせ、第 4 段階の本番受入条件を満たした。

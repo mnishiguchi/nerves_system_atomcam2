@@ -1,157 +1,148 @@
-# ADR 0002: Align the sample application with standard Nerves conventions incrementally
+# ADR 0002: サンプルアプリケーションを標準的な Nerves の慣例へ段階的に合わせる
 
-## Status
+## 状態
 
-Accepted
+承認済み
 
-The installation-specific decisions in this ADR are superseded by
-[ADR 0004](0004-adopt-fwup-for-standard-media-workflows.md).
+この ADR のインストール固有の決定は、
+[ADR 0004](0004-adopt-fwup-for-standard-media-workflows.md) によって置き換えられています。
 
-## Context
+## 背景
 
-The Atom Cam 2 example application originally used project-specific runtime
-code for responsibilities that standard Nerves libraries already provide,
-including Wi-Fi startup, interactive shell presentation, logging, service
-discovery, system time, and SSH state.
+Atom Cam 2 のサンプルアプリケーションでは当初、標準の Nerves ライブラリがすでに
+提供している責務について、プロジェクト固有の実行時コードを使用していました。
+対象には、Wi-Fi の起動、対話用シェルの表示、ログ記録、サービス探索、システム時刻、
+SSH の状態管理が含まれます。
 
-The platform does not use the ordinary Nerves firmware-partition layout. It
-boots a flat MicroSD payload containing the protected Atom Cam 2 kernel and a
-SquashFS root filesystem. As a result, some standard Nerves assumptions do not
-apply:
+この基盤は、通常の Nerves ファームウェアパーティション構成を使用しません。
+保護対象の Atom Cam 2 カーネルと SquashFS root filesystem を含む、平坦な構成の
+MicroSD から起動します。このため、Nerves の標準的な前提の一部は適用できません。
 
-- Firmware installation must continue through `mix atomcam2.install`.
-- Remote firmware upload must remain rejected.
-- The active firmware metadata cannot be read from a conventional U-Boot
-  environment or application partition.
-- Writable runtime state must be stored on `/media/mmc`.
-- The platform does not expose standard application-partition usage or thermal
-  sensor data.
+- ファームウェアのインストールには引き続き `mix atomcam2.install` を使用する
+- リモートでのファームウェア書き込みは引き続き拒否する
+- 稼働中ファームウェアのメタデータを、一般的な U-Boot 環境またはアプリケーション
+  パーティションから読み取れない
+- 書き込み可能な実行時状態は `/media/mmc` に保存する必要がある
+- 標準的なアプリケーションパーティションの使用量や温度センサーのデータを公開しない
 
-A single large replacement would make regressions difficult to isolate on
-hardware. The application therefore needed to move toward standard Nerves
-conventions through small, independently verified changes.
+一度に大規模な置き換えを行うと、実機上の不具合の切り分けが困難になります。
+そのため、小さく独立して検証可能な変更を積み重ね、標準的な Nerves の慣例へ
+近づける必要がありました。
 
-## Decision
+## 決定
 
-### Preserve the platform boundary
+### 基盤の境界を維持する
 
-Keep the existing Atom Cam 2 boot and installation contract:
+既存の Atom Cam 2 の起動およびインストール契約を維持します。
 
-- Preserve the verified Atom Cam 2 control kernel.
-- Continue producing the flat MicroSD payload.
-- Use `mix atomcam2.install` for installation.
-- Reject unsupported remote firmware updates.
-- Do not represent the platform as having a standard Nerves application
-  partition when it does not.
+- 検証済みの Atom Cam 2 制御カーネルを維持する
+- 平坦な構成の MicroSD 書き込み内容を引き続き生成する
+- インストールには `mix atomcam2.install` を使用する
+- 対応していないリモートファームウェア更新を拒否する
+- 標準的な Nerves アプリケーションパーティションが存在しないにもかかわらず、
+  存在するように表現しない
 
-Standardize the application runtime without redesigning the underlying platform
-workflow.
+基盤そのものの手順を再設計せずに、アプリケーションの実行環境を標準化します。
 
-### Adopt standard Nerves runtime services explicitly
+### 標準の Nerves 実行時サービスを明示的に採用する
 
-Use focused Nerves libraries for the services the example application needs:
+サンプルアプリケーションが必要とするサービスには、目的を限定した次の Nerves
+ライブラリを使用します。
 
-- `NervesMOTD` for the IEx greeting
-- `RingLogger` for retained runtime logs
-- `NervesSSH` for remote IEx access
-- `MdnsLite` for SSH, SFTP, and Nerves device advertisements
-- `VintageNet` and `VintageNetWiFi` for Wi-Fi configuration
-- `NervesTime` for approximate startup time and NTP synchronization
-- `Nerves.Runtime` for runtime firmware metadata
+- IEx の挨拶表示には `NervesMOTD`
+- 実行時ログの保持には `RingLogger`
+- リモート IEx 接続には `NervesSSH`
+- SSH、SFTP、および Nerves 機器の通知には `MdnsLite`
+- Wi-Fi 設定には `VintageNet` と `VintageNetWiFi`
+- 起動時刻の概算復元と NTP 同期には `NervesTime`
+- 実行時ファームウェアメタデータには `Nerves.Runtime`
 
-Declare these dependencies explicitly rather than adopting `nerves_pack`.
-The application needs project-specific configuration for several services and
-does not need the direct-link networking or DHCP-server behavior that the bundle
-would add.
+`nerves_pack` を導入するのではなく、これらの依存関係を明示的に宣言します。
+複数のサービスでプロジェクト固有の設定が必要であり、同梱パッケージが追加する
+直接接続用ネットワークや DHCP サーバーの動作は必要ありません。
 
-### Let VintageNet own Wi-Fi configuration
+### Wi-Fi 設定を VintageNet に一元化する
 
-Build the default `wlan0` configuration in `config/runtime.exs` from the
-provisioning data on `/media/mmc`.
+`/media/mmc` のプロビジョニング情報から、`config/runtime.exs` 内で既定の
+`wlan0` 設定を組み立てます。
 
-Remove the custom network worker only after the VintageNet configuration has
-been verified on hardware. Application code must not reconfigure `wlan0` after
-VintageNet starts.
+VintageNet の設定を実機で検証した後に限り、独自のネットワーク処理を削除します。
+VintageNet の起動後、アプリケーションコードが `wlan0` を再設定してはなりません。
 
-Retain credential-safe diagnostics, but do not expose the Wi-Fi passphrase.
+認証情報を露出しない診断情報は維持しますが、Wi-Fi のパスフレーズは表示しません。
 
-### Store writable runtime state on the MicroSD partition
+### 書き込み可能な実行時状態を MicroSD パーティションへ保存する
 
-Use `/media/mmc` for state that must survive reboot:
+再起動後も維持する必要がある状態には `/media/mmc` を使用します。
 
 - `/media/mmc/nerves-firmware-metadata.conf`
 - `/media/mmc/.nerves_time`
 - `/media/mmc/nerves_ssh`
 
-Generate the firmware metadata file from the actual `.fw` artifact during
-installation and load it through `Nerves.Runtime.KVBackend.InMemory`.
+インストール時に実際の `.fw` 成果物からファームウェアメタデータファイルを生成し、
+`Nerves.Runtime.KVBackend.InMemory` を介して読み込みます。
 
-Persist SSH host keys under `/media/mmc/nerves_ssh` because `/data` is read-only
-on this platform.
+この基盤では `/data` が読み取り専用であるため、SSH ホスト鍵は
+`/media/mmc/nerves_ssh` に永続化します。
 
-### Synchronize time when Internet access becomes available
+### インターネット接続時に時刻を同期する
 
-Allow `NervesTime` to restore an approximate timestamp from
-`/media/mmc/.nerves_time`.
+`NervesTime` が `/media/mmc/.nerves_time` から概算時刻を復元できるようにします。
 
-Subscribe to the VintageNet `wlan0` connection property and restart `ntpd` when
-the interface reaches `:internet` and time is not yet synchronized. This process
-does not configure networking; VintageNet remains the sole owner of the
-interface.
+VintageNet の `wlan0` 接続プロパティを購読し、インターフェースが `:internet` に
+到達した時点で時刻が未同期なら `ntpd` を再起動します。この処理はネットワーク設定を
+行いません。インターフェースの管理主体は VintageNet のままです。
 
-### Advertise only required discovery services
+### 必要な探索サービスだけを通知する
 
-Advertise:
+次のサービスを通知します。
 
 - `_ssh._tcp`
 - `_sftp-ssh._tcp`
 - `_nerves-device._tcp`
 
-Do not enable the mDNS DNS bridge until application code requires generic
-outbound `.local` resolution through the Erlang resolver. Direct `MdnsLite`
-resolution remains available when explicitly needed.
+Erlang の名前解決機能を介した一般的な外向きの `.local` 解決がアプリケーションで
+必要になるまでは、mDNS DNS bridge を有効にしません。明示的に必要な場合は、
+`MdnsLite` による直接解決を引き続き利用できます。
 
-### Keep Erlang distribution local
+### Erlang distribution を機器内に限定する
 
-Keep the release node and Erlang distribution bound to `127.0.0.1`.
+リリースノードと Erlang distribution は `127.0.0.1` に限定します。
 
-Use NervesSSH for remote administration instead of exposing raw distributed
-Erlang. Preserve the verified `rel/vm.args.eex` configuration unless a concrete
-requirement justifies changing it.
+分散 Erlang をそのまま公開せず、リモート管理には NervesSSH を使用します。
+具体的な要件がない限り、検証済みの `rel/vm.args.eex` 設定を維持します。
 
-### Verify incrementally on hardware
+### 実機で段階的に検証する
 
-Implement each runtime change independently and verify it on an Atom Cam 2
-before removing replaced code or proceeding to the next responsibility.
+各実行時変更を独立して実装し、Atom Cam 2 実機で検証してから、置き換え対象の
+コードを削除するか、次の責務へ進みます。
 
-Repository checks, firmware construction, MicroSD installation, boot, Wi-Fi,
-SSH, discovery, metadata, persistent state, and time synchronization must all
-pass before considering the alignment complete.
+整合完了と判断する前に、リポジトリ検査、ファームウェア作成、MicroSD への
+インストール、起動、Wi-Fi、SSH、探索、メタデータ、永続状態、時刻同期のすべてが
+成功する必要があります。
 
-## Consequences
+## 影響
 
-### Positive
+### 利点
 
-- The example application follows familiar Nerves runtime patterns.
-- Network ownership is explicit and no longer duplicated by a custom worker.
-- Logging, MOTD, SSH, discovery, metadata, and time behavior are easier to
-  understand and maintain.
-- Firmware identity, approximate time, and SSH host identity survive the custom
-  flat-MicroSD workflow.
-- Hardware regressions are easier to isolate because the migration was performed
-  incrementally.
+- サンプルアプリケーションが一般的な Nerves の実行時構成に従う
+- ネットワークの管理主体が明確になり、独自処理との重複がなくなる
+- ログ、MOTD、SSH、探索、メタデータ、時刻の動作を理解し保守しやすくなる
+- 独自の平坦な MicroSD 手順でも、ファームウェア識別情報、概算時刻、SSH ホスト識別を
+  再起動後に維持できる
+- 移行を段階的に行うため、実機上の不具合を切り分けやすい
 
-### Negative
+### 欠点
 
-- The custom installer and metadata bridge remain necessary because the platform
-  does not use the standard Nerves firmware-partition layout.
-- A small application process is required to prompt NTP synchronization when
-  Internet connectivity appears after `NervesTime` starts.
-- NervesMOTD continues to report application-partition usage and temperature as
-  unavailable because the platform does not expose those data sources.
-- The mDNS DNS bridge remains deferred and must be reconsidered if outbound
-  `.local` resolution becomes a requirement.
+- 標準的な Nerves ファームウェアパーティション構成を使用しないため、独自の
+  インストーラーとメタデータ連携処理が引き続き必要になる
+- `NervesTime` の起動後にインターネット接続が確立した場合、NTP 同期を促す小さな
+  アプリケーション処理が必要になる
+- 基盤が該当データを公開しないため、NervesMOTD はアプリケーションパーティションの
+  使用量と温度を利用不可として表示し続ける
+- mDNS DNS bridge は保留のままであり、外向きの `.local` 解決が要件になった場合は
+  再検討が必要になる
 
-## Related documentation
+## 関連文書
 
 - `docs/worklog/20260717-align-example-app-with-standard-nerves.md`

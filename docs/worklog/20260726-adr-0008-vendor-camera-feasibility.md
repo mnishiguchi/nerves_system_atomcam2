@@ -1,10 +1,10 @@
-# 20260726 ADR 0008 vendor camera feasibility
+# 20260726 ADR 0008 製造元カメラ実行環境の実現可能性
 
-## Status
+## 状態
 
-The read-only feasibility investigation is complete.
+読み取り専用の実現可能性調査は完了した。
 
-Result:
+結果は次のとおりである。
 
 ```text
 vendor runtime foundation: feasible
@@ -13,26 +13,19 @@ manual camera start: gated
 recording and NAS work: not started
 ```
 
-This is a conditional go for a deliberately isolated Phase 2 compatibility
-service. It is not evidence that mobile viewing or recording already works.
+意図的に隔離した第 2 段階の互換サービスへ進む条件付き判断である。携帯アプリでの閲覧や録画がすでに動作することを示すものではない。
 
-## Scope and method
+## 範囲と方法
 
-The device ran released `nerves_system_atomcam2` v0.2.0. The repository base was
-commit `ddcedef`.
+機器では公開済み `nerves_system_atomcam2` v0.2.0 を動かし、リポジトリ基点はコミット `ddcedef` とした。
 
-Inspection used NervesSSH and read-only kernel, procfs, sysfs, mount, filesystem,
-ELF, and module metadata. No vendor process was started. No camera module was
-loaded. No internal flash partition was erased, written, remounted, or otherwise
-modified. Sensitive vendor configuration contents were not collected.
+NervesSSH を通じて、カーネル、procfs、sysfs、マウント、ファイルシステム、ELF、モジュール情報を読み取り専用で調査した。製造元処理は起動せず、カメラ用モジュールも読み込まず、内蔵フラッシュの消去、書き込み、再マウント、変更を行っていない。機密性のある製造元設定内容も収集していない。
 
-The public `atomcam_tools` source at commit
-`313048b4d652b0058271ffa42de1289e9d5d08ee` was inspected to identify its
-startup, chroot, recording-completion, and NAS behavior.
+公開 `atomcam_tools` のコミット `313048b4d652b0058271ffa42de1289e9d5d08ee` を調べ、起動、chroot、録画完了、NAS の挙動を把握した。
 
-## Live storage inventory
+## 稼働中の記憶領域
 
-The protected kernel exposes eight internal SPI-NOR partitions:
+保護対象カーネルは八つの内蔵 SPI-NOR パーティションを公開する。
 
 ```text
 mtd0  boot      256 KiB
@@ -45,8 +38,7 @@ mtd6  cfg       384 KiB
 mtd7  para       64 KiB
 ```
 
-The active vendor initramfs had already prepared these read-only mounts before
-the Nerves rootfs handoff:
+実際の製造元 initramfs は、Nerves への引き渡し前に次を読み取り専用で準備していた。
 
 ```text
 /dev/loop1      /atom          squashfs  ro
@@ -54,38 +46,33 @@ the Nerves rootfs handoff:
 /dev/mtdblock6  /atom/configs  jffs2     ro
 ```
 
-The root image backing `/atom` was `/tmp/atom_root.squashfs`. The original
-vendor application and configuration partitions therefore do not need to be
-made writable for compatibility work.
+`/atom` の元画像は `/tmp/atom_root.squashfs` である。互換処理のために、元の製造元アプリケーションや設定パーティションを書き込み可能にする必要はない。
 
-The Nerves data partition was:
+Nerves のデータ用パーティションは次であった。
 
 ```text
 /dev/mmcblk0p4  /data  ext2  rw
 ```
 
-It had approximately 13.5 GiB free. That is ample for a bounded outage spool,
-but not a 20-day continuous-recording archive. Long-term retention belongs on
-the NAS.
+空きは約 13.5 GiB あり、障害時の上限付き一時保存には十分だが、連続録画 20 日分の保管には不足する。長期保持は NAS が担う。
 
-## Vendor runtime inventory
+## 製造元実行環境の構成
 
-The vendor application filesystem contains:
+製造元アプリケーション用ファイルシステムには次が含まれる。
 
-- `iCamera_app`, `assis`, `hl_client`, `ver-comp`, and `dongle_app`;
-- the uClibc loader and runtime;
-- camera, local SDK, MP4, crypto, P2P, and audio libraries;
-- GC2053 sensor configuration;
-- ISP, sensor, audio, VPU, PWM, speaker, and other board modules.
+- `iCamera_app`、`assis`、`hl_client`、`ver-comp`、`dongle_app`
+- uClibc の読み込み処理と実行環境
+- カメラ、局所 SDK、MP4、暗号、P2P、音声の各ライブラリ
+- GC2053 センサー設定
+- ISP、センサー、音声、VPU、PWM、スピーカーなどの基板用モジュール
 
-The camera-related modules report the exact running kernel release in their
-vermagic:
+カメラ関連モジュールの vermagic は、稼働中カーネルと完全に一致する。
 
 ```text
 3.10.14__isvp_swan_1.0__
 ```
 
-This includes:
+対象には次を含む。
 
 - `tx-isp-t31.ko`
 - `sensor_gc2053_t31.ko`
@@ -96,7 +83,7 @@ This includes:
 - `sample_pwm_hal.ko`
 - `speaker_ctl.ko`
 
-The executable ABI is distinct from Nerves:
+実行形式は Nerves と異なる。
 
 ```text
 ELF 32-bit little-endian MIPS32r2
@@ -104,22 +91,19 @@ interpreter /lib/ld-uClibc.so.0
 hard-float ABI
 ```
 
-The runtime must therefore use the vendor root and libraries. Direct execution
-against the Nerves musl root is not viable. A chroot rooted at `/atom` is the
-smallest conventional compatibility mechanism.
+したがって、Nerves の musl ルート上で直接実行できない。製造元のルートとライブラリを使う必要があり、`/atom` をルートにした chroot が最小の一般的な互換方法となる。
 
-The v0.2.0 BusyBox did not include the `chroot` applet. The feasibility branch
-enables it for the next system build.
+v0.2.0 の BusyBox には `chroot` がなかったため、実現可能性用ブランチで次のシステム構築から有効にした。
 
-## Resources
+## 資源
 
-The live kernel command line reserves the vendor camera memory region:
+稼働中のカーネル命令行は、製造元カメラ用の 36 MiB を予約している。
 
 ```text
 mem=92M@0x0 rmem=36M@0x5c00000
 ```
 
-Observed Linux memory before starting any vendor process:
+製造元処理を起動する前のメモリは、おおよそ次であった。
 
 ```text
 MemTotal:       87700 KiB
@@ -130,63 +114,44 @@ BEAM VmRSS:     about 34500 KiB
 Swap:           0
 ```
 
-Roughly 52 MiB was free or reclaimable, so a bounded manual camera trial is
-reasonable. This does not prove steady-state memory safety. `atomcam_tools`
-documents using MicroSD swap for its much larger service set; this project must
-measure the minimal vendor process set before considering unattended startup.
+空きまたは回収可能量は約 52 MiB であり、上限付きの手動カメラ試験は可能と判断した。ただし、定常運転の安全性を証明するものではない。`atomcam_tools` はより大きなサービス群のため MicroSD 上の交換領域を使用する。本プロジェクトでは、無人起動を検討する前に最小の製造元処理群を測定する必要がある。
 
-System V message queues and shared memory are available. No existing vendor
-process or camera device node was present during the probe.
+System V のメッセージ列と共有メモリは利用可能であった。調査中、製造元処理やカメラ用デバイス項目は存在しなかった。
 
-## Why the stock startup is unsafe
+## 標準起動処理が危険な理由
 
-The vendor `app_init.sh` does more than initialize the camera. It:
+製造元の `app_init.sh` はカメラ初期化だけではない。
 
-- loads unrelated exFAT, USB Ethernet, MMC, and Wi-Fi modules;
-- starts its own Wi-Fi selection and configuration;
-- writes SoC registers through `devmem`;
-- starts factory and USB helpers;
-- starts `assis`, `hl_client`, `iCamera_app`, and `dongle_app`; and
-- assumes writable `/configs`, `/tmp`, and `/media/mmc` paths.
+- 無関係な exFAT、USB 有線 LAN、MMC、Wi-Fi モジュールを読み込む。
+- 独自の Wi-Fi 選択と設定を開始する。
+- `devmem` で SoC レジスタへ書き込む。
+- 工場試験・USB 補助処理を起動する。
+- `assis`、`hl_client`、`iCamera_app`、`dongle_app` を起動する。
+- 書き込み可能な `/configs`、`/tmp`、`/media/mmc` を前提とする。
 
-Reusing it would conflict with Nerves ownership of networking, storage, and
-recovery.
+そのまま再利用すると、Nerves が所有するネットワーク、記憶領域、復旧機能と衝突する。
 
-The public `atomcam_tools` implementation also avoids using the internal config
-partition as writable runtime state. It copies protected configuration into an
-ext2 image on MicroSD and mounts that copy at `/atom/configs`. The equivalent
-Nerves design should keep a private copy under `/data`.
+公開 `atomcam_tools` も、内蔵設定パーティションを実行時の書き込み先にはしていない。保護された設定を MicroSD 上の ext2 画像へ複製し、`/atom/configs` へマウントする。Nerves 側でも、私有の複製を `/data` 配下へ置くべきである。
 
-## Watchdog conflict
+## 監視タイマーの衝突
 
-Nerves `heart` held the real hardware watchdog:
+Nerves `heart` が実機監視タイマーを保持していた。
 
 ```text
 /proc/245/fd/3 -> /dev/watchdog0
 ```
 
-Static inspection of `assis` confirmed that it links
-`liblocalsdk_watchdog.so` and calls the vendor open, timeout, feed, and close
-watchdog functions. Its strings also include paths that kill `iCamera_app` and
-reboot the device. `iCamera_app` contains its own assistant/watchdog IPC logic.
+`assis` の静的調査では `liblocalsdk_watchdog.so` へ連結し、製造元の監視タイマー開閉、時間設定、給餌を呼ぶことが確認できた。文字列には `iCamera_app` の終了や機器再起動も含まれる。`iCamera_app` 自身も補助処理・監視タイマー用 IPC を持つ。
 
-Starting stock `assis` against the real `/dev/watchdog` would either fail to
-claim the single-open watchdog or compete with the Nerves recovery mechanism.
-Disabling Nerves `heart` is not acceptable.
+標準 `assis` に実物 `/dev/watchdog` を見せると、単一開放の監視タイマー取得に失敗するか、Nerves の復旧機能と競合する。Nerves `heart` を無効にすることは認めない。
 
-Phase 2 must determine whether `iCamera_app` remains healthy with `assis`
-omitted or prevented from seeing the hardware watchdog. If not, stop and make a
-separate minimal compatibility decision. Do not import the broad
-`atomcam_tools` preload layer merely to get past this gate.
+第 2 段階では、`assis` を省略するか実物監視タイマーを見せない場合でも `iCamera_app` が健全に動作するかを確認する。失敗する場合は作業を止め、最小の互換判断を別に行う。広範な `atomcam_tools` の事前読み込み層を、単にこの条件を越える目的で取り込まない。
 
-## Compatibility layout constraints
+## 互換配置の制約
 
-The existing Nerves `/tmp` is mounted `noexec`, while the vendor runtime expects
-to execute helpers below `/tmp`. The compatibility service should instead
-mount a private size-bounded tmpfs at `/atom/tmp` with the required execution
-semantics.
+Nerves の `/tmp` は `noexec` であり、製造元実行環境は `/tmp` 配下の補助処理を実行する。互換サービスは、必要な実行権限を持ち大きさを制限した私有 tmpfs を `/atom/tmp` へマウントする。
 
-The chroot should receive only curated mounts:
+chroot には必要なものだけを選んで見せる。
 
 ```text
 /atom/system   protected vendor application, read-only
@@ -198,41 +163,29 @@ The chroot should receive only curated mounts:
 /atom/media    local recording spool mapping under /data
 ```
 
-Mount operations are visible to the host mount namespace, so startup and stop
-must be ordered, idempotent, and restricted to paths below `/atom`.
+マウント操作はホストの名前空間からも見えるため、開始・停止は順序を持ち、何度実行しても安全で、`/atom` 配下だけを対象としなければならない。
 
-## Recording and NAS observations
+## 録画と NAS に関する観察
 
-The standard vendor recorder writes temporary MP4 data and moves each completed
-one-minute segment into `/media/mmc/record`.
+標準製造元録画処理は一時 MP4 を書き、完了した一分単位の区切りを `/media/mmc/record` へ移動する。
 
-`atomcam_tools` replaces the vendor `mv` command to detect that completion
-boundary, then combines SD-card policy, CIFS copying, webhooks, naming, and
-scheduling. ADR 0008 keeps only the completion boundary. Nerves should own the
-local spool and a separate exporter.
+`atomcam_tools` は製造元の `mv` を置き換えて完了境界を検出し、SD カード方針、CIFS 複製、通知、命名、予定処理をまとめている。ADR 0008 では完了境界だけを利用し、Nerves が局所一時保管と独立した搬出処理を所有する。
 
-The active protected kernel did not list either `nfs` or `cifs` in
-`/proc/filesystems`, and no matching modules were available in the running
-rootfs. The repository's future custom-kernel defconfig enabling NFS is not
-evidence about the protected kernel in the supported v0.2.0 boot path.
+保護対象カーネルの `/proc/filesystems` には `nfs` も `cifs` もなく、対応モジュールもなかった。将来の独自カーネル設定で NFS を有効にしていても、v0.2.0 の保護対象カーネルが対応する証拠にはならない。
 
-Phase 4 must therefore prove a NAS client mechanism separately. This does not
-block the manual vendor camera runtime, but it blocks assuming that an NFS mount
-will work on v0.2.0.
+そのため、第 4 段階では NAS 用通信手段を別に証明する必要がある。手動の製造元カメラ実行には影響しないが、v0.2.0 で NFS が使えるとの前提は置けない。
 
-## Implemented probe
+## 実装した調査命令
 
-The feasibility branch adds:
+実現可能性用ブランチは次を追加する。
 
 ```text
 atomcam2-vendor-camera precheck
 ```
 
-The command only reads mount, file, module, process, memory, IPC, watchdog, and
-filesystem capability state. It does not mount filesystems, copy
-configuration, load modules, or start processes.
+この命令は、マウント、ファイル、モジュール、処理、メモリ、IPC、監視タイマー、ファイルシステム機能を読み取るだけである。マウント、設定複製、モジュール読み込み、処理起動は行わない。
 
-Exit results are:
+終了状態は次のとおりである。
 
 ```text
 0  ready for a manual camera start
@@ -240,53 +193,43 @@ Exit results are:
 2  the foundation is present but explicit safety gates remain
 ```
 
-During this milestone, the expected result is `2`. `start`, `status`, and
-`stop` are intentionally unavailable.
+この節目で期待する結果は `2` であり、`start`、`status`、`stop` は意図的に未提供とした。
 
-The exact new script was also executed in memory over NervesSSH, without
-installing it on the device. Against released v0.2.0 it reported:
+新しい手順を機器へ導入せず、NervesSSH 経由でメモリ上から実行したところ、公開済み v0.2.0 では次を報告した。
 
 ```text
 summary failures=1 gates=3 warnings=1
 result=blocked
 ```
 
-The single platform failure was the expected missing `chroot` applet. The three
-gates were watchdog isolation, the private `/data` configuration copy, and the
-manual memory/mobile-viewing trial. The one warning was missing NFS client
-support.
+唯一の基盤失敗は予期した `chroot` 欠落である。三つの通過条件は、監視タイマー隔離、`/data` 上の私有設定複製、メモリ・携帯閲覧の手動試験である。警告一件は NFS 利用者側機能の欠落である。
 
-The feasibility branch then passed:
+その後、ブランチは次を通過した。
 
-- the full `mix smoke` system suite;
-- the example application's 23 host tests;
-- a local Nerves system rebuild; and
-- SquashFS inspection confirming executable
-  `/usr/bin/atomcam2-vendor-camera` and BusyBox `/usr/sbin/chroot`.
+- `mix smoke` のシステム試験一式
+- 見本アプリケーションのホスト試験 23 件
+- 局所 Nerves システム再構築
+- 実行可能な `/usr/bin/atomcam2-vendor-camera` と BusyBox `/usr/sbin/chroot` を含む SquashFS の確認
 
-The rebuilt firmware was not uploaded. Preserving the read-only device scope
-keeps firmware installation and process startup in the Phase 2 manual-runtime
-milestone.
+再構築したファームウェアは送信しなかった。読み取り専用調査の境界を守るため、導入と処理起動は第 2 段階の手動実行節目へ残した。
 
-## Phase 2 entry criteria
+## 第 2 段階への移行条件
 
-Before a manual camera start:
+手動カメラ起動前に次を行う。
 
-1. Build and install a firmware containing the precheck and `chroot`.
-2. Confirm the precheck has no platform failures.
-3. Create a mode-0700 private configuration copy under `/data` without logging
-   its contents.
-4. Prepare a private bounded tmpfs and curated chroot mounts.
-5. Ensure vendor processes cannot open the real watchdog, restart Wi-Fi, write
-   internal flash, or reboot the device.
-6. Define the minimum camera module and process sequence.
+1. 事前検査と `chroot` を含むファームウェアを構築・導入する。
+2. 事前検査に基盤失敗がないことを確認する。
+3. 内容を記録せず、`/data` 配下に権限 0700 の私有設定複製を作る。
+4. 大きさを制限した私有 tmpfs と、選別した chroot マウントを準備する。
+5. 製造元処理が実物監視タイマーを開けず、Wi-Fi 再起動、内蔵フラッシュ書き込み、機器再起動を行えないようにする。
+6. 最小のカメラ用モジュールと処理順を定める。
 
-The manual trial must then prove:
+手動試験では次を証明する。
 
-- standard Atom mobile-application live viewing;
-- stable Nerves Wi-Fi and SSH;
-- continued Nerves `heart` ownership of `/dev/watchdog0`;
-- BEAM and vendor process memory over a meaningful interval;
-- clean vendor-process shutdown;
-- cleanup of compatibility mounts and IPC; and
-- continued OTA, rollback, and recovery access after failure.
+- 標準 Atom 携帯アプリからの生映像閲覧
+- Nerves の Wi-Fi と SSH の安定
+- Nerves `heart` が `/dev/watchdog0` を保持し続けること
+- 意味のある時間にわたる BEAM と製造元処理のメモリ
+- 製造元処理の正常な停止
+- 互換マウントと IPC の後始末
+- 失敗後も OTA、巻き戻し、復旧経路を利用できること

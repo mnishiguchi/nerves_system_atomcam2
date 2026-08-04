@@ -1,10 +1,11 @@
-# 20260715 AtomCam2 Nerves ping and SSH bring-up
+# 20260715 AtomCam2 Nerves の ping・SSH 立ち上げ
 
-## Result
+## 結果
 
-On July 15, 2026, the Atom Cam 2 successfully booted a minimal Nerves application from a MicroSD card and became reachable over Wi-Fi.
+2026 年 7 月 15 日、Atom Cam 2 は MicroSD card から最小限の Nerves application を
+正常に起動し、Wi-Fi 経由で到達可能になりました。
 
-Verified result:
+検証結果:
 
 ```text
 Hostname: nerves.local
@@ -14,33 +15,34 @@ SSH public-key authentication: successful
 Remote shell: interactive IEx
 ```
 
-The SSH session opened:
+SSH session では次が開きました。
 
 ```text
 Interactive Elixir (1.20.2)
 iex(atomcam2_nerves_app@127.0.0.1)>
 ```
 
-This completed the first network milestone.
+これにより最初のネットワーク到達点を完了しました。
 
-## Scope
+## 対象範囲
 
-The milestone proved:
+この到達点では次を証明しました。
 
-- Boot with the known-good Atom Cam 2 vendor kernel
-- Mount an application-merged Nerves SquashFS root filesystem
-- Start `erlinit`, the Erlang VM, and the application release
-- Prepare the T31 SDIO hardware
-- Load the vendor ATBM Wi-Fi driver
-- Configure `wlan0` through VintageNet
-- Associate with the configured wireless network
-- Obtain an IPv4 address through DHCP
-- Publish `nerves.local` through mDNS
-- Open an SSH session with a public key
+- 正常動作する既知の Atom Cam 2 ベンダー kernel による起動
+- アプリケーション統合済み Nerves SquashFS root filesystem のマウント
+- `erlinit`、Erlang VM、アプリケーション release の起動
+- T31 SDIO hardware の準備
+- ベンダー ATBM Wi-Fi driver の読み込み
+- VintageNet による `wlan0` の設定
+- 設定済み無線ネットワークへの接続
+- DHCP による IPv4 address の取得
+- mDNS による `nerves.local` の公開
+- 公開鍵を使用した SSH session の開始
 
-Deferred work includes camera capture, RTSP, vendor application compatibility, WebUI, firmware updates, and production hardening.
+カメラ撮影、RTSP、ベンダーアプリケーションとの互換性、WebUI、ファームウェア更新、
+本番向け堅牢化は後回しとしました。
 
-## Tested platform
+## 試験した基盤
 
 ```text
 Device: Atom Cam 2
@@ -54,7 +56,7 @@ VintageNet: 0.13.12
 VintageNetWiFi: 0.12.9
 ```
 
-Wi-Fi hardware:
+Wi-Fi ハードウェア:
 
 ```text
 Module: atbm603x_wifi_sdio.ko
@@ -63,9 +65,9 @@ Interface: wlan0
 MAC address: 7C:DD:E9:03:84:B0
 ```
 
-## Boot structure
+## 起動構成
 
-The FAT-formatted MicroSD partition contains:
+FAT 形式の MicroSD partition には次が含まれます。
 
 ```text
 factory_t31_ZMC6tiIDQN
@@ -75,37 +77,41 @@ authorized_keys
 nerves-provisioning.conf
 ```
 
-The vendor initramfs mounts the card at `/media/mmc`, loop-mounts `rootfs_hack.squashfs`, and switches into the Nerves root filesystem.
+ベンダー initramfs は card を `/media/mmc` にマウントし、`rootfs_hack.squashfs` を
+loop mount して Nerves root filesystem へ切り替えます。
 
-The installed image must be the application-merged root filesystem containing:
+インストールする image は、次を含むアプリケーション統合済み root filesystem でなければ
+なりません。
 
 ```text
 /srv/erlang
 ```
 
-The build preserves it as:
+ビルドでは次として維持します。
 
 ```text
 examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/rootfs_hack.final.squashfs
 ```
 
-The flat SD payload is generated under:
+平坦な SD 用の書き込み内容は次に生成されます。
 
 ```text
 examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/atomcam2-sd
 ```
 
-## Confirmed blockers across the bring-up
+## 立ち上げ全体で確認した阻害要因
 
-The missing ping and SSH result was not caused by one issue. Several sequential blockers had to be removed.
+ping と SSH がない状態は、1 つの問題だけが原因ではありませんでした。順番に現れる
+複数の阻害要因を除去する必要がありました。
 
-### Dynamic userspace toolchain
+### 動的な利用者空間の toolchain
 
-The stock Nerves MIPSEL toolchain targeted `24kec` and enabled DSP ASE instructions that the Ingenic T31 did not execute successfully.
+標準の Nerves MIPSEL toolchain は `24kec` を対象とし、Ingenic T31 が正常に実行できない
+DSP ASE instruction を有効にしていました。
 
-Dynamically linked userspace failed with `SIGILL` before the Nerves runtime could start.
+動的連結済みの利用者空間は、Nerves runtime の起動前に `SIGILL` で失敗しました。
 
-The platform now uses a dedicated external toolchain with:
+現在の基盤は次の専用外部 toolchain を使用します。
 
 ```text
 MIPS32 Release 2
@@ -116,31 +122,40 @@ musl
 DSP ASE disabled
 ```
 
-See [`20260713-atomcam2-toolchain-dsp-ase-investigation.md`](20260713-atomcam2-toolchain-dsp-ase-investigation.md).
+[`20260713-atomcam2-toolchain-dsp-ase-investigation.md`](20260713-atomcam2-toolchain-dsp-ase-investigation.md)
+を参照してください。
 
-### Rootfs and active boot path
+### ルートファイルシステムと稼働中の起動経路
 
-The MicroSD card had to contain the final application-merged SquashFS. A stale `rootfs_hack.ext2` or a base system image could cause an older or incomplete userspace to boot instead.
+MicroSD card には、最終的なアプリケーション統合済み SquashFS を配置する必要がありました。
+古い `rootfs_hack.ext2` または基礎 system image が存在すると、古いまたは不完全な
+利用者空間を代わりに起動する場合がありました。
 
-The reliable procedure removes stale alternate rootfs files, verifies checksums, and inspects `/srv/erlang` before hardware testing.
+信頼できる手順では、古い代替 rootfs file を削除し、検査値を確認し、実機試験前に
+`/srv/erlang` を確認します。
 
-See [`20260714-first-ping-ssh-wifi-and-boot-investigation.md`](20260714-first-ping-ssh-wifi-and-boot-investigation.md).
+[`20260714-first-ping-ssh-wifi-and-boot-investigation.md`](20260714-first-ping-ssh-wifi-and-boot-investigation.md)
+を参照してください。
 
-### SDIO and vendor Wi-Fi driver
+### SDIO とベンダー Wi-Fi ドライバー
 
-The T31 SDIO preparation required `/sbin/devmem` in the early boot environment.
+T31 SDIO の準備では、初期起動環境の `/sbin/devmem` が必要でした。
 
-The detected SDIO vendor ID was `0x007a`, which requires the ATBM603x driver. Cross-family fallback to a Realtek module was invalid.
+検出した SDIO vendor ID は `0x007a` であり、ATBM603x driver が必要です。異なる
+hardware family の Realtek module への切り替えは不正でした。
 
-After packaging the compatible vendor module and firmware, `wlan0` appeared with the factory MAC address.
+互換性のあるベンダー module と firmware の梱包後、工場設定の MAC address を持つ
+`wlan0` が現れました。
 
-See [`20260714-sdio-wifi-driver-bring-up.md`](20260714-sdio-wifi-driver-bring-up.md).
+[`20260714-sdio-wifi-driver-bring-up.md`](20260714-sdio-wifi-driver-bring-up.md)
+を参照してください。
 
-### VintageNet native `if_monitor`
+### VintageNet ネイティブ `if_monitor`
 
-VintageNet's native process repeatedly terminated with `SIGSEGV` or `SIGBUS`.
+VintageNet のネイティブプロセスが `SIGSEGV` または `SIGBUS` で繰り返し終了しました。
 
-Linux 3.10 headers did not define `IFA_FLAGS`. The first compatibility patch defined it as index `8` but left `IFA_MAX` at `7`:
+Linux 3.10 header では `IFA_FLAGS` が定義されていませんでした。最初の互換 patch は
+index `8` として定義しましたが、`IFA_MAX` を `7` のままにしました。
 
 ```c
 #ifndef IFA_FLAGS
@@ -148,9 +163,10 @@ Linux 3.10 headers did not define `IFA_FLAGS`. The first compatibility patch def
 #endif
 ```
 
-VintageNet then accessed `tb[8]` in an array allocated for indexes `0` through `7`, causing an out-of-bounds stack access.
+VintageNet は index `0` から `7` 用に確保された配列で `tb[8]` へ接続し、stack の範囲外へ
+接続していました。
 
-The corrected compatibility block updates both constants:
+修正後の互換 block は両方の定数を更新します。
 
 ```c
 #ifndef IFA_FLAGS
@@ -160,17 +176,17 @@ The corrected compatibility block updates both constants:
 #endif
 ```
 
-After rebuilding VintageNet:
+VintageNet の再構築後:
 
-- `if_monitor` remained running.
-- The complete VintageNet supervision tree remained available.
-- `VintageNet.configure/3` returned `:ok`.
+- `if_monitor` が動作を維持した
+- VintageNet の完全な supervision tree を利用できた
+- `VintageNet.configure/3` が `:ok` を返した
 
-### Unsupported WPS configuration
+### 対応していない WPS 設定
 
-After VintageNet configured successfully, `wpa_supplicant` still exited before association.
+VintageNet の設定成功後も、`wpa_supplicant` は接続前に終了しました。
 
-A temporary wrapper captured the exact parser error:
+一時的な呼び出し処理によって、正確な解析 error を取得しました。
 
 ```text
 Line 3: unknown global field 'wps_cred_processing=1'.
@@ -179,9 +195,11 @@ Failed to read or parse configuration
 wpa_supplicant_exit_status=255
 ```
 
-VintageNetWiFi enabled WPS configuration by default, but the Buildroot `wpa_supplicant` binary did not support that global option.
+VintageNetWiFi は WPS 設定を既定で有効にしましたが、Buildroot の `wpa_supplicant`
+実行ファイルはその全体設定に対応していませんでした。
 
-WPS is unnecessary for static SSID and passphrase provisioning, so the permanent configuration disables it:
+固定 SSID と passphrase のプロビジョニングには WPS が不要なため、恒久的な設定で
+無効にします。
 
 ```elixir
 vintage_net_wifi: %{
@@ -196,68 +214,69 @@ vintage_net_wifi: %{
 }
 ```
 
-After this change, Wi-Fi association, DHCP, mDNS, ping, and SSH succeeded.
+この変更後、Wi-Fi 接続、DHCP、mDNS、ping、SSH が成功しました。
 
-## Supporting adjustments
+## 補助的な調整
 
-The following changes improve reliability but were not isolated as the final root causes by themselves.
+次の変更は信頼性を高めますが、それぞれ単独では最終的な根本原因として切り分けていません。
 
-### Startup ordering
+### 起動順序
 
-Shoehorn starts the network-related applications in this order:
+Shoehorn はネットワーク関連 application を次の順序で起動します。
 
 ```elixir
 init: [:nerves_runtime, :vintage_net, :mdns_lite, :nerves_ssh]
 ```
 
-This keeps VintageNet ahead of network-facing services.
+これにより VintageNet をネットワーク公開サービスより先に起動します。
 
-### Interface detection
+### インターフェースの検出
 
-The included BusyBox `ifconfig` reports:
+同梱の BusyBox `ifconfig` は次を報告します。
 
 ```text
 ifconfig: no support for status display
 ```
 
-It produced an early false negative for `wlan0`.
+これにより、初期段階で `wlan0` に関する誤った陰性結果が生じました。
 
-Use:
+次を使用します。
 
 ```sh
 test -e /sys/class/net/wlan0
 ip addr show dev wlan0
 ```
 
-### Public-key packaging
+### 公開鍵の梱包
 
-`authorized_keys` must contain the intended host public key before installing the SD payload.
+SD 書き込み内容をインストールする前に、`authorized_keys` に想定する host の公開鍵を
+含める必要があります。
 
-During bring-up, the file was explicitly copied and its checksum compared between:
+立ち上げ中は、次の間でファイルを明示的にコピーし、検査値を比較しました。
 
-- The host public key
-- The generated SD payload
-- The mounted MicroSD card
+- host の公開鍵
+- 生成した SD 書き込み内容
+- マウント済み MicroSD card
 
-The packaging process should keep this deterministic.
+梱包処理は、この結果を決定的に維持する必要があります。
 
-## Successful verification
+## 成功時の検証
 
-Name resolution returned:
+名前解決は次を返しました。
 
 ```text
 nerves.local=192.168.10.117
 ```
 
-Ping returned four responses with no packet loss.
+ping は packet loss なしで 4 件の応答を返しました。
 
-SSH succeeded with:
+SSH は次で成功しました。
 
 ```sh
 ssh nerves@192.168.10.117
 ```
 
-The interactive IEx prompt confirmed the complete path:
+対話可能な IEx prompt により、完全な経路を確認しました。
 
 ```text
 MicroSD boot
@@ -269,64 +288,70 @@ MicroSD boot
 -> SSH
 ```
 
-## Permanent platform changes
+## 恒久的な基盤変更
 
-The confirmed platform requirements for this milestone are:
+この到達点で確認した基盤要件は次のとおりです。
 
-1. Use the dedicated non-DSP MIPS32R2 Nerves toolchain.
-2. Preserve and package the application-merged SquashFS root filesystem.
-3. Remove stale alternate rootfs files before testing.
-4. Prepare T31 SDIO and load the matching ATBM603x vendor module.
-5. Patch VintageNet `if_monitor.c` by updating both `IFA_FLAGS` and `IFA_MAX` for Linux 3.10.
-6. Disable WPS in the VintageNetWiFi configuration.
-7. Supply a valid SSH public key in the SD payload.
+1. DSP を使用しない専用 MIPS32R2 Nerves toolchain を使用する
+2. アプリケーション統合済み SquashFS root filesystem を維持して梱包する
+3. 試験前に古い代替 rootfs file を削除する
+4. T31 SDIO を準備し、一致する ATBM603x ベンダー module を読み込む
+5. Linux 3.10 向け VintageNet `if_monitor.c` patch で `IFA_FLAGS` と `IFA_MAX` の
+   両方を更新する
+6. VintageNetWiFi 設定で WPS を無効にする
+7. SD 書き込み内容へ有効な SSH 公開鍵を含める
 
-## Temporary diagnostics removed
+## 削除した一時診断処理
 
-The following were investigation-only tools and should not remain in the normal firmware:
+次は調査専用の道具であり、通常のファームウェアへ残してはなりません。
 
-- `if_monitor` shell wrapper
-- `wpa_supplicant` shell wrapper
-- Diagnostic SquashFS images and alternate SD payloads
-- Repeated VintageNet property snapshots
-- Application-side `wpa_cli`, `iw`, `ip`, and process-list capture
-- Temporary native crash logs
+- `if_monitor` シェルラッパー
+- `wpa_supplicant` シェルラッパー
+- 診断用 SquashFS イメージと代替 SD 書き込み内容
+- VintageNet プロパティの反復取得
+- アプリケーション側の `wpa_cli`、`iw`、`ip`、プロセス一覧の取得
+- 一時的なネイティブクラッシュログ
 
-Small pre-runtime boot breadcrumbs may remain while the platform is experimental, provided they do not affect normal startup.
+基盤が実験段階にある間は、通常起動へ影響しない範囲で、小さな runtime 前の起動通過記録を
+残しても構いません。
 
-## Known follow-up items
+## 既知の後続項目
 
-### SSH key generation
+### SSH 鍵の生成
 
-Ensure a normal firmware build always produces a non-empty and correct `authorized_keys` file without a manual repair step.
+通常のファームウェアビルドで、手動修正なしに、空ではない正しい `authorized_keys` file が
+常に生成されるようにします。
 
-### Runtime logging
+### 実行時ログ
 
-The successful IEx session reported that the RingLogger backend was not running. This does not affect networking or SSH, but it may be enabled later for in-memory runtime log inspection.
+成功した IEx session では、RingLogger backend が動作していないと報告されました。
+ネットワークまたは SSH には影響しませんが、後で記憶領域上の実行時ログ確認に使用できます。
 
-### Kernel independence
+### カーネルの独立性
 
-The first milestone used the known-good vendor kernel to isolate userspace and networking. A separate milestone should prove the repository-built kernel without changing the already working userspace boundary at the same time.
+最初の到達点では、利用者空間とネットワークを分離するため、正常動作する既知のベンダー
+kernel を使用しました。別の到達点で、すでに動作する利用者空間の境界を同時に変更せず、
+リポジトリで構築した kernel を証明する必要があります。
 
-## Rebuild procedure
+## 再構築手順
 
-From the repository root, use the build wrapper:
+リポジトリ root からビルド用の呼び出し処理を使用します。
 
 ```sh
 ./scripts/patch-vintage-net-linux-3.10.sh
 ./scripts/build-firmware-log.sh
 ```
 
-Verify the generated payload:
+生成した書き込み内容を検証します。
 
 ```sh
 ./scripts/atomcam2-check-sd-payload.sh \
   examples/atomcam2_nerves_app/_build/atomcam2_prod/nerves/images/atomcam2-sd
 ```
 
-After installing it to the card, compare the rootfs and public-key checksums before booting.
+card へインストール後、起動前に rootfs と公開鍵の検査値を比較します。
 
-## Verification procedure
+## 検証手順
 
 ```sh
 getent ahostsv4 nerves.local
@@ -334,4 +359,4 @@ ping -c 4 nerves.local
 ssh nerves@nerves.local
 ```
 
-A successful SSH connection into IEx confirms the first network milestone.
+IEx への SSH 接続成功により、最初のネットワーク到達点を確認できます。

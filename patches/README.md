@@ -1,5 +1,5 @@
-# Patches
+# 修正差分
 
-Put Buildroot, Linux, and package patches here only after each one is traced to a concrete Atom Cam 2 boot, hardware, or runtime requirement.
+Buildroot、Linux、小包の修正差分は、それぞれが具体的な Atom Cam 2 の起動、機器、実行時要件に由来することを確認した後にだけ、ここへ置く。
 
-Do not import a generic `atomcam_tools` patch set. Add the smallest independently reviewed patch required by current hardware evidence, and document its source and purpose.
+一般的な `atomcam_tools` の修正差分一式をそのまま取り込まない。現在の実機証拠に必要な最小の修正だけを個別に確認して追加し、その出所と目的を記録する。

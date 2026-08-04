@@ -1,18 +1,19 @@
-# ADR 0001 application workflow implementation
+# ADR 0001 アプリケーション作業手順の実装
 
-## Context
+## 背景
 
-ADR 0001 separates ordinary application development from maintenance of the custom Atom Cam 2 Nerves system.
+ADR 0001 は、通常のアプリケーション開発と、Atom Cam 2 用独自 Nerves system の保守を
+分離します。
 
-Before this work, the example application depended on several repository-local operations:
+この作業以前、サンプルアプリケーションは次のリポジトリ内作業に依存していました。
 
-- Building the custom Nerves system from source
-- Selecting a locally installed toolchain
-- Modifying the downloaded `vintage_net` dependency
-- Using repository-specific scripts to install the MicroSD payload
-- Relying on local system artifacts that could not be reproduced from a clean checkout
+- 独自 Nerves system をソースから構築する
+- ローカルにインストールした toolchain を選択する
+- 取得済みの `vintage_net` 依存関係を変更する
+- リポジトリ固有の script で MicroSD 書き込み内容をインストールする
+- クリーンな checkout から再現できないローカル system 成果物に依存する
 
-The intended application workflow is closer to a normal Nerves project:
+想定するアプリケーション作業手順は、通常の Nerves project に近いものです。
 
 ```sh
 mix setup
@@ -20,29 +21,32 @@ mix firmware
 mix atomcam2.install
 ```
 
-System and toolchain maintenance may remain specialized, but those details should not be part of regular application development.
+system と toolchain の保守は専門的なままでも構いませんが、その詳細を通常の
+アプリケーション開発に含めるべきではありません。
 
-## Implemented structure
+## 実装した構成
 
-### Reusable toolchain package
+### 再利用可能な toolchain package
 
-A Nerves toolchain package was added under `toolchain/`.
+`toolchain/` 配下に Nerves toolchain package を追加しました。
 
-It defines the custom Atom Cam 2 MIPS toolchain as a normal Nerves toolchain dependency and supports retrieving its artifact from GitHub releases.
+Atom Cam 2 専用 MIPS toolchain を通常の Nerves toolchain 依存関係として定義し、
+GitHub release から成果物を取得できます。
 
-The main system package now depends on:
+主要 system package は次へ依存します。
 
 ```elixir
 {:nerves_toolchain_atomcam2, path: "toolchain", runtime: false}
 ```
 
-The source and release workflow for the toolchain are kept in the system repository because they must be versioned together.
+toolchain のソースと release 手順は、一緒に版管理する必要があるため system repository に
+維持します。
 
-### Reusable system artifact
+### 再利用可能な system 成果物
 
-The system package now declares GitHub releases as an artifact source.
+system package は、GitHub release を成果物の取得元として宣言するようになりました。
 
-The example application uses the released system by default:
+サンプルアプリケーションは既定で公開済み system を使用します。
 
 ```elixir
 {:nerves_system_atomcam2,
@@ -52,21 +56,24 @@ The example application uses the released system by default:
  targets: :atomcam2}
 ```
 
-Local system development remains available explicitly through:
+ローカルでの system 開発は、次によって明示的に引き続き利用できます。
 
 ```sh
 export ATOMCAM2_SYSTEM_SOURCE=local
 ```
 
-This avoids coupling ordinary application development to the system source tree while retaining a clear maintenance path.
+これにより、通常のアプリケーション開発を system source tree から切り離しながら、
+明確な保守経路を維持します。
 
-### Linux 3.10 compatibility support
+### Linux 3.10 互換対応
 
-The application previously patched the downloaded `vintage_net` source to work with the Atom Cam 2 Linux 3.10 headers.
+以前のアプリケーションは、取得済みの `vintage_net` ソースを Atom Cam 2 の Linux 3.10
+header で動作するよう変更していました。
 
-That mutation was removed.
+この変更処理を削除しました。
 
-A small Buildroot package now installs an Atom Cam 2 compatibility header into the system staging directory:
+小さな Buildroot package が、Atom Cam 2 互換 header を system の staging directory へ
+配置するようになりました。
 
 ```c
 #ifndef IFA_FLAGS
@@ -76,24 +83,26 @@ A small Buildroot package now installs an Atom Cam 2 compatibility header into t
 #endif
 ```
 
-The system compiler flags automatically include this header.
+system の compiler flag がこの header を自動的に含めます。
 
-This keeps Linux compatibility inside the system package, where platform-specific compiler and header behavior belongs. A clean `vintage_net` dependency now compiles without modifying files under `deps/`.
+これにより、基盤固有の compiler および header の動作を、適切な system package 内に
+維持します。`deps/` 配下の file を変更せず、クリーンな `vintage_net` 依存関係を
+コンパイルできるようになりました。
 
-### Installation task
+### インストールタスク
 
-`mix atomcam2.install` was moved from the example application into the system package.
+`mix atomcam2.install` をサンプルアプリケーションから system package へ移動しました。
 
-The task:
+このタスクは次を行います。
 
-- Locates the generated flat MicroSD payload
-- Validates all required files
-- Finds the partition labeled `ATOMCAM2`
-- Creates a timestamped backup
-- Installs the new payload
-- Verifies the installed files
+- 生成した平坦な MicroSD 書き込み内容を探す
+- すべての必須 file を検証する
+- `ATOMCAM2` label の partition を探す
+- 時刻付き backup を作成する
+- 新しい書き込み内容をインストールする
+- インストール済み file を検証する
 
-The supported application workflow is now:
+対応するアプリケーション作業手順は次になりました。
 
 ```sh
 mix setup
@@ -101,51 +110,54 @@ mix firmware
 mix atomcam2.install
 ```
 
-### Remote update policy
+### リモート更新方針
 
-The Atom Cam 2 boot layout does not currently support the standard Nerves remote `fwup` workflow safely.
+Atom Cam 2 の起動構成では、現在、標準的な Nerves のリモート `fwup` 手順を安全に
+利用できません。
 
-A precheck callback was added to reject remote firmware updates and direct the developer to the supported installation task:
+リモートファームウェア更新を拒否し、対応するインストールタスクを開発者へ案内する
+事前検査 callback を追加しました。
 
 ```text
 Atom Cam 2 remote upload is disabled; use mix atomcam2.install
 ```
 
-The generic message printed by Nerves after `mix firmware` still mentions `mix burn` and `mix upload`, but those commands are not the supported Atom Cam 2 update path.
+`mix firmware` 後に Nerves が表示する一般的な message には引き続き `mix burn` と
+`mix upload` が記載されますが、これらは Atom Cam 2 で対応する更新経路ではありません。
 
-## Control-kernel finding
+## 制御カーネルに関する判明事項
 
-The clean system build initially failed during post-image packaging:
+クリーンな system build は当初、image 後処理の梱包中に失敗しました。
 
 ```text
 kernel image is too large for the AtomCam2 boot contract:
 2207753 bytes (maximum 2031616)
 ```
 
-The generated kernel configuration already contained:
+生成済み kernel 設定には、すでに次が含まれていました。
 
 ```text
 CONFIG_KERNEL_LZMA=y
 CONFIG_CC_OPTIMIZE_FOR_SIZE=y
 ```
 
-The previous and current generated system kernels were byte-identical:
+以前と現在の生成 system kernel は byte 単位で同一でした。
 
 ```text
 Size:   2207753 bytes
 SHA256: f640cc4137de8a2c57443c371d1efca44ee884a3022123664479708f9d7d01ce
 ```
 
-This proved that the ADR implementation had not increased the kernel size.
+これにより、ADR の実装で kernel 容量が増加していないことを証明しました。
 
-Inspection of the hardware-verified MicroSD card found a different kernel:
+実機で検証済みの MicroSD card を調べると、異なる kernel が見つかりました。
 
 ```text
 Size:   1976325 bytes
 SHA256: b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc
 ```
 
-The same file existed in:
+同じ file は次に存在しました。
 
 ```text
 target/reference/atomcam-tools-release/extracted/factory_t31_ZMC6tiIDQN
@@ -154,7 +166,7 @@ target/recovery/known-good/factory_t31_ZMC6tiIDQN
 target/atomcam2-sd/factory_t31_ZMC6tiIDQN
 ```
 
-The working system intentionally uses a hybrid boot structure:
+動作する system は、意図的に次の混成起動構成を使用しています。
 
 ```text
 Verified Atom Cam control kernel
@@ -164,59 +176,63 @@ Nerves-generated root filesystem
 Atom Cam 2 MicroSD payload
 ```
 
-The custom Nerves kernel is not yet the supported boot kernel.
+独自 Nerves kernel は、まだ対応する起動 kernel ではありません。
 
-The build already supported selecting the control kernel through:
+ビルドはすでに、次による制御 kernel の選択に対応していました。
 
 ```sh
 export ATOMCAM2_KERNEL_IMAGE="$repo_root/target/atomcam2-control/factory_t31_ZMC6tiIDQN"
 ```
 
-The release and post-image scripts were tightened so that:
+release および image 後処理 script を厳格化し、次を実施します。
 
-- A control kernel is required
-- Its SHA-256 is checked
-- An unexpected kernel is rejected
-- The oversized generated kernel cannot silently enter a released payload
+- 制御 kernel を必須にする
+- SHA-256 を確認する
+- 想定外の kernel を拒否する
+- 容量超過した生成 kernel が release の書き込み内容へ暗黙に入ることを防ぐ
 
-This preserves the hardware-verified boot contract instead of weakening the size limit or removing kernel features without evidence.
+これにより、根拠なしに容量制限を緩和したり kernel 機能を削除したりせず、実機で
+検証済みの起動契約を維持します。
 
-## Release preparation
+## リリースの準備
 
-`scripts/release-artifacts.sh` was added to prepare:
+`scripts/release-artifacts.sh` を追加し、次を準備します。
 
-- The custom Nerves toolchain artifact
-- The Atom Cam 2 system artifact
-- A `SHA256SUMS` file
+- 独自 Nerves toolchain 成果物
+- Atom Cam 2 system 成果物
+- `SHA256SUMS` ファイル
 
-It supports local creation, publication to a GitHub release, and isolated verification.
+ローカルでの作成、GitHub release への公開、分離環境での検証に対応します。
 
-The release build also validates and injects the verified control kernel.
+release build は、検証済み制御 kernel の確認と挿入も行います。
 
-Publishing remains a system-maintenance operation and is not part of the regular example-application workflow.
+公開は system 保守作業であり、通常のサンプルアプリケーション作業手順には含めません。
 
-## Smoke-check findings
+## スモーク検査での判明事項
 
-The expanded smoke check initially inspected generated Buildroot content preserved under `tmp/`.
+拡張した smoke check は当初、`tmp/` 配下に保存された生成済み Buildroot 内容も
+検査しました。
 
-This caused two types of false positives:
+その結果、2 種類の誤検出が発生しました。
 
-- POSIX shell syntax checking was applied to an upstream Bash script using `extglob`
-- Minimal-scope searches reported unrelated `rtsp`, `samba`, `webrtc`, and `rtmp` references from generated dependencies
+- `extglob` を使用する上流 Bash script に POSIX shell の構文検査を適用した
+- 最小対象範囲の検索が、生成済み依存関係内の無関係な `rtsp`、`samba`、`webrtc`、
+  `rtmp` を報告した
 
-The syntax scan was changed to exclude the repository `tmp/` directory. The temporary artifact backup was removed after the current artifact was verified.
+構文検査からリポジトリの `tmp/` directory を除外しました。現在の成果物を検証後、
+一時的な成果物 backup を削除しました。
 
-The final smoke check completed with:
+最終的な smoke check は次で完了しました。
 
 ```text
 ok: minimal ping/SSH scope looks clean
 ```
 
-Generated build trees should not be treated as repository-owned source during static checks.
+静的検査では、生成済みビルド tree をリポジトリ所有のソースとして扱うべきではありません。
 
-## Local build verification
+## ローカルビルド検証
 
-The application was rebuilt with:
+次の設定でアプリケーションを再構築しました。
 
 ```sh
 export MIX_TARGET=atomcam2
@@ -229,18 +245,18 @@ mix deps.compile nerves_system_atomcam2 --force
 mix firmware
 ```
 
-The build completed successfully.
+ビルドは正常に完了しました。
 
-`vintage_net` and `vintage_net_wifi` compiled from clean dependency sources.
+`vintage_net` と `vintage_net_wifi` は、クリーンな依存関係ソースからコンパイルされました。
 
-The control kernel and final application payload matched:
+制御 kernel と最終アプリケーション書き込み内容は次と一致しました。
 
 ```text
 SHA256: b50658eac32b57fdcb20383d82a54e6439acd7a3f7e9cb8b43edf4a4b89b03bc
 Size:   1976325 bytes
 ```
 
-The MicroSD installation task validated and installed:
+MicroSD インストールタスクは、次を検証してインストールしました。
 
 ```text
 factory_t31_ZMC6tiIDQN
@@ -250,34 +266,34 @@ authorized_keys
 nerves-provisioning.conf
 ```
 
-A timestamped backup was created before replacement.
+置き換え前に時刻付き backup を作成しました。
 
-## Hardware verification
+## 実機検証
 
-The installed payload booted successfully.
+インストールした書き込み内容は正常に起動しました。
 
-`nerves.local` resolved to:
+`nerves.local` は次へ解決されました。
 
 ```text
 192.168.10.117
 ```
 
-Ping completed with no packet loss.
+ping は packet loss なしで完了しました。
 
-SSH opened the target IEx session:
+SSH で対象 IEx session を開きました。
 
 ```text
 Interactive Elixir 1.20.2
 Toolshed imported
 ```
 
-The node name was:
+node 名は次でした。
 
 ```elixir
 :"atomcam2_nerves_app@127.0.0.1"
 ```
 
-The following applications were confirmed running:
+次の application が動作中であることを確認しました。
 
 ```text
 atomcam2_nerves_app
@@ -292,41 +308,47 @@ nerves_uevent
 nerves_logging
 ```
 
-The `/data` path was accessible.
+`/data` path を利用できました。
 
-The SSH host key changed after installing the rebuilt firmware. Removing the stale `known_hosts` entry and accepting the new key was expected for this development device.
+再構築したファームウェアのインストール後、SSH host key が変化しました。この開発用機器で、
+古い `known_hosts` 項目を削除して新しい鍵を受け入れることは想定どおりでした。
 
-## Current status
+## 現在の状態
 
-The local ADR implementation is functionally complete:
+ローカルの ADR 実装は機能上完了しています。
 
-- The application and system workflows are separated
-- The system and toolchain have reusable artifact definitions
-- Platform compatibility no longer mutates application dependencies
-- The example application builds through a regular Nerves-style workflow
-- The MicroSD installation task belongs to the system package
-- The verified control kernel is enforced
-- The resulting payload boots on hardware
-- Wi-Fi, mDNS, ping, SSH, IEx, and Toolshed work
+- アプリケーションと system の作業手順を分離した
+- system と toolchain に再利用可能な成果物定義がある
+- 基盤互換対応がアプリケーション依存関係を変更しなくなった
+- サンプルアプリケーションを通常の Nerves 形式の手順で構築できる
+- MicroSD インストールタスクが system package に属する
+- 検証済み制御 kernel を強制する
+- 生成した書き込み内容が実機で起動する
+- Wi-Fi、mDNS、ping、SSH、IEx、Toolshed が動作する
 
-The ADR should not yet be marked fully implemented.
+ただし、まだ ADR を完全実装済みとしてはなりません。
 
-The remaining closure work is:
+残る完了作業は次です。
 
-- Confirm that the SSH `fwup` subsystem rejects remote updates
-- Commit the implementation
-- Build and publish the `v0.1.0` toolchain and system artifacts
-- Verify the release from an isolated clean checkout
-- Build the example application without `ATOMCAM2_SYSTEM_SOURCE=local`
-- Boot and verify a payload built from the published artifacts
-- Record the final release evidence in ADR 0001
+- SSH の `fwup` subsystem がリモート更新を拒否することを確認する
+- 実装を commit する
+- `v0.1.0` の toolchain および system 成果物を構築して公開する
+- 分離したクリーンな checkout から release を検証する
+- `ATOMCAM2_SYSTEM_SOURCE=local` なしでサンプルアプリケーションを構築する
+- 公開済み成果物から構築した書き込み内容を起動して検証する
+- 最終的な release 根拠を ADR 0001 に記録する
 
-## Findings
+## 判明事項
 
-- A successful local artifact build does not prove that the generated kernel is the hardware boot kernel.
-- The currently supported system is a hybrid of a verified Atom Cam control kernel and a Nerves-generated root filesystem.
-- Kernel-size limits should not be weakened until the bootloader contract is understood and verified.
-- Platform-specific compatibility belongs in the system package, not in scripts that modify application dependencies.
-- Build and scope checks must exclude generated trees to avoid upstream-source false positives.
-- A reusable Nerves system requires both a published system artifact and a published toolchain artifact.
-- Local hardware success is necessary but not sufficient to close the ADR; clean release consumption must also be verified.
+- ローカル成果物のビルド成功だけでは、生成 kernel が実機の起動 kernel であることを
+  証明できない
+- 現在対応する system は、検証済み Atom Cam 制御 kernel と Nerves 生成 root filesystem の
+  混成である
+- bootloader の契約を理解し検証するまで、kernel 容量制限を緩和すべきではない
+- 基盤固有の互換対応は、アプリケーション依存関係を変更する script ではなく system package に
+  属する
+- 上流ソースの誤検出を避けるため、ビルドおよび対象範囲検査から生成 tree を除外する必要がある
+- 再利用可能な Nerves system には、公開済み system 成果物と公開済み toolchain 成果物の
+  両方が必要である
+- ローカル実機での成功は ADR 完了の必要条件だが十分条件ではない。クリーンな release 利用も
+  検証する必要がある
