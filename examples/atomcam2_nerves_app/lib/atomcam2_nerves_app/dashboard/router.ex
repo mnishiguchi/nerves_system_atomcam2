@@ -83,17 +83,22 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
       on_authorized.()
     else
       _no_or_bad_credentials ->
-        {:proceed,
-         [
-           response:
-             {:response,
-              [
-                code: 401,
-                content_type: ~c"text/plain",
-                content_length: ~c"12",
-                www_authenticate: ~c"Basic realm=\"atomcam2\""
-              ], ~c"unauthorized"}
-         ]}
+        body = "unauthorized"
+
+        # inets renders an atom key as-is ("Www_authenticate"), which
+        # browsers ignore — no Basic auth dialog appears. A string key is
+        # emitted verbatim, so the header reaches the browser as the
+        # standard WWW-Authenticate and Firefox/Chrome prompt for it.
+        # inets emits a string (charlist) header key verbatim but crashes
+        # on an Elixir binary key, so the field name must be a charlist.
+        head = [
+          {:code, 401},
+          {~c"WWW-Authenticate", ~c"Basic realm=\"atomcam2\""},
+          {:content_type, ~c"text/plain"},
+          {:content_length, body |> byte_size() |> Integer.to_charlist()}
+        ]
+
+        {:proceed, [response: {:response, head, :binary.bin_to_list(body)}]}
     end
   end
 
