@@ -164,6 +164,7 @@ defmodule Atomcam2NervesApp.Dashboard.View do
       <form method="post" action="/test/yellow"><button type="submit">黄 LED 点滅</button></form>
       <form method="post" action="/test/ir_led"><button type="submit">IR LED 点滅</button></form>
       <form method="post" action="/test/speaker"><button type="submit">スピーカー(発声)</button></form>
+      <form method="post" action="/test/mic"><button type="submit">マイク(5秒録音→再生)</button></form>
       <form method="post" action="/test/ircut/on"><button type="submit">IR-cut ON</button></form>
       <form method="post" action="/test/ircut/off"><button type="submit">IR-cut OFF</button></form>
     </div>
@@ -173,6 +174,7 @@ defmodule Atomcam2NervesApp.Dashboard.View do
       <tr><td>黄 LED</td><td>GPIO 38 (active-low)</td></tr>
       <tr><td>IR LED</td><td>GPIO 26（肉眼不可・スマホカメラで確認）</td></tr>
       <tr><td>スピーカー</td><td>アンプ GPIO 63・「起動しました」を再生</td></tr>
+      <tr><td>マイク</td><td>IMP_AI(8kHz/16bit/mono)で 5 秒録音 → 再生</td></tr>
       <tr><td>IR-cut フィルタ</td><td>GPIO 53/52 Hブリッジ・ON=昼(IR遮断) / OFF=夜(IR透過)</td></tr>
     </table>
     <p>各テストは管理パスワード（利用者 admin）が必要です。IR-cut・夜間 ISP は

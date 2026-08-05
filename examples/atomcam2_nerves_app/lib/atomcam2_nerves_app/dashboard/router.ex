@@ -102,12 +102,13 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
   # Hardware checks (動作確認 tab). These only poke the status LEDs, the IR
   # LED and the speaker — nothing that fights camd or stalls the RTSP stream.
   defp operate("/test/" <> what)
-       when what in ["blue", "yellow", "ir_led", "speaker"] do
+       when what in ["blue", "yellow", "ir_led", "speaker", "mic"] do
     case what do
       "blue" -> Atomcam2NervesApp.HardwareTest.blue_led()
       "yellow" -> Atomcam2NervesApp.HardwareTest.yellow_led()
       "ir_led" -> Atomcam2NervesApp.HardwareTest.ir_led()
       "speaker" -> Atomcam2NervesApp.HardwareTest.speaker()
+      "mic" -> Atomcam2NervesApp.HardwareTest.mic()
     end
 
     Logger.info("Dashboard: hardware test #{what}")
