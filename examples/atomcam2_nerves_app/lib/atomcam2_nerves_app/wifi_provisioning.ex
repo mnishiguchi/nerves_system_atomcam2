@@ -13,7 +13,34 @@ defmodule Atomcam2NervesApp.WifiProvisioning do
   VintageNet (wpa_supplicant) then connects to whichever configured network is
   in range, so the same card works across every location without a rebuild —
   edit `nerves-provisioning.conf` on the FAT partition to add one.
+
+  The same `NERVES_WIFI_SSID` / `_2` / ... variables can also be set as
+  **build-time environment variables**. Those are captured here at compile
+  time and baked into the firmware, so an OTA (`mix upload`) carries the
+  Wi-Fi networks without touching the SD card. Nothing is hard-coded — the
+  values come from the build host's environment, so no SSID or passphrase
+  lives in source. The runtime SD file, when present, overrides per key.
   """
+
+  @build_env_keys ["NERVES_WIFI_SSID", "NERVES_WIFI_PASSPHRASE"] ++
+                    Enum.flat_map(2..10, fn n ->
+                      ["NERVES_WIFI_SSID_#{n}", "NERVES_WIFI_PASSPHRASE_#{n}"]
+                    end)
+
+  # Evaluated at compile time: reads the build host's environment.
+  @build_provisioning (for key <- @build_env_keys,
+                           value = System.get_env(key),
+                           value not in [nil, ""],
+                           into: %{},
+                           do: {key, value})
+
+  @doc """
+  Provisioning captured from build-time environment variables. Merge the
+  runtime SD file on top of this (the file wins per key) so an OTA firmware
+  carries Wi-Fi networks while the SD can still override per device.
+  """
+  @spec build_provisioning() :: %{optional(String.t()) => String.t()}
+  def build_provisioning, do: @build_provisioning
 
   @doc """
   Turn a provisioning map (string keys) into a list of VintageNet Wi-Fi
