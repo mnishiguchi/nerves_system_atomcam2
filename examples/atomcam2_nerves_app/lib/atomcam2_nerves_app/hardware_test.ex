@@ -16,6 +16,11 @@ defmodule Atomcam2NervesApp.HardwareTest do
 
   @ir_led_gpio 26
   @ir_blinks 5
+  # IR-cut filter H-bridge (same pins camd uses). Pulsed momentarily to
+  # slide the mechanical filter, then released.
+  @ircut_a_gpio 53
+  @ircut_b_gpio 52
+  @ircut_pulse_ms 300
   @announce_command "/usr/bin/atomcam2-boot-announce"
 
   @doc "Blink the blue status LED (GPIO 39) a few times."
@@ -41,20 +46,49 @@ defmodule Atomcam2NervesApp.HardwareTest do
     :ok
   end
 
+  @doc """
+  Move the mechanical IR-cut filter in (`:on`, day — blocks IR) or out
+  (`:off`, night — passes IR) by pulsing the H-bridge (GPIO 53/52)
+  directly. This does NOT touch the ISP, so unlike night_vision it does
+  not stall the RTSP stream.
+  """
+  @spec ircut(:on | :off) :: :ok
+  def ircut(:on), do: ircut_pulse(1, 0)
+  def ircut(:off), do: ircut_pulse(0, 1)
+
+  defp ircut_pulse(a, b) do
+    {:ok, _pid} =
+      Task.start(fn ->
+        setup_out(@ircut_a_gpio)
+        setup_out(@ircut_b_gpio)
+        gpio_write(@ircut_a_gpio, a)
+        gpio_write(@ircut_b_gpio, b)
+        Process.sleep(@ircut_pulse_ms)
+        gpio_write(@ircut_a_gpio, 0)
+        gpio_write(@ircut_b_gpio, 0)
+      end)
+
+    :ok
+  end
+
   defp blink_ir_led(times) do
-    root = "/sys/class/gpio/gpio#{@ir_led_gpio}"
-
-    unless File.dir?(root) do
-      File.write("/sys/class/gpio/export", Integer.to_string(@ir_led_gpio))
-    end
-
-    File.write(Path.join(root, "direction"), "out")
+    setup_out(@ir_led_gpio)
 
     Enum.each(1..times, fn _ ->
-      File.write(Path.join(root, "value"), "1")
+      gpio_write(@ir_led_gpio, 1)
       Process.sleep(250)
-      File.write(Path.join(root, "value"), "0")
+      gpio_write(@ir_led_gpio, 0)
       Process.sleep(250)
     end)
+  end
+
+  defp setup_out(gpio) do
+    root = "/sys/class/gpio/gpio#{gpio}"
+    unless File.dir?(root), do: File.write("/sys/class/gpio/export", Integer.to_string(gpio))
+    File.write(Path.join(root, "direction"), "out")
+  end
+
+  defp gpio_write(gpio, value) do
+    File.write("/sys/class/gpio/gpio#{gpio}/value", Integer.to_string(value))
   end
 end
