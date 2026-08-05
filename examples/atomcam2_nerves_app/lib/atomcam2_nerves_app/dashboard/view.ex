@@ -91,9 +91,25 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         window.addEventListener('hashchange', function () {
           try { localStorage.setItem('tab', location.hash || ''); } catch (e) {}
         });
+        // Live snapshot on/off (for A/B testing whether the snapshot load
+        // affects the RTSP stream). Persisted; default on.
+        var snapEnabled;
+        try { snapEnabled = localStorage.getItem('snapEnabled') !== 'off'; }
+        catch (e) { snapEnabled = true; }
+        function renderSnapToggle() {
+          var b = document.getElementById('snap-toggle');
+          if (b) b.textContent = 'スナップ表示: ' + (snapEnabled ? 'ON' : 'OFF');
+        }
+        window.toggleSnap = function () {
+          snapEnabled = !snapEnabled;
+          try { localStorage.setItem('snapEnabled', snapEnabled ? 'on' : 'off'); } catch (e) {}
+          renderSnapToggle();
+        };
+        renderSnapToggle();
         // Refresh the live image every second without reloading (no flicker),
-        // only while the 映像 tab is visible.
+        // only while the 映像 tab is visible and snapshots are enabled.
         setInterval(function () {
+          if (!snapEnabled) return;
           var img = document.getElementById('snap');
           var live = document.getElementById('live');
           if (img && live && live.offsetParent !== null) {
@@ -120,6 +136,9 @@ defmodule Atomcam2NervesApp.Dashboard.View do
 
   defp live_panel(data) do
     """
+    <div class="ops">
+      <button type="button" id="snap-toggle" onclick="toggleSnap()">スナップ表示</button>
+    </div>
     <div class="snap">
       <img id="snap" src="/snapshot.jpg?#{:erlang.system_time(:second)}" alt="snapshot">
     </div>
