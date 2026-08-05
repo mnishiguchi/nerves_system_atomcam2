@@ -324,7 +324,12 @@ static void poll_snap(void)
 #define NIGHT_GAIN_ON (8 * 256)
 #define NIGHT_GAIN_OFF (4 * 256)
 
-static int night_mode = 2;   /* default auto */
+/* Default OFF (day), NOT auto. Auto re-evaluates the scene every second and,
+ * at dusk, flaps across the gain threshold — each flip pulses the mechanical
+ * IR-cut H-bridge (and used to switch the ISP mode), which destabilises the
+ * H.264 stream (the encoder stalled ~15 s in). Stability first: stay in day
+ * mode unless night is requested explicitly via the "night on/auto" control. */
+static int night_mode = 0;   /* 0 off/day, 1 on/night, 2 auto */
 static int night_active = -1; /* current physical state: -1 unknown, 0 day, 1 night */
 
 static void gpio_set(int gpio, int value)
@@ -359,10 +364,17 @@ static void apply_night(int night)
 {
 	if (night == night_active) return;
 	night_active = night;
-	IMP_ISP_Tuning_SetISPRunningMode(night ? IMPISP_RUNNING_MODE_NIGHT : IMPISP_RUNNING_MODE_DAY);
+	/* Night vision is the mechanical IR-cut filter (H-bridge GPIO) plus the
+	 * IR LED only. We deliberately do NOT switch the ISP running mode
+	 * (IMP_ISP_Tuning_SetISPRunningMode): that call wedges the H.264 encoder
+	 * mid-stream — camd's frame loop stalls a few seconds after it fires and
+	 * the RTSP stream freezes (in auto mode it flaps at dusk and stalls
+	 * repeatedly). Moving the IR-cut filter and IR LED via GPIO is safe and
+	 * keeps the stream alive; the ISP day/night tuning is sacrificed for
+	 * stability. */
 	ircut_move(night);
 	gpio_set(IR_LED_GPIO, night);
-	fprintf(stderr, "camd: night -> %s\n", night ? "on" : "off");
+	fprintf(stderr, "camd: night -> %s (ircut+IR LED only)\n", night ? "on" : "off");
 	fflush(stderr);
 }
 
