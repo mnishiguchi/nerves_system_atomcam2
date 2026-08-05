@@ -53,29 +53,16 @@ defmodule Atomcam2NervesApp.CameraNative do
   @camd_go_delay_ms 1_500
   @rtsp_poll_ms 2_000
   @poll_interval_ms 5_000
-  # RTSP liveness watchdog: while the camera is running, DESCRIBE the stream
-  # and check the SDP still carries sprop-parameter-sets. v4l2rtspserver can
-  # die, or (more often) come up latching an empty sprop when it opened the
-  # loopback a beat before camd began emitting frames. Either way the camera
-  # pipeline is fine (snapshots still work) but VLC shows nothing.
-  #
-  # Recovery is a full stack rebuild (fresh camd + rtspserver), all software
-  # (no power cycle). Restarting only the RTSP server does NOT work: once its
-  # reader detaches, camd's v4l2loopback writer never recovers, and even if it
-  # did, v4l2rtspserver only captures sprop when the first frame it reads is an
-  # SPS — which only the GO handshake (camd delays StartRecvPic until the RTSP
-  # server is attached) guarantees. So the whole stack must come up together.
-  #
-  # Ticks are quick (6 s) so a genuinely dead stream is caught in ~12 s, but a
-  # freshly (re)started stack gets a settle grace: sprop capture completes a
-  # few seconds AFTER the RTSP server reaches :running (camd StartRecvPic fires
-  # @camd_go_delay_ms later, then a frame or two). Counting failures during
-  # that window would tear the stack down mid-capture and loop forever, so no
-  # failure is counted until the stack has been :running for @rtsp_grace_ms.
-  @rtsp_health_ms 6_000
+  # RTSP liveness watchdog: while the camera is running, check that the RTSP
+  # port is actually accepting connections. v4l2rtspserver can die (or come
+  # up unhealthy after a boot) without MuonTrap noticing the child is gone;
+  # when that happens the camera pipeline is fine (snapshots still work) but
+  # VLC shows nothing. After a couple of consecutive failures we rebuild the
+  # whole stack (fresh camd + rtspserver, so sprop is captured again) — a
+  # software self-heal, no power cycle.
+  @rtsp_health_ms 20_000
   @rtsp_port 8554
   @rtsp_fail_threshold 2
-  @rtsp_grace_ms 12_000
   # Debug overlay on the video (top-left): an IEx-greeting-sized system
   # summary, refreshed every few seconds. On by default; toggle with
   # osd_debug/1 or the conf file (the persisted choice wins once set).
@@ -103,8 +90,7 @@ defmodule Atomcam2NervesApp.CameraNative do
             rtsp_pid: nil,
             last_error: nil,
             cpu_sample: nil,
-            rtsp_fails: 0,
-            running_since: nil
+            rtsp_fails: 0
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(options \\ []) do
@@ -281,10 +267,6 @@ defmodule Atomcam2NervesApp.CameraNative do
       not alive?(state.camd_pid) ->
         %{state | rtsp_fails: 0}
 
-      # Freshly (re)started: give sprop capture time to finish before judging.
-      in_grace?(state.running_since) ->
-        %{state | rtsp_fails: 0}
-
       rtsp_healthy?() ->
         %{state | rtsp_fails: 0}
 
@@ -299,11 +281,6 @@ defmodule Atomcam2NervesApp.CameraNative do
   end
 
   defp rtsp_health(state), do: %{state | rtsp_fails: 0}
-
-  defp in_grace?(nil), do: true
-  defp in_grace?(running_since), do: monotonic_ms() - running_since < @rtsp_grace_ms
-
-  defp monotonic_ms, do: System.monotonic_time(:millisecond)
 
   # Healthy means: the RTSP server accepts a connection AND its SDP carries
   # sprop-parameter-sets. Just checking the port is not enough — the server
@@ -431,7 +408,7 @@ defmodule Atomcam2NervesApp.CameraNative do
         # Release camd's encoder now that a reader is (about to be) attached,
         # so the first SPS/PPS/IDR is not dropped before the RTSP server reads.
         Process.send_after(self(), :camd_go, @camd_go_delay_ms)
-        %{state | phase: :running, rtsp_pid: pid, running_since: monotonic_ms()}
+        %{state | phase: :running, rtsp_pid: pid}
 
       {:error, reason} ->
         Logger.warning("v4l2rtspserver start failed: #{inspect(reason)}")
