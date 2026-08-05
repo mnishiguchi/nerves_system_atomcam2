@@ -2,12 +2,31 @@
 
 ## 未公開
 
-- Lay the dashboard out as atomcam_tools-style tabs (映像 / 状態 / ログ /
-  操作). Tabs are pure CSS via `:target` on the URL fragment, so the
-  chosen tab survives the meta refresh, with `:has()` selecting the
-  default (映像) tab and highlighting the active one — still no
-  JavaScript. 映像 holds the snapshot, night-vision buttons, and RTSP
-  URL; 操作 holds the authenticated announce/reboot buttons.
+> 既知の不具合(2026-08-04→2026-08-05 更新): (A) ナイトビジョン切替が
+> H.264 を停止させる(有力仮説: `SetISPRunningMode` のインライン実行。
+> IR-cut+IR LED のみに変更で緩和)、(B) camd の kill・ソフト再起動反復後に
+> フレームが出ない(有力仮説: teardown 不足。SIGTERM ハンドラで緩和)、
+> **(C) RTSP の sprop 間欠欠落 → 解決**(下記「GO ハンドシェイク」参照)。
+> 詳細は [作業記録 2026-08-05](docs/20260805_作業記録.md)。
+
+- Fix the intermittent missing `sprop-parameter-sets` in the RTSP SDP
+  (problem C) without altering the stream. camd now waits for the RTSP
+  server to be reading the loopback (a `/tmp/camd.go` handshake written by
+  CameraNative) before `StartRecvPic`, so the first frame's SPS/PPS reaches
+  the attached reader instead of being dropped with ENOTTY (v4l2loopback
+  write fails until a reader attaches). v4l2rtspserver then repeats the
+  parameter sets before every IDR by default, so the SDP reliably carries
+  sprop. camd also runs a clean IMP teardown on SIGTERM (sigaction +
+  SA_RESTART). Note: when RTSP "connects but shows no video" it is usually
+  not the stream but RTP (UDP) routing — over plain IPSec the RTP
+  destination is the client's off-subnet real IP; force RTSP-over-TCP in
+  the player, or use L2TP/IPSec.
+- Support multi-location Wi-Fi via build-time environment variables so an
+  OTA carries the networks. `WifiProvisioning` captures `NERVES_WIFI_SSID`
+  / `_2` / ... at compile time and `config/runtime.exs` merges them under
+  the SD `nerves-provisioning.conf` (the SD file wins per key, so a device
+  can still be re-pointed without a rebuild). No SSID or passphrase is
+  hard-coded — the values come from the build host's environment.
 
 - Add on-device JPEG snapshots and a dashboard preview. camd gains a
   JPEG encoder channel (same group as H.264, so the still carries the

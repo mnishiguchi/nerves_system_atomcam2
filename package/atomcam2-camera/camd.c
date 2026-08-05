@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <time.h>
+#include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <linux/videodev2.h>
@@ -63,6 +64,12 @@
  * server must not open the device before that, or its SDP is left
  * without sprop-parameter-sets and players cannot decode. */
 #define READY_PATH "/tmp/camd.ready"
+/* Created by CameraNative once v4l2rtspserver is actually reading the
+ * loopback. camd waits for it before StartRecvPic so the first frame
+ * (SPS/PPS/IDR) reaches the attached reader instead of being dropped with
+ * ENOTTY (write fails until a reader is attached), which otherwise leaves
+ * the RTSP SDP intermittently without sprop-parameter-sets. */
+#define GO_PATH "/tmp/camd.go"
 
 #define OSD_CELL_W 16          /* per-glyph cell width factor (sample) */
 #define OSD_ROW_H  34
@@ -88,6 +95,14 @@
 #define INFO_SRC_MAX 4096
 
 static unsigned char asm_buf[ASM_MAX];
+
+/* Set by SIGTERM so the main loop breaks and runs the IMP teardown
+ * (StopRecvPic/DestroyChn/System_Exit/DisableSensor). Without a clean
+ * teardown on shutdown, the next boot's encoder can come up half-reset and
+ * emit no SPS. The handler only flips this flag; no IMP calls in signal
+ * context (libimp is not reentrant). */
+static volatile sig_atomic_t g_quit = 0;
+static void on_term(int sig) { (void)sig; g_quit = 1; }
 static uint32_t clock_buf[CLOCK_CHARS * OSD_ROW_H * OSD_CELL_W]; /* bgra */
 static uint32_t info_buf[INFO_W * INFO_H]; /* bgra */
 static char info_src[INFO_SRC_MAX];
@@ -552,6 +567,17 @@ int main(int argc, char **argv)
 	int cfd = open(CTL_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (cfd >= 0) close(cfd);
 
+	/* Clean shutdown on SIGTERM (MuonTrap / system shutdown) so the IMP
+	 * teardown runs. sigaction + SA_RESTART so a signal does not leave
+	 * libimp's blocking ioctl/read returning EINTR mid-call. */
+	{
+		struct sigaction sa;
+		memset(&sa, 0, sizeof(sa));
+		sa.sa_handler = on_term;
+		sa.sa_flags = SA_RESTART;
+		sigaction(SIGTERM, &sa, NULL);
+	}
+
 	memset(&si, 0, sizeof(si));
 	strncpy(si.name, sensor, sizeof(si.name) - 1);
 	si.cbus_type = TX_SENSOR_CONTROL_INTERFACE_I2C;
@@ -620,6 +646,22 @@ int main(int argc, char **argv)
 		if (rfd >= 0) close(rfd);
 	}
 
+	/* Wait until the RTSP server is reading the loopback (GO_PATH created by
+	 * CameraNative) before starting the encoder, so the first frame's
+	 * SPS/PPS is not written into a reader-less loopback (ENOTTY) and lost.
+	 * Fall back after ~8 s so camd still runs if nothing consumes the
+	 * loopback. */
+	{
+		int waited_ms = 0;
+		while (access(GO_PATH, F_OK) != 0 && !g_quit && waited_ms < 8000) {
+			usleep(100 * 1000);
+			waited_ms += 100;
+		}
+		fprintf(stderr, "camd: go after %d ms (rtsp reader %s)\n",
+			waited_ms, access(GO_PATH, F_OK) == 0 ? "attached" : "timeout");
+		fflush(stderr);
+	}
+
 	if (step("Encoder_StartRecvPic", IMP_Encoder_StartRecvPic(CHN)) < 0) return 1;
 
 	render_clock();
@@ -629,6 +671,7 @@ int main(int argc, char **argv)
 	fflush(stderr);
 
 	for (i = 0; i < frames; i++) {
+		if (g_quit) { fprintf(stderr, "camd: SIGTERM -> clean teardown\n"); fflush(stderr); break; }
 		if (poll_ctl()) break;
 		if ((i % FR_NUM) == 0) {                 /* once per second */
 			render_clock();

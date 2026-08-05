@@ -16,7 +16,7 @@ if config_target() != :host do
 
   provisioning_path = "/media/mmc/nerves-provisioning.conf"
 
-  provisioning =
+  file_provisioning =
     if File.exists?(provisioning_path) do
       provisioning_path
       |> File.read!()
@@ -30,6 +30,12 @@ if config_target() != :host do
     else
       %{}
     end
+
+  # Networks can be baked in at build time (env vars, carried by OTA) and/or
+  # provided by the SD `nerves-provisioning.conf` (per device). The SD file
+  # wins per key so a device can be re-pointed without a rebuild.
+  provisioning =
+    Map.merge(Atomcam2NervesApp.WifiProvisioning.build_provisioning(), file_provisioning)
 
   # One or more Wi-Fi networks (multiple locations). VintageNet connects to
   # whichever configured network is in range.

@@ -45,6 +45,12 @@ defmodule Atomcam2NervesApp.CameraNative do
   # this marker once the loopback is ready; the RTSP server waits for it
   # (camd init takes a variable 10-20 s, so a fixed delay races).
   @camd_ready_path "/tmp/camd.ready"
+  # Written once v4l2rtspserver is reading the loopback. camd waits for this
+  # before StartRecvPic so the first frame's SPS/PPS reaches the (now
+  # attached) reader instead of being dropped with ENOTTY — otherwise the
+  # RTSP SDP intermittently comes up without sprop-parameter-sets.
+  @camd_go_path "/tmp/camd.go"
+  @camd_go_delay_ms 1_500
   @rtsp_poll_ms 2_000
   @poll_interval_ms 5_000
   # Debug overlay on the video (top-left): an IEx-greeting-sized system
@@ -160,6 +166,11 @@ defmodule Atomcam2NervesApp.CameraNative do
     {:noreply, start_rtsp(state)}
   end
 
+  def handle_info(:camd_go, state) do
+    _ = File.write(@camd_go_path, "")
+    {:noreply, state}
+  end
+
   def handle_info(:update_info, state) do
     {cpu_percent, cpu_sample} = cpu_usage(state.cpu_sample)
 
@@ -226,6 +237,7 @@ defmodule Atomcam2NervesApp.CameraNative do
 
   defp start_stack(state) do
     File.rm(@camd_ready_path)
+    File.rm(@camd_go_path)
 
     with :ok <- load_camera_modules(),
          :ok <- ensure_dsp_node(),
@@ -265,6 +277,9 @@ defmodule Atomcam2NervesApp.CameraNative do
          ) do
       {:ok, pid} ->
         Logger.info("Native camera RTSP server started on port 8554")
+        # Release camd's encoder now that a reader is (about to be) attached,
+        # so the first SPS/PPS/IDR is not dropped before the RTSP server reads.
+        Process.send_after(self(), :camd_go, @camd_go_delay_ms)
         %{state | phase: :running, rtsp_pid: pid}
 
       {:error, reason} ->
