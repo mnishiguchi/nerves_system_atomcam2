@@ -53,6 +53,16 @@ defmodule Atomcam2NervesApp.CameraNative do
   @camd_go_delay_ms 1_500
   @rtsp_poll_ms 2_000
   @poll_interval_ms 5_000
+  # RTSP liveness watchdog: while the camera is running, check that the RTSP
+  # port is actually accepting connections. v4l2rtspserver can die (or come
+  # up unhealthy after a boot) without MuonTrap noticing the child is gone;
+  # when that happens the camera pipeline is fine (snapshots still work) but
+  # VLC shows nothing. After a couple of consecutive failures we rebuild the
+  # whole stack (fresh camd + rtspserver, so sprop is captured again) — a
+  # software self-heal, no power cycle.
+  @rtsp_health_ms 20_000
+  @rtsp_port 8554
+  @rtsp_fail_threshold 2
   # Debug overlay on the video (top-left): an IEx-greeting-sized system
   # summary, refreshed every few seconds. On by default; toggle with
   # osd_debug/1 or the conf file (the persisted choice wins once set).
@@ -79,7 +89,8 @@ defmodule Atomcam2NervesApp.CameraNative do
             camd_pid: nil,
             rtsp_pid: nil,
             last_error: nil,
-            cpu_sample: nil
+            cpu_sample: nil,
+            rtsp_fails: 0
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(options \\ []) do
@@ -174,6 +185,7 @@ defmodule Atomcam2NervesApp.CameraNative do
     # Single self-rescheduling timer (started once here so camd restarts
     # cannot stack additional timers).
     Process.send_after(self(), :update_info, 15_000)
+    Process.send_after(self(), :rtsp_health, @rtsp_health_ms)
     {:ok, %__MODULE__{}, {:continue, :check}}
   end
 
@@ -194,6 +206,11 @@ defmodule Atomcam2NervesApp.CameraNative do
   def handle_info(:camd_go, state) do
     _ = File.write(@camd_go_path, "")
     {:noreply, state}
+  end
+
+  def handle_info(:rtsp_health, state) do
+    Process.send_after(self(), :rtsp_health, @rtsp_health_ms)
+    {:noreply, rtsp_health(state)}
   end
 
   def handle_info(:update_info, state) do
@@ -238,6 +255,92 @@ defmodule Atomcam2NervesApp.CameraNative do
   @impl GenServer
   def handle_call(:status, _from, state) do
     {:reply, Map.from_struct(state), state}
+  end
+
+  # RTSP watchdog: only meaningful once the stack is up (camd running and
+  # the RTSP server expected). If the port is not accepting connections for
+  # a couple of checks in a row, rebuild the whole stack so a fresh camd +
+  # rtspserver re-run the SPS handshake — the camera pipeline itself may be
+  # fine (snapshots work), only the RTSP publish is dead.
+  defp rtsp_health(%{phase: :running} = state) do
+    cond do
+      not alive?(state.camd_pid) ->
+        %{state | rtsp_fails: 0}
+
+      rtsp_healthy?() ->
+        %{state | rtsp_fails: 0}
+
+      state.rtsp_fails + 1 >= @rtsp_fail_threshold ->
+        Logger.warning("RTSP unhealthy (down or no sprop) while camera running; rebuilding stack")
+        restart_stack()
+        %{state | rtsp_fails: 0}
+
+      true ->
+        %{state | rtsp_fails: state.rtsp_fails + 1}
+    end
+  end
+
+  defp rtsp_health(state), do: %{state | rtsp_fails: 0}
+
+  # Healthy means: the RTSP server accepts a connection AND its SDP carries
+  # sprop-parameter-sets. Just checking the port is not enough — the server
+  # can be up yet publish an empty sprop (frame1 SPS missed), which leaves
+  # VLC unable to decode. A DESCRIBE reflects exactly what a client sees.
+  defp rtsp_healthy? do
+    case :gen_tcp.connect(~c"127.0.0.1", @rtsp_port, [:binary, active: false], 1_000) do
+      {:ok, socket} ->
+        req =
+          "DESCRIBE rtsp://127.0.0.1:#{@rtsp_port}/video0_unicast RTSP/1.0\r\n" <>
+            "CSeq: 1\r\nAccept: application/sdp\r\n\r\n"
+
+        healthy =
+          case :gen_tcp.send(socket, req) do
+            :ok ->
+              sdp = rtsp_recv(socket, "", System.monotonic_time(:millisecond) + 1_500)
+              String.contains?(sdp, "sprop-parameter-sets=")
+
+            _error ->
+              false
+          end
+
+        :gen_tcp.close(socket)
+        healthy
+
+      {:error, _reason} ->
+        false
+    end
+  end
+
+  defp rtsp_recv(socket, acc, deadline) do
+    now = System.monotonic_time(:millisecond)
+
+    cond do
+      byte_size(acc) > 4096 or now >= deadline ->
+        acc
+
+      true ->
+        case :gen_tcp.recv(socket, 0, max(50, deadline - now)) do
+          {:ok, data} -> rtsp_recv(socket, acc <> data, deadline)
+          {:error, _reason} -> acc
+        end
+    end
+  end
+
+  # Kill both OS processes; the linked MuonTrap daemons exit and the {:EXIT}
+  # handlers rebuild the stack from scratch (start_stack). Using killall (vs
+  # stopping the daemons) also clears a child that MuonTrap has lost track of.
+  #
+  # SIGTERM (not -9): camd's handler runs the IMP teardown before exiting, so
+  # the encoder is released cleanly and the fresh camd emits SPS at frame1
+  # again — otherwise a SIGKILL leaves the encoder dirty and every rebuilt
+  # rtspserver still comes up with an empty sprop (an endless restart loop).
+  # camd's poll loop wakes at least once a second (PollingStream timeout), so
+  # the flag is seen and teardown runs promptly even with no frames.
+  defp restart_stack do
+    _ = System.cmd("killall", ["atomcam2-camd", "v4l2rtspserver"], stderr_to_stdout: true)
+    :ok
+  rescue
+    _exception -> :ok
   end
 
   defp check(state) do
