@@ -25,6 +25,8 @@ defmodule Atomcam2NervesApp.StatusLed do
 
   @boot_pattern [{1, 100}, {0, 200}, {1, 100}, {0, 600}]
   @publish_pattern [{0, 100}, {1, 200}, {0, 100}, {1, 4600}]
+  # Hardware-check blink: a few clear pulses, then the normal cycle resumes.
+  @test_pattern [{1, 200}, {0, 200}, {1, 200}, {0, 200}, {1, 200}, {0, 200}, {1, 200}, {0, 300}]
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(options \\ []) do
@@ -32,17 +34,39 @@ defmodule Atomcam2NervesApp.StatusLed do
     GenServer.start_link(__MODULE__, options, name: name)
   end
 
+  @doc """
+  Blink one status LED a few times for a hardware check, then resume the
+  normal boot/publish pattern. Safe to call any time; it interrupts the
+  current pattern via a generation token so timers do not stack.
+  """
+  @spec test(:blue | :yellow) :: :ok
+  def test(color) when color in [:blue, :yellow] do
+    GenServer.cast(__MODULE__, {:test, color})
+  end
+
   @impl GenServer
   def init(_options) do
     setup_gpio(@yellow_gpio, @yellow_active_low)
     setup_gpio(@blue_gpio, @blue_active_low)
-    send(self(), :cycle)
-    {:ok, %{mode: nil, gpio: nil, steps: []}}
+    send(self(), {:cycle, 0})
+    {:ok, %{mode: nil, gpio: nil, steps: [], gen: 0}}
   end
 
-  # A cycle boundary: pick the mode for the next pattern run.
   @impl GenServer
-  def handle_info(:cycle, state) do
+  def handle_cast({:test, color}, state) do
+    gpio = if color == :blue, do: @blue_gpio, else: @yellow_gpio
+    # Start from a clean slate so the tested LED is unambiguous.
+    write_value(@yellow_gpio, 0)
+    write_value(@blue_gpio, 0)
+    gen = state.gen + 1
+    send(self(), {:step, gen})
+    {:noreply, %{state | mode: :test, gpio: gpio, steps: @test_pattern, gen: gen}}
+  end
+
+  # A cycle boundary: pick the mode for the next pattern run. Stale-gen
+  # messages (superseded by a test) are ignored by the catch-all clauses.
+  @impl GenServer
+  def handle_info({:cycle, gen}, %{gen: gen} = state) do
     mode = current_mode()
 
     state =
@@ -57,21 +81,21 @@ defmodule Atomcam2NervesApp.StatusLed do
     {gpio, pattern} =
       case mode do
         :publish -> {@blue_gpio, @publish_pattern}
-        :boot -> {@yellow_gpio, @boot_pattern}
+        _ -> {@yellow_gpio, @boot_pattern}
       end
 
-    send(self(), :step)
+    send(self(), {:step, gen})
     {:noreply, %{state | gpio: gpio, steps: pattern}}
   end
 
-  def handle_info(:step, %{steps: []} = state) do
-    send(self(), :cycle)
+  def handle_info({:step, gen}, %{gen: gen, steps: []} = state) do
+    send(self(), {:cycle, gen})
     {:noreply, state}
   end
 
-  def handle_info(:step, %{steps: [{value, delay} | rest]} = state) do
+  def handle_info({:step, gen}, %{gen: gen, steps: [{value, delay} | rest]} = state) do
     write_value(state.gpio, value)
-    Process.send_after(self(), :step, delay)
+    Process.send_after(self(), {:step, gen}, delay)
     {:noreply, %{state | steps: rest}}
   end
 

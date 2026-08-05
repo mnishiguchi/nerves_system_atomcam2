@@ -44,7 +44,8 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         #live { display: block; }
         #status:target ~ #live,
         #logs:target ~ #live,
-        #ops:target ~ #live { display: none; }
+        #ops:target ~ #live,
+        #hwtest:target ~ #live { display: none; }
         table { border-collapse: collapse; margin-bottom: 1rem; width: 100%; max-width: 640px; }
         caption { text-align: left; font-weight: bold; padding: .3rem 0; color: #9cf; }
         td { border: 1px solid #444; padding: .25rem .6rem; font-size: .9rem; }
@@ -66,11 +67,13 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         <a href="#status">状態</a>
         <a href="#logs">ログ</a>
         <a href="#ops">操作</a>
+        <a href="#hwtest">動作確認</a>
       </nav>
       <main>
         <section id="status" class="panel">#{status_panel(data)}</section>
         <section id="logs"   class="panel">#{logs_panel(data)}</section>
         <section id="ops"    class="panel">#{ops_panel()}</section>
+        <section id="hwtest" class="panel">#{hwtest_panel()}</section>
         <section id="live"   class="panel">#{live_panel(data)}</section>
       </main>
       <script>
@@ -120,11 +123,6 @@ defmodule Atomcam2NervesApp.Dashboard.View do
     <div class="snap">
       <img id="snap" src="/snapshot.jpg?#{:erlang.system_time(:second)}" alt="snapshot">
     </div>
-    <div class="ops">
-      <form method="post" action="/night/on"><button type="submit">夜間 ON</button></form>
-      <form method="post" action="/night/auto"><button type="submit">夜間 AUTO</button></form>
-      <form method="post" action="/night/off"><button type="submit">夜間 OFF</button></form>
-    </div>
     <p class="rtsp">RTSP: #{escape(rtsp_url(data))}</p>
     """
   end
@@ -156,6 +154,26 @@ defmodule Atomcam2NervesApp.Dashboard.View do
       </form>
     </div>
     <p>操作は管理パスワード（利用者 admin）が必要です。</p>
+    """
+  end
+
+  defp hwtest_panel do
+    """
+    <div class="ops">
+      <form method="post" action="/test/blue"><button type="submit">青 LED 点滅</button></form>
+      <form method="post" action="/test/yellow"><button type="submit">黄 LED 点滅</button></form>
+      <form method="post" action="/test/ir_led"><button type="submit">IR LED 点滅</button></form>
+      <form method="post" action="/test/speaker"><button type="submit">スピーカー(発声)</button></form>
+    </div>
+    <table>
+      <caption>GPIO / 周辺機器</caption>
+      <tr><td>青 LED</td><td>GPIO 39 (active-low)</td></tr>
+      <tr><td>黄 LED</td><td>GPIO 38 (active-low)</td></tr>
+      <tr><td>IR LED</td><td>GPIO 26（肉眼不可・スマホカメラで確認）</td></tr>
+      <tr><td>スピーカー</td><td>アンプ GPIO 63・「起動しました」を再生</td></tr>
+    </table>
+    <p>各テストは管理パスワード（利用者 admin）が必要です。IR-cut・夜間 ISP は
+    RTSP を止める恐れがあるため動作確認には含めません。</p>
     """
   end
 
