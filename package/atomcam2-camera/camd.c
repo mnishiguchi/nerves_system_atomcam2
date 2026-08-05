@@ -677,7 +677,13 @@ int main(int argc, char **argv)
 	if (step("Encoder_StartRecvPic", IMP_Encoder_StartRecvPic(CHN)) < 0) return 1;
 
 	render_clock();
-	night_auto_tick();   /* set day/night from the current scene at startup */
+	/* Put the IR-cut filter in the correct physical position at startup. In
+	 * auto, decide from the scene; otherwise force the mode's position. The
+	 * filter is mechanical and holds its last position across reboots, so
+	 * without this it can stay in the night (IR-passing) position and tint the
+	 * daylight image purple/magenta. apply_night(0) here slides it to day. */
+	if (night_mode == 2) night_auto_tick();
+	else apply_night(night_mode == 1);
 	fprintf(stderr, "camd: running at %d kbps. control via %s\n", bitrate, CTL_PATH);
 	fprintf(stderr, "camd:   clock/logo on|off / info <text>|off / snap / night on|off|auto / bitrate <kbps> / qp <min> <max> / quit\n");
 	fflush(stderr);
