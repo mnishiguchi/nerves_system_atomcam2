@@ -99,16 +99,29 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
     redirect_home("test ircut #{mode}")
   end
 
+  # Microphone: separate record / playback with a live second counter on
+  # the returned page (auto-returns to the 動作確認 tab when it finishes).
+  defp operate("/test/mic/record") do
+    Atomcam2NervesApp.HardwareTest.mic_record()
+    Logger.info("Dashboard: mic record")
+    reply(200, "text/html", countdown_page("録音中", Atomcam2NervesApp.HardwareTest.mic_seconds()))
+  end
+
+  defp operate("/test/mic/play") do
+    Atomcam2NervesApp.HardwareTest.mic_play()
+    Logger.info("Dashboard: mic play")
+    reply(200, "text/html", countdown_page("再生中", Atomcam2NervesApp.HardwareTest.mic_seconds()))
+  end
+
   # Hardware checks (動作確認 tab). These only poke the status LEDs, the IR
   # LED and the speaker — nothing that fights camd or stalls the RTSP stream.
   defp operate("/test/" <> what)
-       when what in ["blue", "yellow", "ir_led", "speaker", "mic"] do
+       when what in ["blue", "yellow", "ir_led", "speaker"] do
     case what do
       "blue" -> Atomcam2NervesApp.HardwareTest.blue_led()
       "yellow" -> Atomcam2NervesApp.HardwareTest.yellow_led()
       "ir_led" -> Atomcam2NervesApp.HardwareTest.ir_led()
       "speaker" -> Atomcam2NervesApp.HardwareTest.speaker()
-      "mic" -> Atomcam2NervesApp.HardwareTest.mic()
     end
 
     Logger.info("Dashboard: hardware test #{what}")
@@ -161,6 +174,41 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
             content_length: body |> byte_size() |> Integer.to_charlist()
           ], :binary.bin_to_list(body)}
      ]}
+  end
+
+  # A small page shown after starting a mic record/playback: counts the
+  # seconds up to the duration, then returns to the 動作確認 tab.
+  defp countdown_page(label, secs) do
+    """
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <meta http-equiv="refresh" content="#{secs + 1};url=/#hwtest">
+      <title>atomcam2</title>
+      <style>
+        body { font-family: sans-serif; background: #111; color: #ddd;
+               text-align: center; padding: 3rem 1rem; }
+        .count { font-size: 2.5rem; font-weight: bold; margin: 1rem 0; }
+        a { color: #9cf; }
+      </style>
+    </head>
+    <body>
+      <p>#{label}</p>
+      <div class="count"><span id="c">0</span> / #{secs} 秒</div>
+      <p><a href="/#hwtest">動作確認に戻る</a></p>
+      <script>
+        var n = 0, s = #{secs}, e = document.getElementById('c');
+        var t = setInterval(function () {
+          n++;
+          if (n >= s) { clearInterval(t); e.textContent = s + '（完了）'; }
+          else { e.textContent = n; }
+        }, 1000);
+      </script>
+    </body>
+    </html>
+    """
   end
 
   defp reply(code, content_type, body) when is_binary(body) do

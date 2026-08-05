@@ -53,19 +53,29 @@ defmodule Atomcam2NervesApp.HardwareTest do
     :ok
   end
 
+  @doc "Recording length in seconds (used by the dashboard countdown)."
+  def mic_seconds, do: @mic_seconds
+
   @doc """
   Record ~#{@mic_seconds} s from the microphone (IMP_AI, 8 kHz/16-bit/mono)
-  then play it back through the speaker (IMP_AO). Returns immediately; the
-  record-then-play runs in the background (~#{@mic_seconds * 2} s).
+  to #{@mic_raw}. Returns immediately; recording runs in the background.
   """
-  def mic do
+  def mic_record do
     {:ok, _pid} =
       Task.start(fn ->
         System.cmd(@airec_command, [@mic_raw, Integer.to_string(@mic_seconds)],
           env: @audio_env,
           stderr_to_stdout: true
         )
+      end)
 
+    :ok
+  end
+
+  @doc "Play back the last microphone recording (#{@mic_raw}) via IMP_AO."
+  def mic_play do
+    {:ok, _pid} =
+      Task.start(fn ->
         System.cmd(@aoplay_command, [@mic_raw, "1", "8000", "60"],
           env: @audio_env,
           stderr_to_stdout: true
