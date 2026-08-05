@@ -54,11 +54,12 @@ defmodule Atomcam2NervesApp.CameraNative do
   @rtsp_poll_ms 2_000
   @poll_interval_ms 5_000
   # Debug overlay on the video (top-left): an IEx-greeting-sized system
-  # summary, refreshed every few seconds. Off by default so operational
-  # video stays clean; toggle with osd_debug/1 or the conf file.
+  # summary, refreshed every few seconds. On by default; toggle with
+  # osd_debug/1 or the conf file (the persisted choice wins once set).
   @info_refresh_ms 3_000
   @info_path "/tmp/camd.info"
   @debug_conf_path "/data/atomcam2-native-camera/osd-debug.conf"
+  @debug_default_enabled true
 
   # The vendor start sequence loads tx_isp first and audio right after;
   # loading audio.ko before tx_isp leaves the codec half-initialized
@@ -102,18 +103,42 @@ defmodule Atomcam2NervesApp.CameraNative do
     end
   end
 
+  # Minimum spacing between real captures. Each capture drives camd's JPEG
+  # encoder channel (which shares the H.264 channel's buffer), so frequent
+  # captures stress the encoder. Requests inside this window are served the
+  # cached JPEG instead of triggering a new capture, capping the rate no
+  # matter how fast the dashboard refreshes the live image (every 1 s).
+  @snapshot_min_interval_ms 1_500
+
   @doc """
   Capture a JPEG snapshot from the camera's JPEG encoder channel and
-  return its path once camd has written it. The image carries the same
-  OSD overlay as the video. Returns `{:error, :timeout}` if camd does
-  not produce it in time (e.g. camera not running).
+  return its path once camd has written it. If a recent snapshot (younger
+  than #{@snapshot_min_interval_ms} ms) already exists it is served as-is
+  without asking camd for a new one. The image carries the same OSD
+  overlay as the video. Returns `{:error, :timeout}` if camd does not
+  produce it in time (e.g. camera not running).
   """
   @spec snapshot(timeout()) :: {:ok, Path.t()} | {:error, term()}
   def snapshot(timeout \\ 3_000) do
-    _ = File.rm(@snapshot_path)
+    if snapshot_fresh?() do
+      {:ok, @snapshot_path}
+    else
+      _ = File.rm(@snapshot_path)
 
-    with :ok <- File.write(@snapshot_request_path, "") do
-      await_snapshot(System.monotonic_time(:millisecond) + timeout)
+      with :ok <- File.write(@snapshot_request_path, "") do
+        await_snapshot(System.monotonic_time(:millisecond) + timeout)
+      end
+    end
+  end
+
+  defp snapshot_fresh? do
+    case File.stat(@snapshot_path, time: :posix) do
+      {:ok, %File.Stat{mtime: mtime, size: size}} when size > 0 ->
+        age_ms = (System.os_time(:second) - mtime) * 1_000
+        age_ms >= 0 and age_ms < @snapshot_min_interval_ms
+
+      _other ->
+        false
     end
   end
 
@@ -382,7 +407,7 @@ defmodule Atomcam2NervesApp.CameraNative do
   defp debug_overlay_enabled? do
     case File.read(@debug_conf_path) do
       {:ok, contents} -> String.trim(contents) == "enabled=true"
-      {:error, _reason} -> false
+      {:error, _reason} -> @debug_default_enabled
     end
   end
 

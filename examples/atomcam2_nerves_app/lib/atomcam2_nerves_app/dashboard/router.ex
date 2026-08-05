@@ -91,6 +91,29 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
     redirect_home("night #{mode}")
   end
 
+  # IR-cut filter: move it in/out by pulsing the H-bridge GPIO directly
+  # (no ISP change), so it does not stall the RTSP stream.
+  defp operate("/test/ircut/" <> mode) when mode in ["on", "off"] do
+    Atomcam2NervesApp.HardwareTest.ircut(String.to_existing_atom(mode))
+    Logger.info("Dashboard: hardware test ircut #{mode}")
+    redirect_home("test ircut #{mode}")
+  end
+
+  # Hardware checks (動作確認 tab). These only poke the status LEDs, the IR
+  # LED and the speaker — nothing that fights camd or stalls the RTSP stream.
+  defp operate("/test/" <> what)
+       when what in ["blue", "yellow", "ir_led", "speaker"] do
+    case what do
+      "blue" -> Atomcam2NervesApp.HardwareTest.blue_led()
+      "yellow" -> Atomcam2NervesApp.HardwareTest.yellow_led()
+      "ir_led" -> Atomcam2NervesApp.HardwareTest.ir_led()
+      "speaker" -> Atomcam2NervesApp.HardwareTest.speaker()
+    end
+
+    Logger.info("Dashboard: hardware test #{what}")
+    redirect_home("test #{what}")
+  end
+
   defp operate(_uri), do: reply(404, "text/plain", "not found")
 
   defp authorized(mod_record, on_authorized) do

@@ -2,11 +2,12 @@ defmodule Atomcam2NervesApp.Dashboard.Server do
   @moduledoc """
   Owns the dashboard's `:inets` httpd instance.
 
-  Off by default: the httpd only exists while enabled, so a disabled
-  dashboard has no open port, no processes, and no memory cost. The
-  enabled/disabled choice is persisted in `#{"/data/atomcam2-dashboard/enabled.conf"}`
-  and re-applied at boot (waiting for /data if its filesystem check is
-  still running).
+  On by default: the httpd starts at boot unless it has been turned off.
+  When disabled the httpd does not exist, so a disabled dashboard has no
+  open port, no processes, and no memory cost. The enabled/disabled choice
+  is persisted in `#{"/data/atomcam2-dashboard/enabled.conf"}` and
+  re-applied at boot (the persisted choice wins over the default once set;
+  waiting for /data if its filesystem check is still running).
   """
 
   use GenServer
@@ -16,6 +17,7 @@ defmodule Atomcam2NervesApp.Dashboard.Server do
   @config_path "/data/atomcam2-dashboard/enabled.conf"
   @password_path "/data/atomcam2-dashboard/password.conf"
   @default_port 80
+  @default_enabled true
   # /data may still be under its filesystem check at boot; poll until the
   # config becomes readable before deciding the initial state.
   @config_poll_ms 10_000
@@ -91,8 +93,8 @@ defmodule Atomcam2NervesApp.Dashboard.Server do
         {:noreply, apply_enabled(state, String.trim(contents) == "enabled=true")}
 
       {:error, :enoent} ->
-        # No configuration: the default is off. Nothing to do.
-        {:noreply, state}
+        # No configuration yet: fall back to the compiled-in default.
+        {:noreply, apply_enabled(state, @default_enabled)}
 
       {:error, _reason} ->
         # /data is likely not mounted yet; try again shortly.
