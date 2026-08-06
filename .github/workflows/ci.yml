@@ -9,6 +9,13 @@ permissions:
   contents: read
 
 jobs:
+  reuse:
+    name: REUSE compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@v6
+
   shell-checks:
     name: Shell checks
     runs-on: ubuntu-latest

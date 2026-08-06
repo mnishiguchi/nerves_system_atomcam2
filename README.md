@@ -1,5 +1,8 @@
 # nerves_system_atomcam2
 
+[![CI](https://github.com/piyopiyoex/nerves_system_atomcam2/actions/workflows/ci.yml/badge.svg)](https://github.com/piyopiyoex/nerves_system_atomcam2/actions/workflows/ci.yml)
+[![REUSE status](https://api.reuse.software/badge/github.com/piyopiyoex/nerves_system_atomcam2)](https://api.reuse.software/info/github.com/piyopiyoex/nerves_system_atomcam2)
+
 Atom Cam 2 で Elixir と Nerves を動かすための実験的な Nerves system です。
 
 現行版は `0.4.0` です。Nerves の起動、ネットワーク接続、SSH、A/B
