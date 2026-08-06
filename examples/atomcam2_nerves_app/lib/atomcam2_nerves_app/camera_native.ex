@@ -43,6 +43,9 @@ defmodule Atomcam2NervesApp.CameraNative do
   # running, distinct from the app/firmware version (mix.exs), which does
   # not change on a camd-only rebuild.
   @camd_version_path "/tmp/camd.version"
+  # Measured (not nominal) encoder fps, rewritten by camd once per wall-clock
+  # second from its actual frame-write count.
+  @fps_path "/tmp/camd.fps"
 
   # The loopback writer has to set the H.264 format (S_FMT) before
   # v4l2rtspserver opens the device — otherwise the SDP is published
@@ -118,6 +121,13 @@ defmodule Atomcam2NervesApp.CameraNative do
     case File.read(@camd_version_path) do
       {:ok, contents} -> String.trim(contents)
       {:error, _reason} -> nil
+    end
+  end
+
+  defp fps_text do
+    case File.read(@fps_path) do
+      {:ok, contents} -> String.trim(contents)
+      {:error, _reason} -> "?"
     end
   end
 
@@ -544,7 +554,7 @@ defmodule Atomcam2NervesApp.CameraNative do
       mem_line(),
       beam_line(),
       "eth0: #{ipv4_of("eth0") || "-"}  wlan0: #{ipv4_of("wlan0") || "-"}",
-      "Camera: #{state.phase}  RTSP: :8554/video0_unicast",
+      "Camera: #{state.phase}  FPS: #{fps_text()}  RTSP: :8554/video0_unicast",
       data_line()
     ]
 

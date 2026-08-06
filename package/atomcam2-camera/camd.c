@@ -70,8 +70,13 @@
 #define GRP 0
 /* Keep in sync with ATOMCAM2_CAMERA_VERSION in atomcam2-camera.mk -- bump
  * both together so the running binary can report which build it is. */
-#define CAMD_VERSION 35
+#define CAMD_VERSION 36
 #define VERSION_PATH "/tmp/camd.version"
+/* Measured (not nominal) encoder fps, updated once per wall-clock second --
+ * decoupled from the "once per FR_NUM iterations" heuristic used elsewhere,
+ * which would itself run slow if fps is degraded (exactly when accurate
+ * reporting matters most). */
+#define FPS_PATH "/tmp/camd.fps"
 #define SNAP_PATH "/tmp/camd.snap"    /* touch to request a snapshot */
 #define SNAP_OUT "/tmp/camd.jpg"      /* newest JPEG written here */
 #define SNAP_TMP "/tmp/camd.jpg.tmp"
@@ -642,6 +647,7 @@ int main(int argc, char **argv)
 	IMPCell enc_cell = { DEV_ID_ENC, CHN, 0 };
 	int rc, i;
 	long total = 0; int got = 0;
+	time_t fps_last_t = 0; int fps_last_got = 0;
 
 	int cfd = open(CTL_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (cfd >= 0) close(cfd);
@@ -793,6 +799,19 @@ int main(int argc, char **argv)
 			len += pk->length;
 		}
 		if (len > 0 && write(lfd, asm_buf, len) > 0) { total += len; got++; }
+
+		{
+			time_t now = time(NULL);
+			if (now != fps_last_t) {
+				int fps = got - fps_last_got;
+				fps_last_got = got;
+				fps_last_t = now;
+				char fbuf[16];
+				int fn = snprintf(fbuf, sizeof(fbuf), "%d\n", fps);
+				int ffd = open(FPS_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+				if (ffd >= 0) { write(ffd, fbuf, fn); close(ffd); }
+			}
+		}
 		IMP_Encoder_ReleaseStream(CHN, &stream);
 	}
 
