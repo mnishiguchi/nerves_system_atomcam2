@@ -2,7 +2,11 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   @moduledoc """
   Play the boot announcement once at application startup: three short
   beeps followed by 「起動しました。」 (one PCM file), with the infrared
-  LED blinking five times on a one-second cycle in sync.
+  LED blinking five times on a one-second cycle in sync. On success, a
+  second announcement follows: the device's eth0/wlan0 IPv4 addresses
+  read out digit-by-digit (see `announce_ip/0`), built at runtime from
+  small pre-synthesized clips under `/usr/share/atomcam2/digits/` (see
+  docs/20260806_起動時IP発声_提案書.md).
 
   Cold boots intermittently leave the audio driver broken
   (`IMP_AO_Enable = -1`, no /dev/dsp) even with the correct module load
@@ -14,6 +18,12 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   failure pattern can be tracked across boots: if a retry eventually
   succeeds the hardware just needed time, if all attempts fail the boot
   is permanently wedged and the module-load timing is to blame.
+
+  The IP announcement can be toggled from an IEx session with
+  `set_ip_announce/1`; the setting is written to the FAT boot partition
+  so it persists across reboots (the fixed "起動しました" chime is
+  unaffected and always plays). Call `announce_ip/0` directly to trigger
+  it immediately without waiting for the next boot.
   """
 
   use Task, restart: :temporary
@@ -21,7 +31,10 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   require Logger
 
   @command "/usr/bin/atomcam2-boot-announce"
+  @digits_dir "/usr/share/atomcam2/digits"
+  @ip_announce_tmp_path "/tmp/camd-ip-announce.raw"
   @history_path "/media/mmc/boot-announce-history.log"
+  @ip_announce_state_path "/media/mmc/ip-announce-enabled"
   @ir_led_gpio 26
   @ir_blinks 5
   @max_attempts 6
@@ -33,6 +46,25 @@ defmodule Atomcam2NervesApp.BootAnnounce do
   @spec start_link(keyword()) :: {:ok, pid()}
   def start_link(_options) do
     Task.start_link(&announce/0)
+  end
+
+  @doc "Whether the boot-time IP announcement is enabled. Defaults to true."
+  @spec ip_announce_enabled?() :: boolean()
+  def ip_announce_enabled? do
+    case File.read(@ip_announce_state_path) do
+      {:ok, content} -> String.trim(content) != "false"
+      {:error, _reason} -> true
+    end
+  end
+
+  @doc """
+  Enable or disable the boot-time IP announcement. Persists to the FAT
+  boot partition so it survives reboots; takes effect on the next boot.
+  Call `announce_ip/0` directly to test the announcement right away.
+  """
+  @spec set_ip_announce(boolean()) :: :ok | {:error, File.posix()}
+  def set_ip_announce(enabled?) when is_boolean(enabled?) do
+    File.write(@ip_announce_state_path, if(enabled?, do: "true", else: "false"))
   end
 
   defp announce do
@@ -60,6 +92,7 @@ defmodule Atomcam2NervesApp.BootAnnounce do
         Logger.info("boot announcement played (attempt #{number})")
         if number > 1, do: Logger.info("announcement recovery detail: #{String.trim(output)}")
         record_history("ok on attempt #{number}")
+        if ip_announce_enabled?(), do: announce_ip()
 
       {output, status} ->
         Logger.warning(
@@ -68,6 +101,73 @@ defmodule Atomcam2NervesApp.BootAnnounce do
 
         Process.sleep(@retry_delay_ms)
         attempt(number + 1)
+    end
+  end
+
+  @doc """
+  Play the IP announcement: "ゆうせん/むせん あいぴー <digits> ドット ...
+  です" for each of eth0/wlan0 that currently has an address, concatenated
+  into one temp raw file and played via the same player script (re-used
+  so it gets the same audio-device checks; ATOMCAM2_BOOT_ANNOUNCE_SOUND
+  overrides which file it plays). Silently does nothing if neither
+  interface has an address. Callable directly from IEx to test on demand,
+  independent of `set_ip_announce/1` (which only gates the automatic
+  boot-time call).
+  """
+  @spec announce_ip() :: :ok
+  def announce_ip do
+    clip_names =
+      [{"wired", ipv4_of("eth0")}, {"wireless", ipv4_of("wlan0")}]
+      |> Enum.filter(fn {_label, ip} -> ip end)
+      |> Enum.flat_map(fn {label, ip} -> [label, "ip"] ++ ip_digit_clips(ip) ++ ["desu"] end)
+
+    case clip_names do
+      [] ->
+        :ok
+
+      names ->
+        audio = names |> Enum.map(&File.read!(clip_path(&1))) |> IO.iodata_to_binary()
+        File.write!(@ip_announce_tmp_path, audio)
+        play_ip_announcement()
+    end
+  rescue
+    exception ->
+      Logger.warning("boot IP announcement error: #{Exception.message(exception)}")
+  end
+
+  defp play_ip_announcement do
+    case System.cmd(@command, [],
+           env: [{"ATOMCAM2_BOOT_ANNOUNCE_SOUND", @ip_announce_tmp_path}],
+           stderr_to_stdout: true
+         ) do
+      {_output, 0} ->
+        Logger.info("boot IP announcement played")
+
+      {output, status} ->
+        Logger.warning("boot IP announcement failed (#{status}): #{String.trim(output)}")
+    end
+  end
+
+  defp ip_digit_clips(ip) do
+    ip
+    |> String.split(".")
+    |> Enum.map(&String.graphemes/1)
+    |> Enum.intersperse(["dot"])
+    |> List.flatten()
+  end
+
+  defp clip_path(name), do: Path.join(@digits_dir, name <> ".raw")
+
+  defp ipv4_of(ifname) do
+    with {:ok, interfaces} <- :inet.getifaddrs(),
+         {_name, options} <- List.keyfind(interfaces, String.to_charlist(ifname), 0),
+         {a, b, c, d} <-
+           options
+           |> Keyword.get_values(:addr)
+           |> Enum.find(&match?({_, _, _, _}, &1)) do
+      "#{a}.#{b}.#{c}.#{d}"
+    else
+      _other -> nil
     end
   end
 

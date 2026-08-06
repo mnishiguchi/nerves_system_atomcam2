@@ -4,14 +4,14 @@ defmodule Atomcam2NervesApp.Dashboard.View do
   page. The JSON API (`/status.json`) is the canonical representation;
   this is just a human-friendly view of the same data.
 
-  Tabs (映像 / 状態 / ログ / 操作) sit in a left sidebar and are pure CSS
+  Tabs (映像 / 状態 / ログ / 動作確認) sit in a left sidebar and are pure CSS
   via `:target` on the URL fragment. The default tab (映像) is rendered
   last so a following-sibling rule can show it when no fragment is set —
   this avoids `:has()`, which older browsers lack.
 
   Updates happen in place with no page reload, so there is no flicker and
   the chosen tab stays put: a little vanilla JS swaps the live image's
-  `src` every second and re-fetches only the 状態/ログ panels every two
+  `src` every 0.5 s and re-fetches only the 状態/ログ panels every two
   seconds (the snapshot is rate-limited server-side, so this cannot
   overload the camera).
   """
@@ -44,7 +44,6 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         #live { display: block; }
         #status:target ~ #live,
         #logs:target ~ #live,
-        #ops:target ~ #live,
         #hwtest:target ~ #live { display: none; }
         table { border-collapse: collapse; margin-bottom: 1rem; width: 100%; max-width: 640px; }
         caption { text-align: left; font-weight: bold; padding: .3rem 0; color: #9cf; }
@@ -66,13 +65,11 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         <a href="#live">映像</a>
         <a href="#status">状態</a>
         <a href="#logs">ログ</a>
-        <a href="#ops">操作</a>
         <a href="#hwtest">動作確認</a>
       </nav>
       <main>
         <section id="status" class="panel">#{status_panel(data)}</section>
         <section id="logs"   class="panel">#{logs_panel(data)}</section>
-        <section id="ops"    class="panel">#{ops_panel()}</section>
         <section id="hwtest" class="panel">#{hwtest_panel()}</section>
         <section id="live"   class="panel">#{live_panel(data)}</section>
       </main>
@@ -91,31 +88,18 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         window.addEventListener('hashchange', function () {
           try { localStorage.setItem('tab', location.hash || ''); } catch (e) {}
         });
-        // Live snapshot on/off (for A/B testing whether the snapshot load
-        // affects the RTSP stream). Persisted; default on.
-        var snapEnabled;
-        try { snapEnabled = localStorage.getItem('snapEnabled') !== 'off'; }
-        catch (e) { snapEnabled = true; }
-        function renderSnapToggle() {
-          var b = document.getElementById('snap-toggle');
-          if (b) b.textContent = 'スナップ表示: ' + (snapEnabled ? 'ON' : 'OFF');
-        }
-        window.toggleSnap = function () {
-          snapEnabled = !snapEnabled;
-          try { localStorage.setItem('snapEnabled', snapEnabled ? 'on' : 'off'); } catch (e) {}
-          renderSnapToggle();
-        };
-        renderSnapToggle();
-        // Refresh the live image every second without reloading (no flicker),
-        // only while the 映像 tab is visible and snapshots are enabled.
+        // Refresh the live image every 0.5 s without reloading (no flicker),
+        // only while the 映像 tab is visible. The server still rate-limits
+        // actual captures to @snapshot_min_interval_ms (1.5 s), so faster
+        // polling here just narrows how stale the shown frame can be, not
+        // how often camd actually re-captures.
         setInterval(function () {
-          if (!snapEnabled) return;
           var img = document.getElementById('snap');
           var live = document.getElementById('live');
           if (img && live && live.offsetParent !== null) {
             img.src = '/snapshot.jpg?' + Date.now();
           }
-        }, 1000);
+        }, 500);
         // Refresh the 状態/ログ tables in place every 2 s — no reload, tab kept.
         setInterval(function () {
           fetch('/').then(function (r) { return r.text(); }).then(function (html) {
@@ -126,6 +110,43 @@ defmodule Atomcam2NervesApp.Dashboard.View do
             });
           }).catch(function () {});
         }, 2000);
+        // Ajax operations (announce/reboot/hwtest/night): no page navigation,
+        // browser's native Basic-auth prompt still fires on the 401 as with
+        // a form POST. Status is shown inline (ops-status / hwtest-status)
+        // instead of a redirected response page.
+        window.postOp = function (url, confirmMessage, label, statusId) {
+          if (confirmMessage && !confirm(confirmMessage)) return;
+          var status = document.getElementById(statusId || 'ops-status');
+          if (status) status.textContent = label + ': 実行中...';
+          fetch(url, {method: 'POST'}).then(function (r) {
+            return r.text().then(function (body) { return {ok: r.ok, body: body}; });
+          }).then(function (res) {
+            if (!status) return;
+            status.textContent = res.ok ? (label + ': OK') : (label + ': 失敗 (' + res.body + ')');
+          }).catch(function () {
+            if (status) status.textContent = label + ': 通信エラー';
+          });
+        };
+        // Mic record/play: the server starts the action and returns its
+        // duration; the countdown itself runs here instead of on a
+        // server-rendered countdown page.
+        window.postMic = function (url, label, statusId) {
+          var status = document.getElementById(statusId || 'hwtest-status');
+          if (status) status.textContent = label + ': 実行中...';
+          fetch(url, {method: 'POST'}).then(function (r) { return r.json(); }).then(function (res) {
+            var secs = res.seconds || 0, n = 0;
+            if (!status) return;
+            status.textContent = label + ': 0 / ' + secs + ' 秒';
+            var t = setInterval(function () {
+              n++;
+              if (!status) { clearInterval(t); return; }
+              if (n >= secs) { clearInterval(t); status.textContent = label + ': 完了'; }
+              else { status.textContent = label + ': ' + n + ' / ' + secs + ' 秒'; }
+            }, 1000);
+          }).catch(function () {
+            if (status) status.textContent = label + ': 通信エラー';
+          });
+        };
       </script>
     </body>
     </html>
@@ -137,12 +158,16 @@ defmodule Atomcam2NervesApp.Dashboard.View do
   defp live_panel(data) do
     """
     <div class="ops">
-      <button type="button" id="snap-toggle" onclick="toggleSnap()">スナップ表示</button>
+      <button type="button" onclick="postOp('/night/on', null, '夜間 ON', 'live-status')">夜間 ON</button>
+      <button type="button" onclick="postOp('/night/off', null, '夜間 OFF', 'live-status')">夜間 OFF</button>
+      <button type="button" onclick="postOp('/night/auto', null, '夜間 自動', 'live-status')">夜間 自動</button>
     </div>
     <div class="snap">
       <img id="snap" src="/snapshot.jpg?#{:erlang.system_time(:second)}" alt="snapshot">
     </div>
+    <p id="live-status" class="rtsp">&nbsp;</p>
     <p class="rtsp">RTSP: #{escape(rtsp_url(data))}</p>
+    <p class="rtsp">App: #{escape(app_version(data))}  camd: #{escape(camd_version(data))}</p>
     """
   end
 
@@ -160,34 +185,21 @@ defmodule Atomcam2NervesApp.Dashboard.View do
     logs_section(data.logs) <> announce_history(data.rtsp)
   end
 
-  defp ops_panel do
-    """
-    <div class="ops">
-      <form method="post" action="/announce"
-            onsubmit="return confirm('テスト発声を再生しますか?')">
-        <button type="submit">テスト発声</button>
-      </form>
-      <form method="post" action="/reboot"
-            onsubmit="return confirm('本当に再起動しますか?')">
-        <button type="submit">再起動</button>
-      </form>
-    </div>
-    <p>操作は管理パスワード（利用者 admin）が必要です。</p>
-    """
-  end
-
   defp hwtest_panel do
     """
     <div class="ops">
-      <form method="post" action="/test/blue"><button type="submit">青 LED 点滅</button></form>
-      <form method="post" action="/test/yellow"><button type="submit">黄 LED 点滅</button></form>
-      <form method="post" action="/test/ir_led"><button type="submit">IR LED 点滅</button></form>
-      <form method="post" action="/test/speaker"><button type="submit">スピーカー(発声)</button></form>
-      <form method="post" action="/test/mic/record"><button type="submit">マイク録音(5秒)</button></form>
-      <form method="post" action="/test/mic/play"><button type="submit">録音を再生</button></form>
-      <form method="post" action="/test/ircut/on"><button type="submit">IR-cut ON</button></form>
-      <form method="post" action="/test/ircut/off"><button type="submit">IR-cut OFF</button></form>
+      <button type="button" onclick="postOp('/test/blue', null, '青 LED 点滅', 'hwtest-status')">青 LED 点滅</button>
+      <button type="button" onclick="postOp('/test/yellow', null, '黄 LED 点滅', 'hwtest-status')">黄 LED 点滅</button>
+      <button type="button" onclick="postOp('/test/ir_led', null, 'IR LED 点滅', 'hwtest-status')">IR LED 点滅</button>
+      <button type="button" onclick="postOp('/test/speaker', null, 'スピーカー(発声)', 'hwtest-status')">スピーカー(発声)</button>
+      <button type="button" onclick="postMic('/test/mic/record', '録音中', 'hwtest-status')">マイク録音(5秒)</button>
+      <button type="button" onclick="postMic('/test/mic/play', '再生中', 'hwtest-status')">録音を再生</button>
+      <button type="button" onclick="postOp('/test/ircut/on', null, 'IR-cut ON', 'hwtest-status')">IR-cut ON</button>
+      <button type="button" onclick="postOp('/test/ircut/off', null, 'IR-cut OFF', 'hwtest-status')">IR-cut OFF</button>
+      <button type="button"
+              onclick="postOp('/reboot', '本当に再起動しますか?', '再起動', 'hwtest-status')">再起動</button>
     </div>
+    <p id="hwtest-status" class="rtsp">&nbsp;</p>
     <table>
       <caption>GPIO / 周辺機器</caption>
       <tr><td>青 LED</td><td>GPIO 39 (active-low)</td></tr>
@@ -196,9 +208,9 @@ defmodule Atomcam2NervesApp.Dashboard.View do
       <tr><td>スピーカー</td><td>アンプ GPIO 63・「起動しました」を再生</td></tr>
       <tr><td>マイク</td><td>IMP_AI(8kHz/16bit/mono)。録音(5秒)と再生を個別に実行・秒カウント表示</td></tr>
       <tr><td>IR-cut フィルタ</td><td>GPIO 53/52 Hブリッジ・ON=昼(IR遮断) / OFF=夜(IR透過)</td></tr>
+      <tr><td>夜間ビジョン</td><td>操作は「映像」タブへ移動。IR-cut + IR LED のみ(ISP 昼夜モードは呼ばない。RTSP を止めていた旧実装から修正済み)</td></tr>
     </table>
-    <p>各テストは管理パスワード（利用者 admin）が必要です。IR-cut・夜間 ISP は
-    RTSP を止める恐れがあるため動作確認には含めません。</p>
+    <p>各テストは管理パスワード（利用者 admin）が必要です。</p>
     """
   end
 
@@ -206,6 +218,12 @@ defmodule Atomcam2NervesApp.Dashboard.View do
 
   defp rtsp_url(%{rtsp: %{url: url}}), do: url
   defp rtsp_url(_data), do: "unavailable"
+
+  defp app_version(%{firmware: %{version: version}}) when is_binary(version), do: version
+  defp app_version(_data), do: "unavailable"
+
+  defp camd_version(%{camera: %{camd_version: version}}) when is_binary(version), do: version
+  defp camd_version(_data), do: "unavailable"
 
   defp announce_history(%{announce_history: lines}) when is_list(lines) and lines != [] do
     rows = Enum.map_join(lines, "\n", &"<tr><td>#{escape(&1)}</td></tr>")

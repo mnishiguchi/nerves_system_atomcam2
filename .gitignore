@@ -18,3 +18,11 @@
 
 # Local example application environment
 /examples/atomcam2_nerves_app/.envrc
+
+# Claude Code local settings (permission-allow list can accumulate
+# real command strings incl. secrets, e.g. Wi-Fi passphrases passed as
+# build env vars). settings.json (shared/checked-in policy, no secrets)
+# stays tracked if ever added deliberately; local/session state does not.
+/.claude/settings.local.json
+/.claude/scheduled_tasks.lock
+build.log
