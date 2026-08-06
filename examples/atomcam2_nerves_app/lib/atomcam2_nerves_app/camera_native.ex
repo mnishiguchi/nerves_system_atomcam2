@@ -38,6 +38,11 @@ defmodule Atomcam2NervesApp.CameraNative do
   @camd_ctl_path "/tmp/camd.ctl"
   @snapshot_request_path "/tmp/camd.snap"
   @snapshot_path "/tmp/camd.jpg"
+  # Written once at camd startup with its ATOMCAM2_CAMERA_VERSION (camd.c's
+  # CAMD_VERSION) -- lets the dashboard show which camd build is actually
+  # running, distinct from the app/firmware version (mix.exs), which does
+  # not change on a camd-only rebuild.
+  @camd_version_path "/tmp/camd.version"
 
   # The loopback writer has to set the H.264 format (S_FMT) before
   # v4l2rtspserver opens the device — otherwise the SDP is published
@@ -104,6 +109,19 @@ defmodule Atomcam2NervesApp.CameraNative do
   end
 
   @doc """
+  The running camd binary's own VERSION (from `#{@camd_version_path}`,
+  written by camd at startup), or `nil` if camd has not written it yet
+  (not started, or a build old enough not to write the file).
+  """
+  @spec camd_version() :: String.t() | nil
+  def camd_version do
+    case File.read(@camd_version_path) do
+      {:ok, contents} -> String.trim(contents)
+      {:error, _reason} -> nil
+    end
+  end
+
+  @doc """
   Enable or disable the on-video debug overlay. Persists across reboots
   (`#{@debug_conf_path}`); the overlay follows within a few seconds.
   """
@@ -114,12 +132,13 @@ defmodule Atomcam2NervesApp.CameraNative do
     end
   end
 
-  # Minimum spacing between real captures. Each capture drives camd's JPEG
-  # encoder channel (which shares the H.264 channel's buffer), so frequent
-  # captures stress the encoder. Requests inside this window are served the
-  # cached JPEG instead of triggering a new capture, capping the rate no
-  # matter how fast the dashboard refreshes the live image (every 1 s).
-  @snapshot_min_interval_ms 1_500
+  # Minimum spacing between real captures. camd's JPEG encoder channel has
+  # its own buffer since VERSION 30 (independent of the H.264 channel), but
+  # this still caps how often camd re-captures/re-encodes so the dashboard's
+  # polling (every 0.5 s) cannot needlessly spin the JPEG channel faster than
+  # the live image actually needs to change. Requests inside this window are
+  # served the cached JPEG instead of triggering a new capture.
+  @snapshot_min_interval_ms 500
 
   @doc """
   Capture a JPEG snapshot from the camera's JPEG encoder channel and
@@ -518,7 +537,7 @@ defmodule Atomcam2NervesApp.CameraNative do
   # up to 14 lines x 80 columns; content is not abbreviated.
   defp debug_overlay_text(state, cpu_percent) do
     lines = [
-      "atomcam2_nerves_app #{firmware_version() || "?"}  slot=#{active_slot()}",
+      "atomcam2_nerves_app #{firmware_version() || "?"}  slot=#{active_slot()}  camd=v#{camd_version() || "?"}",
       "Host: #{hostname()}  Uptime: #{uptime_text()}",
       "Clock: #{clock_text()}  NTP: #{ntp_text()}",
       "Load: #{loadavg_text()}  CPU: #{(cpu_percent && "#{cpu_percent}%") || "?"}",

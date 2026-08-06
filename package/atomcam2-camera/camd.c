@@ -54,7 +54,24 @@
 #define FR_DEN 1
 #define CHN 0
 #define JPEG_CHN 2     /* second encoder channel, same group, JPEG profile */
+/* Independent resolution for the JPEG channel (see 20260806 proposal): its
+ * own buffer, not shared with the H.264 channel (sharing caused snapshot
+ * polling to wedge the H.264 pipeline). Full W x H was tried once already
+ * and briefly reverted (2026-08-06): with the ISP calibration file missing
+ * from the rootfs, a second full-res channel measurably tinted the image
+ * magenta/purple on two independent devices. That was a red herring --
+ * the real cause was /etc/sensor/gc2053-t31.bin never having been
+ * installed (see docs/20260806_ISPキャリブレーション欠落_技術相談.md).
+ * Retrying full res now that the calibration file ships with this
+ * package. If color regresses again, suspect the calibration file/AWB
+ * path first, not this resolution. */
+#define JPEG_W W
+#define JPEG_H H
 #define GRP 0
+/* Keep in sync with ATOMCAM2_CAMERA_VERSION in atomcam2-camera.mk -- bump
+ * both together so the running binary can report which build it is. */
+#define CAMD_VERSION 35
+#define VERSION_PATH "/tmp/camd.version"
 #define SNAP_PATH "/tmp/camd.snap"    /* touch to request a snapshot */
 #define SNAP_OUT "/tmp/camd.jpg"      /* newest JPEG written here */
 #define SNAP_TMP "/tmp/camd.jpg.tmp"
@@ -241,6 +258,46 @@ static void set_bitrate(int kbps)
 	fprintf(stderr, "camd: bitrate -> %d kbps\n", kbps);
 }
 
+/* Diagnostic-only (2026-08-06): the vendor calibration file the ISP
+ * normally reads (/etc/sensor/gc2053-t31.bin) is absent from the Nerves
+ * rootfs (ISP: open ... failed, seen on every boot). Without it AWB seems
+ * to sometimes converge to a magenta/purple cast under certain scenes,
+ * even though a vendor-firmware boot on the same physical unit renders
+ * color correctly. These commands let us probe/override white balance
+ * live without a rebuild per attempt.
+ *   wb get                 -- log current mode + rgain/bgain
+ * 	wb auto|daylight|cloudy|shade -- switch to a fixed WB preset
+ *   wb manual <rgain> <bgain>    -- force explicit gains
+ */
+static void wb_get(void)
+{
+	IMPISPWB wb;
+	memset(&wb, 0, sizeof(wb));
+	int rc = IMP_ISP_Tuning_GetWB(&wb);
+	fprintf(stderr, "camd: wb get = %d (mode=%d rgain=%u bgain=%u)\n",
+		rc, wb.mode, wb.rgain, wb.bgain);
+}
+
+static void wb_set_mode(enum isp_core_wb_mode mode)
+{
+	IMPISPWB wb;
+	memset(&wb, 0, sizeof(wb));
+	wb.mode = mode;
+	int rc = IMP_ISP_Tuning_SetWB(&wb);
+	fprintf(stderr, "camd: wb set mode=%d = %d\n", mode, rc);
+}
+
+static void wb_set_manual(int rgain, int bgain)
+{
+	IMPISPWB wb;
+	memset(&wb, 0, sizeof(wb));
+	wb.mode = ISP_CORE_WB_MODE_MANUAL;
+	wb.rgain = (uint16_t)rgain;
+	wb.bgain = (uint16_t)bgain;
+	int rc = IMP_ISP_Tuning_SetWB(&wb);
+	fprintf(stderr, "camd: wb set manual rgain=%d bgain=%d = %d\n", rgain, bgain, rc);
+}
+
 static void set_qp(int minqp, int maxqp)
 {
 	IMPEncoderAttrRcMode rc;
@@ -350,12 +407,19 @@ static void gpio_set(int gpio, int value)
 	if (fd >= 0) { write(fd, value ? "1" : "0", 1); close(fd); }
 }
 
-/* Pulse the H-bridge ~120ms to slide the IR-cut filter, then release. */
+/* Pulse the H-bridge to slide the IR-cut filter, then release. 300ms to make
+ * sure the mechanical filter fully seats (120ms was marginal; the validated
+ * dashboard IR-cut test uses 300ms). A stuck/half-seated filter leaves IR on
+ * the sensor and tints the daylight image magenta/purple. */
 static void ircut_move(int to_night)
 {
-	gpio_set(IRCUT_A_GPIO, to_night ? 0 : 1);
-	gpio_set(IRCUT_B_GPIO, to_night ? 1 : 0);
-	usleep(120 * 1000);
+	/* Polarity verified on-device by capture: A=0,B=1 seats the IR-cut filter
+	 * (daylight renders white); A=1,B=0 removes it (IR passes -> magenta). So
+	 * DAY (to_night=0) => A=0,B=1 and NIGHT => A=1,B=0. (Earlier assumption was
+	 * inverted, which tinted the daytime image purple.) */
+	gpio_set(IRCUT_A_GPIO, to_night ? 1 : 0);
+	gpio_set(IRCUT_B_GPIO, to_night ? 0 : 1);
+	usleep(300 * 1000);
 	gpio_set(IRCUT_A_GPIO, 0);
 	gpio_set(IRCUT_B_GPIO, 0);
 }
@@ -364,17 +428,14 @@ static void apply_night(int night)
 {
 	if (night == night_active) return;
 	night_active = night;
-	/* Night vision is the mechanical IR-cut filter (H-bridge GPIO) plus the
-	 * IR LED only. We deliberately do NOT switch the ISP running mode
-	 * (IMP_ISP_Tuning_SetISPRunningMode): that call wedges the H.264 encoder
-	 * mid-stream — camd's frame loop stalls a few seconds after it fires and
-	 * the RTSP stream freezes (in auto mode it flaps at dusk and stalls
-	 * repeatedly). Moving the IR-cut filter and IR LED via GPIO is safe and
-	 * keeps the stream alive; the ISP day/night tuning is sacrificed for
-	 * stability. */
+	/* IR-cut filter (H-bridge GPIO) + IR LED only. We do NOT switch the ISP
+	 * running mode (IMP_ISP_Tuning_SetISPRunningMode) — that call stalls the
+	 * H.264 encoder mid-stream (verified: camd stops producing frames), so the
+	 * ISP stays in its default tuning and night is purely the mechanical
+	 * filter + IR LED. Day colour is governed by the sensor/ISP default AWB. */
 	ircut_move(night);
 	gpio_set(IR_LED_GPIO, night);
-	fprintf(stderr, "camd: night -> %s (ircut+IR LED only)\n", night ? "on" : "off");
+	fprintf(stderr, "camd: night -> %s\n", night ? "on" : "off");
 	fflush(stderr);
 }
 
@@ -483,6 +544,12 @@ static int poll_ctl(void)
 	else if (sscanf(buf, "clockpos %d %d", &a, &b) == 2) move_clock(a, b);
 	else if (sscanf(buf, "logopos %d %d", &a, &b) == 2) move_logo(a, b);
 	else if (sscanf(buf, "infopos %d %d", &a, &b) == 2) move_info(a, b);
+	else if (!strcmp(buf, "wb get"))      wb_get();
+	else if (!strcmp(buf, "wb auto"))     wb_set_mode(ISP_CORE_WB_MODE_AUTO);
+	else if (!strcmp(buf, "wb daylight")) wb_set_mode(ISP_CORE_WB_MODE_DAY_LIGHT);
+	else if (!strcmp(buf, "wb cloudy"))   wb_set_mode(ISP_CORE_WB_MODE_CLOUDY);
+	else if (!strcmp(buf, "wb shade"))    wb_set_mode(ISP_CORE_WB_MODE_SHADE);
+	else if (sscanf(buf, "wb manual %d %d", &a, &b) == 2) wb_set_manual(a, b);
 	else if (!strcmp(buf, "quit"))      quit = 1;
 	else fprintf(stderr, "camd: ctl unknown '%s'\n", buf);
 	if (!quit) fprintf(stderr, "camd: ctl '%s'\n", buf);
@@ -579,6 +646,13 @@ int main(int argc, char **argv)
 	int cfd = open(CTL_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (cfd >= 0) close(cfd);
 
+	{
+		char vbuf[16];
+		int vn = snprintf(vbuf, sizeof(vbuf), "%d\n", CAMD_VERSION);
+		int vfd = open(VERSION_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		if (vfd >= 0) { write(vfd, vbuf, vn); close(vfd); }
+	}
+
 	/* Clean shutdown on SIGTERM (MuonTrap / system shutdown) so the IMP
 	 * teardown runs. sigaction + SA_RESTART so a signal does not leave
 	 * libimp's blocking ioctl/read returning EINTR mid-call. */
@@ -629,17 +703,19 @@ int main(int argc, char **argv)
 
 	/* Second encoder channel, JPEG, registered to the same group so it
 	 * receives the same OSD-overlaid frames. Only started on demand for a
-	 * snapshot, so it costs nothing while idle. */
+	 * snapshot, so it costs nothing while idle. Runs at JPEG_W x JPEG_H
+	 * (not the full W x H) with its OWN buffer -- no SetbufshareChn. An
+	 * earlier version shared the H.264 channel's buffer to fit rmem, but
+	 * that let snapshot polling (e.g. the dashboard's live-view refresh)
+	 * race the H.264 channel's own StartRecvPic/PollingStream and wedge
+	 * the encoder (see 20260806 proposal + conflict writeup). At 1/9th
+	 * the pixel count a dedicated buffer fits rmem without sharing. */
 	{
 		IMPEncoderChnAttr jenc;
 		memset(&jenc, 0, sizeof(jenc));
 		rc = IMP_Encoder_SetDefaultParam(&jenc, IMP_ENC_PROFILE_JPEG, IMP_ENC_RC_MODE_FIXQP,
-				W, H, FR_NUM, FR_DEN, 0, 0, 25, 0);
+				JPEG_W, JPEG_H, FR_NUM, FR_DEN, 0, 0, 25, 0);
 		if (step("Encoder_SetDefaultParam(jpeg)", rc) < 0) return 1;
-		/* Share the H.264 channel's buffer instead of allocating a second
-		 * full-res encoder buffer (which exhausts rmem and crashes). Must
-		 * be called after the shared channel is created, before this one. */
-		step("Encoder_SetbufshareChn(jpeg)", IMP_Encoder_SetbufshareChn(JPEG_CHN, CHN));
 		if (step("Encoder_CreateChn(jpeg)", IMP_Encoder_CreateChn(JPEG_CHN, &jenc)) < 0) return 1;
 		if (step("Encoder_RegisterChn(jpeg)", IMP_Encoder_RegisterChn(CHN, JPEG_CHN)) < 0) return 1;
 	}
@@ -684,8 +760,8 @@ int main(int argc, char **argv)
 	 * daylight image purple/magenta. apply_night(0) here slides it to day. */
 	if (night_mode == 2) night_auto_tick();
 	else apply_night(night_mode == 1);
-	fprintf(stderr, "camd: running at %d kbps. control via %s\n", bitrate, CTL_PATH);
-	fprintf(stderr, "camd:   clock/logo on|off / info <text>|off / snap / night on|off|auto / bitrate <kbps> / qp <min> <max> / quit\n");
+	fprintf(stderr, "camd: VERSION %d, running at %d kbps. control via %s\n", CAMD_VERSION, bitrate, CTL_PATH);
+	fprintf(stderr, "camd:   clock/logo on|off / info <text>|off / snap / night on|off|auto / bitrate <kbps> / qp <min> <max> / wb get|auto|daylight|cloudy|shade|manual <r> <b> / quit\n");
 	fflush(stderr);
 
 	for (i = 0; i < frames; i++) {
