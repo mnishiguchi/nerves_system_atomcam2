@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  shell-checks:
+    name: Shell checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r -d '' file; do
+            case "$(sed -n '1p' "$file")" in
+              *bash*) bash -n "$file" ;;
+              *) sh -n "$file" ;;
+            esac
+          done < <(
+            find scripts examples/atomcam2_nerves_app/scripts \
+              -type f -name '*.sh' -print0
+          )
+
+      - name: Test boot metadata handling
+        run: ./scripts/test-atomcam2-boot-metadata.sh
+
+      - name: Test firmware update handling
+        run: ./scripts/test-atomcam2-firmware-update.sh
