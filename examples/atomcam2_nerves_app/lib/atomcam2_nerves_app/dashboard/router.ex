@@ -69,7 +69,7 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
   defp operate("/announce") do
     {:ok, _pid} = Task.start(fn -> System.cmd(@announce_command, [], stderr_to_stdout: true) end)
     Logger.info("Dashboard: announce requested")
-    redirect_home("announce started")
+    reply(200, "application/json", ~s({"status":"ok","message":"announce started"}))
   end
 
   defp operate("/reboot") do
@@ -82,13 +82,17 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
         Nerves.Runtime.reboot()
       end)
 
-    reply(200, "text/plain", "rebooting")
+    reply(200, "application/json", ~s({"status":"ok","message":"rebooting"}))
   end
 
+  # Night vision: IR-cut + IR LED only (camd's apply_night/1 no longer
+  # touches IMP_ISP_Tuning_SetISPRunningMode -- that used to be called
+  # inline from the encode loop and could stall the H.264 stream; see
+  # docs/20260804_native_camera_不具合_技術相談.md 問題A). Safe to expose here.
   defp operate("/night/" <> mode) when mode in ["on", "off", "auto"] do
     CameraNative.night_vision(String.to_existing_atom(mode))
     Logger.info("Dashboard: night vision #{mode}")
-    redirect_home("night #{mode}")
+    reply(200, "application/json", ~s({"status":"ok","message":"night #{mode}"}))
   end
 
   # IR-cut filter: move it in/out by pulsing the H-bridge GPIO directly
@@ -96,21 +100,32 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
   defp operate("/test/ircut/" <> mode) when mode in ["on", "off"] do
     Atomcam2NervesApp.HardwareTest.ircut(String.to_existing_atom(mode))
     Logger.info("Dashboard: hardware test ircut #{mode}")
-    redirect_home("test ircut #{mode}")
+    reply(200, "application/json", ~s({"status":"ok","message":"test ircut #{mode}"}))
   end
 
-  # Microphone: separate record / playback with a live second counter on
-  # the returned page (auto-returns to the 動作確認 tab when it finishes).
+  # Microphone: separate record / playback. Returns the duration as JSON;
+  # the dashboard's JS runs its own countdown against it instead of the
+  # server rendering a whole countdown page (no page navigation).
   defp operate("/test/mic/record") do
     Atomcam2NervesApp.HardwareTest.mic_record()
     Logger.info("Dashboard: mic record")
-    reply(200, "text/html", countdown_page("録音中", Atomcam2NervesApp.HardwareTest.mic_seconds()))
+
+    reply(
+      200,
+      "application/json",
+      ~s({"status":"ok","seconds":#{Atomcam2NervesApp.HardwareTest.mic_seconds()}})
+    )
   end
 
   defp operate("/test/mic/play") do
     Atomcam2NervesApp.HardwareTest.mic_play()
     Logger.info("Dashboard: mic play")
-    reply(200, "text/html", countdown_page("再生中", Atomcam2NervesApp.HardwareTest.mic_seconds()))
+
+    reply(
+      200,
+      "application/json",
+      ~s({"status":"ok","seconds":#{Atomcam2NervesApp.HardwareTest.mic_seconds()}})
+    )
   end
 
   # Hardware checks (動作確認 tab). These only poke the status LEDs, the IR
@@ -125,7 +140,7 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
     end
 
     Logger.info("Dashboard: hardware test #{what}")
-    redirect_home("test #{what}")
+    reply(200, "application/json", ~s({"status":"ok","message":"test #{what}"}))
   end
 
   defp operate(_uri), do: reply(404, "text/plain", "not found")
@@ -157,58 +172,6 @@ defmodule Atomcam2NervesApp.Dashboard.Router do
 
         {:proceed, [response: {:response, head, :binary.bin_to_list(body)}]}
     end
-  end
-
-  # The HTML form lands here after the POST; send the browser back to
-  # the dashboard rather than showing a bare text page.
-  defp redirect_home(message) do
-    body = "#{message} - <a href=\"/\">back</a>"
-
-    {:proceed,
-     [
-       response:
-         {:response,
-          [
-            code: 200,
-            content_type: ~c"text/html",
-            content_length: body |> byte_size() |> Integer.to_charlist()
-          ], :binary.bin_to_list(body)}
-     ]}
-  end
-
-  # A small page shown after starting a mic record/playback: counts the
-  # seconds up to the duration, then returns to the 動作確認 tab.
-  defp countdown_page(label, secs) do
-    """
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <meta http-equiv="refresh" content="#{secs + 1};url=/#hwtest">
-      <title>atomcam2</title>
-      <style>
-        body { font-family: sans-serif; background: #111; color: #ddd;
-               text-align: center; padding: 3rem 1rem; }
-        .count { font-size: 2.5rem; font-weight: bold; margin: 1rem 0; }
-        a { color: #9cf; }
-      </style>
-    </head>
-    <body>
-      <p>#{label}</p>
-      <div class="count"><span id="c">0</span> / #{secs} 秒</div>
-      <p><a href="/#hwtest">動作確認に戻る</a></p>
-      <script>
-        var n = 0, s = #{secs}, e = document.getElementById('c');
-        var t = setInterval(function () {
-          n++;
-          if (n >= s) { clearInterval(t); e.textContent = s + '（完了）'; }
-          else { e.textContent = n; }
-        }, 1000);
-      </script>
-    </body>
-    </html>
-    """
   end
 
   defp reply(code, content_type, body) when is_binary(body) do

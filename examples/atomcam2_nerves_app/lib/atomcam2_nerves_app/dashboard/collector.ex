@@ -33,12 +33,19 @@ defmodule Atomcam2NervesApp.Dashboard.Collector do
           phase: status.phase,
           camd_alive: is_pid(status.camd_pid),
           rtsp_alive: is_pid(status.rtsp_pid),
+          camd_version: camd_version(),
           last_error: status.last_error && inspect(status.last_error)
         }
 
       _other ->
         "unavailable"
     end
+  end
+
+  defp camd_version do
+    Atomcam2NervesApp.CameraNative.camd_version() || "unavailable"
+  rescue
+    _exception -> "unavailable"
   end
 
   defp rtsp do
