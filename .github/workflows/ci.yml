@@ -1,6 +1,6 @@
 name: CI
 
-on:
+"on":
   pull_request:
   push:
     branches: [main]
@@ -45,6 +45,7 @@ jobs:
     env:
       ATOMCAM2_SYSTEM_SOURCE: local
       MIX_ENV: test
+      MIX_TARGET: host
     steps:
       - uses: actions/checkout@v4
 
@@ -57,7 +58,7 @@ jobs:
         run: |
           mix local.hex --force
           mix local.rebar --force
-          mix archive.install hex nerves_bootstrap --force
+          mix archive.install hex nerves_bootstrap 1.16.0 --force
 
       - name: Fetch dependencies
         run: mix deps.get
