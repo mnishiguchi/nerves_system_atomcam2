@@ -4,7 +4,7 @@ defmodule Atomcam2NervesApp.Dashboard.View do
   page. The JSON API (`/status.json`) is the canonical representation;
   this is just a human-friendly view of the same data.
 
-  Tabs (映像 / 状態 / ログ / 操作) sit in a left sidebar and are pure CSS
+  Tabs (映像 / 状態 / ログ / 動作確認) sit in a left sidebar and are pure CSS
   via `:target` on the URL fragment. The default tab (映像) is rendered
   last so a following-sibling rule can show it when no fragment is set —
   this avoids `:has()`, which older browsers lack.
@@ -44,7 +44,6 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         #live { display: block; }
         #status:target ~ #live,
         #logs:target ~ #live,
-        #ops:target ~ #live,
         #hwtest:target ~ #live { display: none; }
         table { border-collapse: collapse; margin-bottom: 1rem; width: 100%; max-width: 640px; }
         caption { text-align: left; font-weight: bold; padding: .3rem 0; color: #9cf; }
@@ -66,13 +65,11 @@ defmodule Atomcam2NervesApp.Dashboard.View do
         <a href="#live">映像</a>
         <a href="#status">状態</a>
         <a href="#logs">ログ</a>
-        <a href="#ops">操作</a>
         <a href="#hwtest">動作確認</a>
       </nav>
       <main>
         <section id="status" class="panel">#{status_panel(data)}</section>
         <section id="logs"   class="panel">#{logs_panel(data)}</section>
-        <section id="ops"    class="panel">#{ops_panel()}</section>
         <section id="hwtest" class="panel">#{hwtest_panel()}</section>
         <section id="live"   class="panel">#{live_panel(data)}</section>
       </main>
@@ -188,19 +185,6 @@ defmodule Atomcam2NervesApp.Dashboard.View do
     logs_section(data.logs) <> announce_history(data.rtsp)
   end
 
-  defp ops_panel do
-    """
-    <div class="ops">
-      <button type="button"
-              onclick="postOp('/announce', 'テスト発声を再生しますか?', 'テスト発声')">テスト発声</button>
-      <button type="button"
-              onclick="postOp('/reboot', '本当に再起動しますか?', '再起動')">再起動</button>
-    </div>
-    <p id="ops-status" class="rtsp">&nbsp;</p>
-    <p>操作は管理パスワード（利用者 admin）が必要です。</p>
-    """
-  end
-
   defp hwtest_panel do
     """
     <div class="ops">
@@ -212,6 +196,8 @@ defmodule Atomcam2NervesApp.Dashboard.View do
       <button type="button" onclick="postMic('/test/mic/play', '再生中', 'hwtest-status')">録音を再生</button>
       <button type="button" onclick="postOp('/test/ircut/on', null, 'IR-cut ON', 'hwtest-status')">IR-cut ON</button>
       <button type="button" onclick="postOp('/test/ircut/off', null, 'IR-cut OFF', 'hwtest-status')">IR-cut OFF</button>
+      <button type="button"
+              onclick="postOp('/reboot', '本当に再起動しますか?', '再起動', 'hwtest-status')">再起動</button>
     </div>
     <p id="hwtest-status" class="rtsp">&nbsp;</p>
     <table>
